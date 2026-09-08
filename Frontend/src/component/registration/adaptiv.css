@@ -1,0 +1,1008 @@
+@media screen and (max-width: 1199px) {
+    .borderOther {
+        width: 75%;
+        max-width: 850px;
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding: 10px 35px;
+    }
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 20px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 16px;
+        padding: 12px 16px;
+    }
+
+    .slider-panel h2 {
+        font-size: 22px;
+    }
+
+    .cookies {
+        width: 28%;
+        right: -28%;
+    }
+
+    .cookies.active {
+        right: 2%;
+    }
+}
+
+
+
+
+
+
+@media screen and (max-width: 991px) {
+    .borderOther {
+        width: 88%;
+        max-width: 720px;
+        padding: 3px;
+    }
+
+    .borderOther::before {
+        inset: -3px;
+        padding: 3px;
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding: 10px 25px;
+    }
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 18px;
+        margin-bottom: 14px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 15px;
+        padding: 11px 14px;
+        margin-bottom: 10px;
+    }
+
+    .buttonEntrance,
+    .buttonRegistration {
+        padding: 11px 16px;
+        font-size: 14px;
+    }
+
+    .slider-panel {
+        padding: 15px 20px;
+    }
+
+    .slider-panel h2 {
+        font-size: 20px;
+    }
+
+    .slider-panel p {
+        font-size: 14px;
+    }
+
+    .slider-panel.left {
+        clip-path: polygon(0 0, 82% 0, 100% 100%, 0% 100%);
+    }
+
+    .slider-panel.right {
+        clip-path: polygon(18% 0, 100% 0, 100% 100%, 0% 100%);
+    }
+
+    .cookies {
+        width: 35%;
+        right: -35%;
+    }
+
+    .cookies.active {
+        right: 2%;
+    }
+
+    .cookies p {
+        font-size: 14px;
+    }
+}
+
+
+
+
+@media screen and (max-width: 767px) {
+
+
+    .blocksOfToService {
+        min-height: 100vh;
+        padding: 15px 10px;
+        align-items: center;
+    }
+
+
+    .borderOther {
+        width: 100%;
+        max-width: 460px;
+        padding: 3px;
+        border-radius: 12px;
+        overflow: hidden;
+    }
+
+    .borderOther::before {
+        inset: -3px;
+        border-radius: 12px;
+        padding: 3px;
+    }
+
+    .borderInner {
+        border-radius: 12px;
+        flex-direction: column;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+
+        min-height: 520px;
+    }
+
+
+    .slider-panel {
+        position: relative !important;
+        top: auto !important;
+        left: auto !important;
+        width: 100% !important;
+        height: auto !important;
+        transform: none !important;
+        clip-path: none !important;
+        background: linear-gradient(135deg, #1a0003 0%, #4a0008 100%);
+        padding: 16px 20px;
+        order: 0 !important;
+        border-radius: 12px 12px 0 0;
+        min-height: 60px;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+        text-align: left;
+        border-bottom: 2px solid rgba(255, 50, 65, 0.2);
+        z-index: 5;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+        display: flex !important;
+        overflow: hidden;
+        flex: 0 0 auto;
+    }
+
+    .slider-panel:hover {
+        border-bottom-color: rgba(255, 50, 65, 0.5);
+        background: linear-gradient(135deg, #2a0005 0%, #4a0008 100%);
+    }
+
+    .slider-panel h2 {
+        font-size: 16px;
+        margin: 0 0 2px 0;
+        color: white;
+        font-weight: 500;
+        line-height: 1.3;
+    }
+
+    .slider-panel p {
+        font-size: 12px;
+        margin: 0;
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.3;
+    }
+
+
+    .slider-panel::after {
+        content: '→';
+        font-size: 24px;
+        color: rgba(255, 255, 255, 0.4);
+        margin-left: 12px;
+        transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        flex-shrink: 0;
+        font-weight: 300;
+        will-change: transform;
+        padding-left: 8px;
+    }
+
+    .slider-panel.right::after {
+        transform: rotate(0deg);
+        content: '→';
+    }
+
+    .slider-panel.left::after {
+        transform: rotate(180deg);
+        content: '←';
+    }
+
+
+    .blocks-wrapper {
+        position: relative;
+        flex: 1;
+        overflow: hidden;
+        min-height: 400px;
+    }
+
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        padding: 20px 18px 25px;
+        box-sizing: border-box;
+        transition: transform 0.5s cubic-bezier(0.4, 0, 0.2, 1),
+            opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        will-change: transform, opacity;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        overflow-y: auto;
+        display: flex !important;
+        flex-direction: column;
+    }
+
+
+    .blocksOfEntrance {
+        transform: translateX(0);
+        opacity: 1;
+        z-index: 2;
+        pointer-events: auto;
+    }
+
+
+    .blocksRegistration {
+        transform: translateX(100%);
+        opacity: 0;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+
+    .slider-panel.left~.blocks-wrapper .blocksOfEntrance {
+        transform: translateX(-100%);
+        opacity: 0;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+    .slider-panel.left~.blocks-wrapper .blocksRegistration {
+        transform: translateX(0);
+        opacity: 1;
+        z-index: 2;
+        pointer-events: auto;
+    }
+
+
+    .slider-panel.right~.blocks-wrapper .blocksOfEntrance {
+        transform: translateX(0);
+        opacity: 1;
+        z-index: 2;
+        pointer-events: auto;
+    }
+
+    .slider-panel.right~.blocks-wrapper .blocksRegistration {
+        transform: translateX(100%);
+        opacity: 0;
+        z-index: 1;
+        pointer-events: none;
+    }
+
+
+    .dontHaveAccount,
+    .haveAccount {
+        margin-top: auto;
+        padding-top: 8px;
+        justify-content: center;
+        gap: 4px;
+        flex-shrink: 0;
+        align-items: center;
+    }
+
+    .dontHaveAccount p,
+    .haveAccount p {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.5);
+        margin: 0;
+    }
+
+    .dontHaveAccount .switch-btn,
+    .haveAccount .switch-btn {
+        font-size: 13px;
+        color: #ff3241;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 4px 8px;
+        font-weight: 400;
+        transition: all 0.2s ease;
+        border-radius: 4px;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    .dontHaveAccount .switch-btn:hover,
+    .haveAccount .switch-btn:hover {
+        color: #ff6b7a;
+        background: rgba(255, 50, 65, 0.1);
+    }
+
+    .dontHaveAccount .switch-btn:active,
+    .haveAccount .switch-btn:active {
+        transform: scale(0.95);
+    }
+
+
+    .personalData,
+    .userAgreement {
+        gap: 8px;
+        padding: 6px 4px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 6px;
+        border: 1px solid rgba(255, 255, 255, 0.06);
+        transition: all 0.2s ease;
+        flex-shrink: 0;
+    }
+
+    .personalData:hover,
+    .userAgreement:hover {
+        background: rgba(255, 255, 255, 0.08);
+        border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .personalData div p,
+    .userAgreement div p {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.8);
+        margin: 0;
+    }
+
+    .personalData a,
+    .userAgreement a {
+        font-size: 11px;
+        color: #ff6b7a;
+        text-decoration: none;
+        border-bottom: 1px solid rgba(255, 107, 122, 0.3);
+        transition: all 0.25s ease;
+    }
+
+    .personalData a:hover,
+    .userAgreement a:hover {
+        color: #ff8a96;
+        border-bottom-color: #ff8a96;
+    }
+
+    .chekBoxPersonalData,
+    .userAgreement input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        min-width: 16px;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 2px solid rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.05);
+        cursor: pointer;
+        position: relative;
+        transition: all 0.25s ease;
+        margin: 0;
+        flex-shrink: 0;
+    }
+
+    .chekBoxPersonalData:checked,
+    .userAgreement input[type="checkbox"]:checked {
+        background: linear-gradient(135deg, #a00819, #ff3241);
+        border-color: #a00819;
+    }
+
+    .chekBoxPersonalData:checked::after,
+    .userAgreement input[type="checkbox"]:checked::after {
+        content: '✓';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: white;
+        font-size: 11px;
+        font-weight: 700;
+    }
+
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 17px;
+        margin-bottom: 14px;
+        font-family: 'Roboto', sans-serif;
+        font-weight: 500;
+        color: white;
+        text-align: center;
+        flex-shrink: 0;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 14px;
+        padding: 10px 14px;
+        margin-bottom: 8px;
+        background-color: rgba(255, 255, 255, 0.1);
+        border: none;
+        width: 100%;
+        box-sizing: border-box;
+        border-radius: 3px;
+        color: white;
+        outline: none;
+        transition: background 0.2s;
+        flex-shrink: 0;
+    }
+
+    .entranceEmail:focus,
+    .entrancePassword:focus,
+    .registrationEmail:focus,
+    .registrationPassword:focus,
+    .forceRegistrtrationPassword:focus {
+        background-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .entranceEmail::placeholder,
+    .entrancePassword::placeholder,
+    .registrationEmail::placeholder,
+    .registrationPassword::placeholder,
+    .forceRegistrtrationPassword::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+    }
+
+    .buttonEntrance,
+    .buttonRegistration {
+        background: linear-gradient(270deg, #a00819, #ff3241);
+        background-size: 400% 400%;
+        color: white;
+        padding: 11px 16px;
+        border: none;
+        border-radius: 7px;
+        font-size: 14px;
+        cursor: pointer;
+        animation: gradientShift 6s ease infinite;
+        width: 100%;
+        margin: 6px 0 0 0;
+        font-weight: 500;
+        transition: transform 0.2s;
+        flex-shrink: 0;
+    }
+
+    .buttonEntrance:hover,
+    .buttonRegistration:hover {
+        transform: scale(1.02);
+    }
+
+    .buttonEntrance:active,
+    .buttonRegistration:active {
+        transform: scale(0.98);
+    }
+
+    @keyframes gradientShift {
+        0% {
+            background-position: 0% 50%;
+        }
+
+        50% {
+            background-position: 100% 50%;
+        }
+
+        100% {
+            background-position: 0% 50%;
+        }
+    }
+
+
+    .blocksOfEntrance form,
+    .blocksRegistration form {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        height: 100%;
+    }
+
+
+    .cookies {
+        width: 42%;
+        max-width: 340px;
+        bottom: 3%;
+        right: -100%;
+        border-radius: 10px;
+        padding: 14px 16px;
+        background-color: #9b001a;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        position: fixed;
+        transition: all 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        z-index: 1000;
+    }
+
+    .cookies.active {
+        bottom: 3%;
+        width: 48%;
+        transition: all 1s ease;
+    }
+
+    .cookies p {
+        font-size: 12px;
+        margin: 0 0 10px 0;
+        text-align: center;
+        line-height: 1;
+        color: white;
+        font-family: 'Roboto', sans-serif;
+        font-weight: 300;
+    }
+
+    .cookiesGood,
+    .cookiesFail {
+        font-size: 11px;
+        padding: 6px 14px;
+        border-radius: 4px;
+        font-weight: 500;
+        cursor: pointer;
+        border: none;
+        transition: all 0.2s ease;
+        font-family: 'Roboto', sans-serif;
+    }
+
+    .cookiesGood {
+        background: white;
+        color: #810016;
+    }
+
+    .cookiesGood:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .cookiesFail {
+        background: rgba(255, 255, 255, 0.15);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .cookiesFail:hover {
+        background: rgba(255, 255, 255, 0.25);
+    }
+
+    .buttonOfCookies {
+        width: 100%;
+        gap: 10px;
+        margin-bottom: 0;
+        justify-content: center;
+        display: flex;
+    }
+}
+
+
+
+
+@media screen and (max-width: 575px) {
+    .blocksOfToService {
+        padding: 10px 6px;
+    }
+
+    .borderOther {
+        padding: 2px;
+        border-radius: 10px;
+    }
+
+    .borderOther::before {
+        inset: -2px;
+        border-radius: 10px;
+        padding: 2px;
+    }
+
+    .borderInner {
+        border-radius: 10px;
+        min-height: 480px;
+    }
+
+    .blocks-wrapper {
+        min-height: 380px;
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding: 16px 12px 20px;
+    }
+
+    .slider-panel {
+        padding: 14px 16px;
+        min-height: 54px;
+        border-radius: 10px 10px 0 0;
+    }
+
+    .slider-panel h2 {
+        font-size: 15px;
+    }
+
+    .slider-panel p {
+        font-size: 11px;
+    }
+
+    .slider-panel::after {
+        font-size: 20px;
+    }
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 16px;
+        margin-bottom: 12px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 13px;
+        padding: 9px 12px;
+        margin-bottom: 8px;
+    }
+
+    .buttonEntrance,
+    .buttonRegistration {
+        padding: 9px 12px;
+        font-size: 12px;
+        border-radius: 5px;
+    }
+
+    .dontHaveAccount p,
+    .haveAccount p {
+        font-size: 12px;
+    }
+
+    .dontHaveAccount .switch-btn,
+    .haveAccount .switch-btn {
+        font-size: 12px;
+    }
+
+    .personalData,
+    .userAgreement {
+        gap: 6px;
+        padding: 5px 3px;
+    }
+
+    .personalData div p,
+    .userAgreement div p {
+        font-size: 10px;
+    }
+
+    .personalData a,
+    .userAgreement a {
+        font-size: 10px;
+    }
+
+    .chekBoxPersonalData,
+    .userAgreement input[type="checkbox"] {
+        width: 14px;
+        height: 14px;
+        min-width: 14px;
+    }
+
+    .cookies {
+        padding: 12px 14px;
+        max-width: 300px;
+    }
+
+    .cookies p {
+        font-size: 11px;
+    }
+
+    .cookiesGood,
+    .cookiesFail {
+        font-size: 10px;
+        padding: 5px 12px;
+    }
+}
+
+
+
+
+@media screen and (max-width: 399px) {
+    .blocksOfToService {
+        padding: 0px 4px;
+    }
+
+    .borderOther {
+        padding: 2px;
+        border-radius: 8px;
+    }
+
+    .borderOther::before {
+        inset: -2px;
+        border-radius: 8px;
+        padding: 2px;
+    }
+
+    .borderInner {
+        border-radius: 8px;
+        min-height: 440px;
+    }
+
+    .blocks-wrapper {
+        min-height: 350px;
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding: 12px 10px 16px;
+    }
+
+    .slider-panel {
+        padding: 10px 12px;
+        min-height: 46px;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .slider-panel h2 {
+        font-size: 13px;
+    }
+
+    .slider-panel p {
+        font-size: 10px;
+    }
+
+    .slider-panel::after {
+        font-size: 18px;
+    }
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 14px;
+        margin-bottom: 10px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 12px;
+        padding: 7px 10px;
+        margin-bottom: 6px;
+    }
+
+    .buttonEntrance,
+    .buttonRegistration {
+        padding: 7px 10px;
+        font-size: 11px;
+    }
+
+    .dontHaveAccount p,
+    .haveAccount p {
+        font-size: 11px;
+    }
+
+    .dontHaveAccount .switch-btn,
+    .haveAccount .switch-btn {
+        font-size: 11px;
+    }
+
+    .personalData,
+    .userAgreement {
+        gap: 4px;
+        padding: 4px 2px;
+    }
+
+    .personalData div p,
+    .userAgreement div p {
+        font-size: 9px;
+    }
+
+    .personalData a,
+    .userAgreement a {
+        font-size: 9px;
+    }
+
+    .chekBoxPersonalData,
+    .userAgreement input[type="checkbox"] {
+        width: 13px;
+        height: 13px;
+        min-width: 13px;
+    }
+
+    .cookies {
+        padding: 10px 12px;
+        max-width: 260px;
+    }
+
+    .cookies p {
+        font-size: 10px;
+        margin: 0 0 8px 0;
+    }
+
+    .cookiesGood,
+    .cookiesFail {
+        font-size: 9px;
+        padding: 4px 10px;
+    }
+}
+
+
+
+
+@media screen and (max-height: 500px) and (orientation: landscape) {
+    .blocksOfToService {
+        min-height: 100vh;
+        padding: 8px 10px;
+    }
+
+    .borderOther {
+        max-width: 600px;
+        padding: 2px;
+    }
+
+    .borderInner {
+        min-height: 340px;
+    }
+
+    .blocks-wrapper {
+        min-height: 260px;
+    }
+
+    .slider-panel {
+        min-height: 40px;
+        padding: 8px 16px;
+        border-radius: 8px 8px 0 0;
+    }
+
+    .slider-panel h2 {
+        font-size: 13px;
+    }
+
+    .slider-panel p {
+        font-size: 10px;
+    }
+
+    .slider-panel::after {
+        font-size: 16px;
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding: 10px 14px 14px;
+    }
+
+    .headingEntr,
+    .headingRegistration {
+        font-size: 13px;
+        margin-bottom: 6px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        font-size: 11px;
+        padding: 5px 10px;
+        margin-bottom: 4px;
+        min-height: 32px;
+    }
+
+    .buttonEntrance,
+    .buttonRegistration {
+        padding: 5px 10px;
+        font-size: 10px;
+        margin-top: 2px;
+        min-height: 32px;
+    }
+
+    .personalData,
+    .userAgreement {
+        padding: 3px 2px;
+    }
+
+    .personalData div p,
+    .userAgreement div p {
+        font-size: 9px;
+    }
+
+    .personalData a,
+    .userAgreement a {
+        font-size: 9px;
+    }
+
+    .chekBoxPersonalData,
+    .userAgreement input[type="checkbox"] {
+        width: 12px;
+        height: 12px;
+        min-width: 12px;
+    }
+
+    .dontHaveAccount p,
+    .haveAccount p {
+        font-size: 10px;
+    }
+
+    .dontHaveAccount .switch-btn,
+    .haveAccount .switch-btn {
+        font-size: 10px;
+    }
+
+    .cookies {
+        padding: 6px 12px;
+        max-width: 260px;
+    }
+
+    .cookies p {
+        font-size: 10px;
+        margin: 0 0 4px 0;
+    }
+
+    .cookiesGood,
+    .cookiesFail {
+        font-size: 9px;
+        padding: 3px 10px;
+        min-height: 28px;
+    }
+}
+
+
+
+
+@media (pointer: coarse) {
+
+    .buttonEntrance,
+    .buttonRegistration,
+    .dontHaveAccount .switch-btn,
+    .haveAccount .switch-btn {
+        min-height: 44px;
+    }
+
+    .cookiesGood,
+    .cookiesFail {
+        min-height: 23px;
+    }
+
+    .entranceEmail,
+    .entrancePassword,
+    .registrationEmail,
+    .registrationPassword,
+    .forceRegistrtrationPassword {
+        min-height: 44px;
+        font-size: 16px !important;
+    }
+
+    .chekBoxPersonalData,
+    .userAgreement input[type="checkbox"] {
+        min-height: 20px;
+        min-width: 20px;
+    }
+
+    .slider-panel {
+        cursor: pointer;
+        padding: 16px 5px;
+    }
+
+    .slider-panel::after {
+        padding: 8px 4px 8px 0;
+    }
+}
+
+
+@media screen and (max-width: 767px) {
+
+    body,
+    .blocksOfToService {
+        overflow-x: hidden;
+    }
+
+    .borderOther {
+        overflow: visible;
+    }
+}
