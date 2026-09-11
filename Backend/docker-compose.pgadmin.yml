@@ -1,0 +1,24 @@
+services:
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ctp_pgadmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@checktheplants.ru
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - ctp_network          
+
+volumes:
+  pgadmin_data:
+
+networks:
+  ctp_network:
+    external: true
+    name: backend_ctp_network    # ← точное имя

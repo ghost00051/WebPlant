@@ -1,0 +1,17 @@
+.toolsSelect {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+}
+.toolsSelect p {
+  display: none;
+}
+
+.blocksOftools {
+  background-color: #810016;
+  position: fixed;
+  width: 100vw;
+  bottom: 0%;
+border-top-left-radius: 8px;
+border-top-right-radius: 8px;
+}

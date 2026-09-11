@@ -7,19 +7,33 @@ import sequelize from "./db.js"
 import "./models/userModels.js"
 import "./models/userCookieConsentModels.js"
 import "./models/userLegalConsentModels.js"
+import "./models/PushSubscription.js"
+import pushRouter from "./routes/pushRoutes.js"
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
+
 
 dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 5000
 
+app.set('trust proxy', 1)
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 app.use(cors({
-    origin: 'http://localhost:5173',
-    credentials: true
+    origin: [
+        process.env.FRONTEND_URL,
+        'http://localhost:5173',
+        'http://192.168.0.167:5173'
+    ],
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 }))
+
 app.use(cookieParser())
 app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
@@ -27,6 +41,7 @@ app.use(getGuestToken)
 
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", userCookieConsentRouter)
+app.use("/api/push", pushRouter)
 
 app.use((err, req, res, next) => {
     console.error("❌ Error:", err)

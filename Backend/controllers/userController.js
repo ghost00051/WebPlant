@@ -16,14 +16,14 @@ function generateJWT(id, email, role) {
 }
 
 class UserController {
-   async registration(req, res) {
+    async registration(req, res) {
         try {
-            const { 
-                email, 
-                password, 
+            const {
+                email,
+                password,
                 role,
-                privacyPolicyAccepted, 
-                termsAccepted 
+                privacyPolicyAccepted,
+                termsAccepted
             } = req.body
 
             if (!email || !password) {
@@ -37,7 +37,7 @@ class UserController {
                     message: "Необходимо согласие на обработку персональных данных"
                 })
             }
-            
+
             if (!termsAccepted) {
                 return res.status(400).json({
                     message: "Необходимо принять пользовательское соглашение"
@@ -46,16 +46,16 @@ class UserController {
 
             const candidate = await User.findOne({ where: { email } })
             if (candidate) {
-                return res.status(409).json({ 
-                    message: "Пользователь с таким email уже существует" 
+                return res.status(409).json({
+                    message: "Пользователь с таким email уже существует"
                 })
             }
 
             const hashPassword = bcrypt.hashSync(password, 5)
-            const user = await User.create({ 
-                email, 
-                password: hashPassword, 
-                role: role || 'USER' 
+            const user = await User.create({
+                email,
+                password: hashPassword,
+                role: role || 'USER'
             })
 
             const guestToken = req.cookies.guest_token
@@ -90,7 +90,7 @@ class UserController {
 
             if (guestToken) {
                 const [updatedCount] = await UserCookieConsent.update(
-                    { 
+                    {
                         user_id: user.id,
                         source: 'registration_linked'
                     },
@@ -108,12 +108,11 @@ class UserController {
 
             res.cookie('token', token, {
                 httpOnly: true,
-                secure: false,
-                sameSite: 'lax',
-                maxAge: 24 * 60 * 60 * 1000,
-                path: '/'
+                secure: true,
+                sameSite: 'none',
+                maxAge: 30 * 24 * 60 * 60 * 1000,
+                path: '/',
             })
-
             return res.status(201).json({
                 message: 'Регистрация успешна',
                 user: {

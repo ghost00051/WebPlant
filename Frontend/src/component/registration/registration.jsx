@@ -12,12 +12,35 @@ function Registration() {
   const [active, setActive] = useState(false)
   const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false);
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [emailEntr, setEmailEntr] = useState('');
+  const [passwordEntr, setPasswordEntr] = useState('');
   const navigate = useNavigate()
+
+
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const response = await fetch('https://server.checktheplants.ru/api/users/me', {
+          method: 'GET',
+          credentials: 'include'
+        })
+        if (response.ok) {
+          navigate('/home')
+        } else {
+          console.log('Пользователь не авторизован')
+        }
+      } catch (error) {
+        console.error('Ошибка проверки авторизации:', error)
+      } finally {
+      }
+    }
+    checkAuth()
+  }, [navigate])
 
   const handleRegister = async (event) => {
     event.preventDefault()
     try {
-      const response = await fetch('http://localhost:5000/api/users/registration', {
+      const response = await fetch('https://server.checktheplants.ru/api/users/registration', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -44,12 +67,36 @@ function Registration() {
     }
   }
 
-  // const handleLogin = async (event) => {
+  const handleLogin = async (event) => {
+    event.preventDefault()
+    try {
+      const response = await fetch('https://server.checktheplants.ru/api/users/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: emailEntr,
+          password: passwordEntr
+        }),
+        credentials: 'include'
+      })
+
+      if (response.ok) {
+        navigate('/home')
+      } else {
+        alert('Ошибка входа: ' + (responseData.message || 'Неверный email или пароль'))
+      }
+    } catch (error) {
+      console.error('Login error:', error)
+      alert('Ошибка при входе. Проверьте консоль.')
+    }
+  }
 
   const handleAcceptAll = async () => {
     setActive(false)
     try {
-      const response = await fetch('http://localhost:5000/api/cookie-consents/all', {
+      const response = await fetch('https://server.checktheplants.ru/api/cookie-consents/all', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -74,7 +121,7 @@ function Registration() {
   const handleRejectAll = async () => {
     setActive(false)
     try {
-      const response = await fetch('http://localhost:5000/api/cookie-consents/all', {
+      const response = await fetch('https://server.checktheplants.ru/api/cookie-consents/all', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -129,18 +176,22 @@ function Registration() {
           <div className='blocks-wrapper'>
             <div className='blocksOfEntrance'>
               <p className='headingEntr'>Вход</p>
-              <form>
+              <form onSubmit={handleLogin}>
                 <input
                   type='email'
                   placeholder='Email'
                   className='entranceEmail'
                   autoComplete='email'
+                  required
+                  onChange={(e) => setEmailEntr(e.target.value)}
                 />
                 <input
                   type='password'
                   placeholder='Пароль'
                   className='entrancePassword'
                   autoComplete='current-password'
+                  required
+                  onChange={(e) => setPasswordEntr(e.target.value)}
                 />
                 <button className='buttonEntrance' type='submit'>
                   Войти
