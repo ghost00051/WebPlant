@@ -7,6 +7,7 @@ import {
     isStandalone
 } from '../../utils/pushNotifications.js'
 import Tools from '../tools/tools.jsx'
+import AddPlants from '../addPlants/addPlants.jsx'
 
 function Home() {
     const navigate = useNavigate()
@@ -86,7 +87,6 @@ function Home() {
 
     return (
         <div className="gofOfMain">
-            <p>Привет</p>
             {/* <DayPicker
                 mode="single"
                 selected={selected}
@@ -96,6 +96,7 @@ function Home() {
                 }
             /> */}
             <Tools />
+            <AddPlants/>
             {showPrompt && (
                 <NotificationPrompt
                     userId={user.id}

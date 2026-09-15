@@ -8,10 +8,12 @@ import "./models/userModels.js"
 import "./models/userCookieConsentModels.js"
 import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
+import "./models/Plant.js"     
 import pushRouter from "./routes/pushRoutes.js"
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
+import plantRouter from "./routes/plantRoutes.js" 
 
 
 dotenv.config()
@@ -23,12 +25,22 @@ app.set('trust proxy', 1)
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
+
 app.use(cors({
-    origin: [
-        process.env.FRONTEND_URL,
-        'http://localhost:5173',
-        'http://192.168.0.167:5173'
-    ],
+    origin: (origin, callback) => {
+        const allowed = [
+            process.env.FRONTEND_URL,
+            'http://localhost:5173',
+            'http://192.168.0.167:5173',
+            'http://192.168.0.176:5173',
+        ].filter(Boolean)
+        const isLocalNetwork = origin && /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)
+        if (!origin || allowed.includes(origin) || isLocalNetwork) {
+            callback(null, true)
+        } else {
+            callback(new Error('Not allowed by CORS'))
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
@@ -42,6 +54,7 @@ app.use(getGuestToken)
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", userCookieConsentRouter)
 app.use("/api/push", pushRouter)
+app.use("/api/plants", plantRouter)    
 
 app.use((err, req, res, next) => {
     console.error("❌ Error:", err)

@@ -1,0 +1,62 @@
+body {
+    background-color: #FAF8F5;
+}
+
+.godOfbarCheckFilling {
+    width: 100vw;
+}
+
+.barCheckFilling {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    margin: 0 7%;
+}
+
+
+.secondStep {
+    width: 7vh;
+    height: 0.4vh;
+    background-color: #E8E4DF;
+    border-radius: 14px;
+}
+
+.firstStep {
+    position: relative;
+    display: inline-block;
+    width: 7vh;
+    height: 0.4vh;
+    background-color: #E8E4DF;
+    border-radius: 14px;
+    overflow: hidden;
+}
+
+
+.firstStep::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #7C9082;
+    transform-origin: left center;
+    transform: scaleX(0);
+    transition: transform 0.4s ease-in-out;
+}
+
+.firstStep.active::before {
+    transform: scaleX(1);
+}
+
+.secondStep.active {
+    background-color: #7C9082;
+}
+
+.numbersOfFirstStep {
+    font-family: "Open Sans";
+    src: url("fonts/ofont.ru_Open Sans.ttf") format("truetype");
+    font-weight: 600;
+    font-style: normal;
+    font-display: swap;
+}

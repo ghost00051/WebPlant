@@ -1,6 +1,7 @@
 import webpush from 'web-push'
 import dotenv from 'dotenv'
 import PushSubscription from '../models/PushSubscription.js'
+import { Op } from 'sequelize'
 
 dotenv.config()
 
@@ -21,6 +22,31 @@ class PushService {
             return { success: false, message: 'No subscriptions' }
         }
 
+        return this.sendToSubscriptions(subscriptions, title, body, icon, data)
+    }
+
+    async sendToAll(title, body, icon = '/icon-192.png', data = {}) {
+        const subscriptions = await PushSubscription.findAll()
+        
+        if (subscriptions.length === 0) {
+            console.log('⚠️ Нет подписок в системе')
+            return { success: false, message: 'No subscriptions' }
+        }
+        
+        console.log(`📤 Рассылка на ${subscriptions.length} подписок`)
+        return this.sendToSubscriptions(subscriptions, title, body, icon, data)
+    }
+
+    async sendToFiltered(whereCondition, title, body, icon = '/icon-192.png', data = {}) {
+        const subscriptions = await PushSubscription.findAll({
+            where: whereCondition
+        })
+
+        console.log(`📤 Рассылка на ${subscriptions.length} подписок`)
+        return this.sendToSubscriptions(subscriptions, title, body, icon, data)
+    }
+
+    async sendToSubscriptions(subscriptions, title, body, icon, data) {
         const payload = JSON.stringify({
             title,
             body,
@@ -29,7 +55,11 @@ class PushService {
             data
         })
 
-        const results = []
+        let sent = 0
+        let failed = 0
+        let removed = 0
+        const errors = []
+
         for (const sub of subscriptions) {
             try {
                 await webpush.sendNotification(
@@ -40,29 +70,38 @@ class PushService {
                             auth: sub.auth
                         }
                     },
-                    payload
+                    payload,
+                    {
+                        headers: {
+                            'Content-Type': 'application/json; charset=utf-8'
+                        }
+                    }
                 )
-                console.log(`✅ Push отправлен: ${sub.endpoint.slice(0, 50)}...`)
-                results.push({ endpoint: sub.endpoint, success: true })
+                
+                sent++
+                console.log(`✅ ${sent}/${subscriptions.length} — ${sub.endpoint.slice(0, 50)}...`)
             } catch (error) {
-                console.error(`❌ Ошибка push:`, error.message)
+                failed++
+                console.error(`❌ Ошибка: ${error.message}`)
+                errors.push({ endpoint: sub.endpoint, error: error.message })
+                
                 if (error.statusCode === 410 || error.statusCode === 404) {
                     await sub.destroy()
-                    console.log(`🗑️ Подписка удалена (устарела)`)
+                    removed++
+                    console.log(`🗑️ Удалена устаревшая подписка`)
                 }
-                results.push({ endpoint: sub.endpoint, success: false, error: error.message })
             }
         }
 
-        return { success: true, results }
-    }
+        console.log(`\n📊 Итого: ${sent} отправлено, ${failed} ошибок, ${removed} удалено\n`)
 
-    async sendToAll(title, body, icon, data) {
-        const subscriptions = await PushSubscription.findAll()
-        const userIds = [...new Set(subscriptions.map(s => s.user_id).filter(Boolean))]
-        
-        for (const userId of userIds) {
-            await this.sendToUser(userId, title, body, icon, data)
+        return {
+            success: true,
+            total: subscriptions.length,
+            sent,
+            failed,
+            removed,
+            errors: errors.length > 0 ? errors : undefined
         }
     }
 }

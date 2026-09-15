@@ -1,5 +1,4 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
-import { Navigate } from 'react-router-dom'
 import Registration from './component/registration/registration.jsx'
 import Home from './component/home/home.jsx'
 
@@ -9,7 +8,6 @@ function App () {
       <Routes>
         <Route path='/' element={<Registration />} />
         <Route path='/home' element={<Home />} />
-        <Route path='/' element={<Navigate to='/home' replace />} />÷{' '}
       </Routes>
     </Router>
   )

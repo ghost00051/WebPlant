@@ -1,17 +1,212 @@
-.toolsSelect {
+/* ===== Обёртка ===== */
+.toolsWrapper {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100vw;
   display: flex;
-  justify-content: space-around;
-  align-items: center;
-}
-.toolsSelect p {
-  display: none;
+  justify-content: center;
+  padding: 0 0 1rem;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 100;
 }
 
-.blocksOftools {
-  background-color: #810016;
-  position: fixed;
-  width: 100vw;
-  bottom: 0%;
-border-top-left-radius: 8px;
-border-top-right-radius: 8px;
+/* ===== Таббар ===== */
+.tabbar {
+  --accent-color: #ff3241;
+  --app-content-background-color: #810016;
+
+  background: var(--app-content-background-color);
+  border-radius: 1rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  height: 150px;
+  width: 400px;
+  max-width: 95vw;
+  display: flex;
+  flex-direction: column;
+  box-sizing: content-box;
+  position: relative;
+  overflow: hidden;
+  transition: background-color 0.4s;
+  pointer-events: auto;
+}
+
+/* ===== Список вкладок ===== */
+.tabbar ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  background: #1a0003;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 5px;
+  height: 50px;
+}
+
+/* ===== Вкладка ===== */
+.tabbar li {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  font-size: 1rem;
+  transition: all 0.4s;
+  width: 60px;
+  height: 60px;
+  position: relative;
+  background: #1a0003;
+  color: rgba(255, 255, 255, 0.45);
+  cursor: pointer;
+  list-style: none;
+}
+
+.tabbar li img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+  transition: filter 0.3s;
+  /* Делаем иконки светлыми, если они тёмные/чёрные SVG */
+  filter: brightness(0) invert(1) opacity(0.45);
+}
+
+.tabbar li.active img {
+  filter: brightness(0) invert(1) opacity(1);
+}
+
+/* ===== Подпись под вкладкой ===== */
+.tab-label {
+  position: absolute;
+  top: 70px;
+  font-size: 0.6rem;
+  font-family: 'Roboto', sans-serif;
+  color: #ff6b7a;
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+  pointer-events: none;
+  max-width: 80px;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  text-align: center;
+}
+
+.tabbar li.active .tab-label {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ===== Стиль 1 (пузырь) ===== */
+.tab-style1 li {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 60px;
+  height: 50px;
+  top: 1px;
+  left: 0;
+  transition: top 0.2s ease-out, width 0.4s;
+}
+
+.tab-style1 li.follow {
+  position: absolute;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+  box-sizing: border-box;
+  border: 10px solid var(--app-content-background-color);
+  top: -3rem;
+  background: var(--app-content-background-color);
+  transition: left 0.4s ease-in, border-color 0.4s;
+  /* left задаётся через inline-style из React */
+}
+
+.tab-style1 li.follow::before,
+.tab-style1 li.follow::after {
+  content: " ";
+  position: absolute;
+  top: 27px;
+  right: -27px;
+  border-top: 11px solid var(--app-content-background-color);
+  background-color: #1a0003;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  transition: border-color 0.4s;
+}
+
+.tab-style1 li.follow::before {
+  left: -27px;
+  border-top-right-radius: 100%;
+  right: unset;
+}
+
+.tab-style1 li.follow::after {
+  border-top-left-radius: 100%;
+}
+
+.tab-style1 .active {
+  width: 60px;
+  height: 60px;
+  top: -2rem;
+  z-index: 100;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #a00819, #ff3241);
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(255, 50, 65, 0.45),
+              0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+/* Иконка активной вкладки — белая */
+.tab-style1 .active img {
+  filter: brightness(0) invert(1) opacity(1);
+}
+
+/* ===== Цветовые темы вкладок (в единой гамме) ===== */
+.home.active { color: #ff6b7a; }
+.home-style { --app-content-background-color: #810016; }
+
+.products.active { color: #ff6b7a; }
+.products-style { --app-content-background-color: #9b001a; }
+
+.services.active { color: #ff6b7a; }
+.services-style { --app-content-background-color: #c70118; }
+
+.about.active { color: #ff6b7a; }
+.about-style { --app-content-background-color: #a00819; }
+
+/* ===== Адаптив ===== */
+@media (max-width: 360px) {
+  .tabbar {
+    width: 100%;
+    max-width: 100vw;
+    border-radius: 0;
+  }
+
+  .tabbar li,
+  .tab-style1 li {
+    width: 52px;
+  }
+
+  .tab-style1 li.follow,
+  .tab-style1 .active {
+    width: 52px;
+    height: 52px;
+  }
+
+  .tab-label {
+    font-size: 0.55rem;
+    max-width: 64px;
+  }
+}
+
+@media (max-width: 320px) {
+  .tab-label {
+    display: none;
+  }
 }

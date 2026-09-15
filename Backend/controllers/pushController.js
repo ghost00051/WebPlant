@@ -74,7 +74,7 @@ class PushController {
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
-
+    
     async sendToUser(req, res) {
         try {
             const { userId, title, body, icon, data } = req.body
@@ -85,6 +85,44 @@ class PushController {
             return res.json(result)
         } catch (error) {
             console.error('❌ Ошибка отправки:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async sendToAll(req, res) {
+        try {
+            const { title, body, icon, data } = req.body
+            if (!title || !body) {
+                return res.status(400).json({ message: 'title и body обязательны' })
+            }
+            
+            console.log(`📢 Массовая рассылка: "${title}"`)
+            const result = await pushService.sendToAll(title, body, icon, data)
+            return res.json(result)
+        } catch (error) {
+            console.error('❌ Ошибка массовой рассылки:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async getStats(req, res) {
+        try {
+            const total = await PushSubscription.count()
+            const users = await PushSubscription.count({
+                distinct: true,
+                col: 'user_id'
+            })
+            const guests = await PushSubscription.count({
+                where: { user_id: null }
+            })
+            
+            return res.json({
+                total,
+                users,
+                guests
+            })
+        } catch (error) {
+            console.error('❌ Ошибка статистики:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }

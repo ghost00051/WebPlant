@@ -57,6 +57,7 @@ function Registration() {
       const responseData = await response.json()
 
       if (response.ok) {
+        console.log(responseData)
         navigate('/home')
       } else {
         console.error(error)
@@ -72,19 +73,20 @@ function Registration() {
     try {
       const response = await fetch('https://server.checktheplants.ru/api/users/login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: emailEntr,
-          password: passwordEntr
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailEntr, password: passwordEntr }),
         credentials: 'include'
       })
 
+      console.log('Status:', response.status)
+      console.log('OK:', response.ok)
+
       if (response.ok) {
+        const data = await response.json()
+        console.log('Login success:', data)
         navigate('/home')
       } else {
+        const responseData = await response.json() 
         alert('Ошибка входа: ' + (responseData.message || 'Неверный email или пароль'))
       }
     } catch (error) {
