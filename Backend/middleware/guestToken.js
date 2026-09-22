@@ -1,9 +1,17 @@
 import { v4 as uuidv4 } from 'uuid'
 
-const GUEST_TOKEN_LIFETIME = 60 * 60 * 1000 
+const GUEST_TOKEN_LIFETIME = 60 * 60 * 1000
 
 export function generateGuestToken() {
     return `guest_${uuidv4().replace(/-/g, '')}_${Date.now()}`
+}
+
+const cookieOptions = {
+    maxAge: GUEST_TOKEN_LIFETIME,
+    httpOnly: true,
+    sameSite: 'none',
+    secure: true,
+    path: '/'
 }
 
 export function getGuestToken(req, res, next) {
@@ -11,14 +19,7 @@ export function getGuestToken(req, res, next) {
 
     if (!guestToken) {
         guestToken = generateGuestToken()
-
-        res.cookie('guest_token', guestToken, {
-            maxAge: GUEST_TOKEN_LIFETIME,
-            httpOnly: true,
-            sameSite: 'lax',
-            path: '/'
-        })
-
+        res.cookie('guest_token', guestToken, cookieOptions)
         console.log(`🆕 Создан новый guest_token: ${guestToken} (живёт 1 час)`)
     } else {
         const tokenData = parseGuestToken(guestToken)
@@ -26,14 +27,7 @@ export function getGuestToken(req, res, next) {
             const tokenAge = Date.now() - tokenData.timestamp
             if (tokenAge > GUEST_TOKEN_LIFETIME) {
                 guestToken = generateGuestToken()
-
-                res.cookie('guest_token', guestToken, {
-                    maxAge: GUEST_TOKEN_LIFETIME,
-                    httpOnly: true,
-                    sameSite: 'lax',
-                    path: '/'
-                })
-
+                res.cookie('guest_token', guestToken, cookieOptions)
                 console.log(`🔄 Старый guest_token истёк, создан новый: ${guestToken}`)
             } else {
                 console.log(`🔄 Найден guest_token: ${guestToken} (осталось ${Math.round((GUEST_TOKEN_LIFETIME - tokenAge) / 60000)} мин.)`)

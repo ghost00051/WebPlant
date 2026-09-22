@@ -1,0 +1,149 @@
+@media (min-width: 640px) {
+    .formForPlant {
+        max-width: 520px;
+        margin: 0 auto;
+        padding-left: 24px;
+        padding-right: 24px;
+    }
+
+    .wateringPreset {
+        font-size: 13px;
+        padding: 14px 10px;
+    }
+
+    .wateringWeekday {
+        font-size: 13px;
+        padding: 0;
+    }
+
+    .headerOfBlockAddPlants {
+        font-size: 26px;
+        margin-top: 40px;
+        margin-bottom: 28px;
+    }
+
+    .barCheckFilling {
+        gap: 12px;
+    }
+
+    .firstStep,
+    .secondStep {
+        height: 4px;
+    }
+
+    .numbersOfFirstStep,
+    .numbersOfSecondStep,
+    .numbersOfThirdStep {
+        font-size: 15px;
+        padding: 6px 12px;
+    }
+
+    .addPhotoPlant,
+    .addNamePlant,
+    .wateringFrequency,
+    .presetPlantCheck,
+    .blocksOfWeekDay {
+        border-radius: 14px;
+    }
+
+    .headerfirstStepCheck p:nth-child(1) {
+        font-size: 15px;
+    }
+
+    .headerfirstStepCheck p:nth-child(2) {
+        font-size: 13px;
+    }
+}
+
+
+@media (min-width: 1024px) {
+    .formForPlant {
+        max-width: 600px;
+        padding-bottom: 160px;
+    }
+
+    .headerOfBlockAddPlants {
+        font-size: 32px;
+        margin-top: 56px;
+        margin-bottom: 36px;
+    }
+
+    .firstStep,
+    .secondStep {
+        height: 5px;
+    }
+
+    .barCheckFilling {
+        gap: 16px;
+        margin-bottom: 32px;
+    }
+
+    .numbersOfFirstStep,
+    .numbersOfSecondStep,
+    .numbersOfThirdStep {
+        font-size: 16px;
+        padding: 6px 14px;
+    }
+
+    .headerfirstStepCheck p:nth-child(1) {
+        font-size: 16px;
+        margin-bottom: 6px;
+    }
+
+    .headerfirstStepCheck p:nth-child(2) {
+        font-size: 14px;
+        margin-bottom: 20px;
+    }
+
+    .addPhotoPlant,
+    .addNamePlant,
+    .wateringFrequency,
+    .presetPlantCheck,
+    .blocksOfWeekDay {
+        border-radius: 18px;
+        margin-bottom: 20px;
+    }
+
+    .addPhotoPlant p:nth-child(1),
+    .headerOfaddNamePlant {
+        font-size: 16px;
+    }
+
+    .addPhotoPlant p:nth-child(2),
+    .nameOfPlant p,
+    .speciesName p {
+        font-size: 13px;
+    }
+
+    .addNamePlant input {
+        font-size: 14px;
+        padding: 10px 14px;
+    }
+
+   
+    .wateringPreset {
+        font-size: 13px;
+        padding: 14px 10px;
+    }
+
+    .wateringWeekday {
+        font-size: 13px;
+    }
+
+    .nextSlidewatering,
+    .backSlidewatering {
+        font-size: 15px;
+        padding: 12px 0;
+    }
+}
+
+
+@media (min-width: 1440px) {
+    .formForPlant {
+        max-width: 640px;
+    }
+
+    .headerOfBlockAddPlants {
+        font-size: 34px;
+    }
+}

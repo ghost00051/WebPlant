@@ -3,36 +3,42 @@ body {
 }
 
 .godOfbarCheckFilling {
-    width: 100vw;
+    width: 100%;
+}
+
+.formForPlant {
+    box-sizing: border-box;
+    padding: 0 20px 140px;
+}
+
+.headerOfBlockAddPlants {
+    font-family: 'Inter';
+    font-size: 22px;
+    font-weight: bold;
+    font-style: normal;
+    color: #2D2D2D;
+    margin: 2% 0%;
 }
 
 .barCheckFilling {
     display: flex;
-    justify-content: space-around;
+    justify-content: space-between;
     align-items: center;
-    margin: 0 7%;
 }
 
-
+.firstStep,
 .secondStep {
-    width: 7vh;
-    height: 0.4vh;
-    background-color: #E8E4DF;
-    border-radius: 14px;
-}
-
-.firstStep {
-    position: relative;
-    display: inline-block;
-    width: 7vh;
-    height: 0.4vh;
+    flex: 1;
+    height: 3px;
     background-color: #E8E4DF;
     border-radius: 14px;
     overflow: hidden;
+    position: relative;
+    display: block;
 }
 
-
-.firstStep::before {
+.firstStep::before,
+.secondStep::before {
     content: '';
     position: absolute;
     top: 0;
@@ -45,18 +51,616 @@ body {
     transition: transform 0.4s ease-in-out;
 }
 
-.firstStep.active::before {
+.firstStep.active::before,
+.secondStep.active::before {
     transform: scaleX(1);
 }
 
-.secondStep.active {
-    background-color: #7C9082;
-}
-
 .numbersOfFirstStep {
-    font-family: "Open Sans";
-    src: url("fonts/ofont.ru_Open Sans.ttf") format("truetype");
+    font-family: 'Inter';
+    font-size: 14px;
     font-weight: 600;
     font-style: normal;
-    font-display: swap;
+    color: #FFFFFF;
+    background-color: #7C9082;
+    padding: 4px 10px;
+    border-radius: 14px;
+}
+
+.numbersOfSecondStep,
+.numbersOfThirdStep {
+    font-family: 'Inter';
+    font-size: 14px;
+    font-weight: 600;
+    font-style: normal;
+    color: #8A8A8A;
+    background-color: #F0EDE8;
+    padding: 4px 9px;
+    border-radius: 14px;
+    transition: all 1s ease;
+}
+
+.numbersOfSecondStep.active,
+.numbersOfThirdStep.active {
+    color: #FFFFFF;
+    background-color: #7C9082;
+    transition: all 0.4s ease;
+}
+
+.firstStepCheck,
+.secondSection,
+.thirdSection {
+    display: none;
+    opacity: 0;
+    transform: translateX(20px);
+}
+
+.firstStepCheck.active,
+.secondSection.active,
+.thirdSection.active {
+    display: block;
+    animation: slideIn 0.4s ease forwards;
+}
+
+.firstStepCheck.leaving,
+.secondSection.leaving,
+.thirdSection.leaving {
+    display: block;
+    margin: 0 7%;
+    animation: slideOut 0.4s ease forwards;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideOut {
+    from {
+        opacity: 1;
+        transform: translateX(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+}
+
+.headerfirstStepCheck p:nth-child(1) {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 600;
+    font-style: normal;
+    color: #2D2D2D;
+    margin: 3% 0;
+}
+
+.headerfirstStepCheck p:nth-child(2) {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #8A8A8A;
+    margin: 3% 0;
+}
+
+.addPhotoPlant {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    padding: 3% 6%;
+    margin: 6% 0;
+}
+
+.addPhotoPlant p:nth-child(1) {
+    font-family: 'Inter';
+    font-size: 14px;
+    font-weight: 500;
+    font-style: normal;
+    color: #2D2D2D;
+}
+
+.addPhotoPlant p:nth-child(2) {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 400;
+    font-style: normal;
+    color: #8A8A8A;
+}
+
+.add-photo-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    padding: 0;
+    background-color: #F5F3EF;
+    border: 1px solid #E8E4DF;
+    border-radius: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.add-photo-btn:hover {
+    background-color: #ebebeb;
+}
+
+.add-photo-btn:active {
+    transform: scale(0.97);
+}
+
+.addPhotoPlantInput {
+    display: none;
+}
+
+.add-photo-icon {
+    width: 22px;
+    height: 22px;
+    display: block;
+    object-fit: contain;
+}
+
+.add-photo-text {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 600;
+    color: #8A8A8A;
+    margin: 3% 0;
+}
+
+.upload-row {
+    display: flex;
+    align-items: stretch;
+    gap: 10px;
+    margin-top: 3%;
+    height: 90px;
+}
+
+.preview-box {
+    flex: 1;
+    height: 100%;
+    min-height: 0;
+    border: 1px solid #7C9082;
+    border-radius: 16px;
+    background-color: #F1F8E9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    transition: border-color 0.2s;
+}
+
+.preview-box.has-preview {
+    border-color: #E8E4DF;
+    background-color: #FFFFFF;
+}
+
+.preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.preview-placeholder-icon {
+    width: 32px;
+    height: 32px;
+    display: block;
+    opacity: 0.55;
+    object-fit: contain;
+}
+
+.preview-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background-color: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.preview-remove:hover {
+    background-color: rgba(0, 0, 0, 0.75);
+}
+
+.addNamePlant {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    padding: 3% 6%;
+    margin: 6% 0;
+}
+
+.headerOfaddNamePlant {
+    font-family: 'Inter';
+    font-size: 14px;
+    font-weight: 500;
+    font-style: normal;
+    color: #2D2D2D;
+}
+
+.nameOfPlant p,
+.speciesName p {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 400;
+    font-style: normal;
+    color: #8A8A8A;
+}
+
+.speciesName {
+    margin-top: 3%;
+}
+
+.speciesName div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.speciesName div div {
+    width: 36%;
+    background-color: #E9EFEA;
+    padding: 1% 3%;
+    border-radius: 10px;
+    height: fit-content;
+    align-items: center;
+}
+
+.speciesName button {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #7C9082;
+    background: none;
+    border: none;
+    height: fit-content;
+}
+
+.speciesName img {
+    width: 11%;
+    height: fit-content;
+}
+
+.addNamePlant input {
+    width: 90%;
+    border: none;
+    background-color: #F5F3EF;
+    border-radius: 5px;
+    padding: 3% 4%;
+}
+
+.popularTypes {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #8A8A8A;
+}
+
+.popularTypes div button {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #7C9082;
+    background-color: #7c908229;
+    margin-right: 2%;
+    border: none;
+    border-radius: 11px;
+    padding: 1% 3%;
+}
+
+.nextSlidewatering {
+    font-family: 'Inter';
+    font-size: 14px;
+    font-weight: 500;
+    font-style: normal;
+    background-color: #7C9082;
+    color: #FFFFFF;
+    border: none;
+    padding: 3% 0%;
+    border-radius: 20px;
+    width: 100%;
+    cursor: pointer;
+    transition: opacity 0.2s, background-color 0.2s;
+}
+
+.nextSlidewatering:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.backSlidewatering {
+    font-size: 13px;
+    font-weight: 500;
+    font-style: normal;
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+    border: none;
+    padding: 3% 0%;
+    border-radius: 20px;
+    width: 30%;
+    margin-right: 6%;
+    cursor: pointer;
+}
+
+.buttonOfslider {
+    display: flex;
+}
+
+.wateringFrequency {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    padding: 3% 6%;
+    margin: 6% 0;
+}
+
+.askAI {
+    width: 36%;
+    background-color: #E9EFEA;
+    padding: 1% 3%;
+    border-radius: 10px;
+    height: fit-content;
+    align-items: center;
+}
+
+.askAI button {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #7C9082;
+    background: none;
+    border: none;
+    height: fit-content;
+}
+
+.headerOfBlockWatering {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.wateringPreset {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 500;
+    color: #5A5A5A;
+    background-color: #F5F3EF;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    padding: 12px 8px;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.wateringPreset:hover {
+    background-color: #EDEAE4;
+}
+
+.wateringPreset.active {
+    background-color: #7C9082;
+    color: #FFFFFF;
+    border-color: #7C9082;
+}
+
+.buttonHoldWatering {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.customSchedule {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 14px;
+    padding: 10px 12px;
+    background-color: #F5F3EF;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.customSchedule.active {
+    background-color: #E9EFEA;
+    border-color: #7C9082;
+}
+
+.customSchedule.active p:first-child {
+    color: #7C9082;
+}
+
+.counterBtn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: #FFFFFF;
+    cursor: pointer;
+    transition: background-color 0.2s, transform 0.1s;
+}
+
+.counterBtn:hover {
+    background-color: #EBE7DF;
+}
+
+.counterBtn:active {
+    transform: scale(0.94);
+}
+
+.counterBtn img {
+    width: 14px;
+    height: 14px;
+    display: block;
+}
+
+.wateringTime {
+    margin-top: 6%;
+}
+
+.buttonHoldPreset {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.presetPlantCheck {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    padding: 3% 6%;
+    margin: 6% 0;
+}
+
+.commentOfPreset {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #8A8A8A;
+    margin: 3% 0;
+}
+
+.blocksOfWeekDay {
+    background-color: #FFFFFF;
+    border-radius: 10px;
+    padding: 3% 6%;
+    margin: 6% 0;
+}
+
+.headerOfBlockWatering p {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 600;
+    font-style: normal;
+    color: #2D2D2D;
+    margin: 3% 0;
+}
+
+.blocksOfNotification p:nth-child(1) {
+    font-family: 'Inter';
+    font-size: 12px;
+    font-weight: 600;
+    font-style: normal;
+    color: #2D2D2D;
+    margin: 3% 0;
+}
+
+.blocksOfNotification p:nth-child(2) {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    font-style: normal;
+    color: #8A8A8A;
+    margin: 3% 0;
+}
+
+.godblocksOfNotification {
+    display: flex;
+    justify-content: space-between;
+}
+
+.apple-switch {
+    position: relative;
+    display: inline-block;
+    width: 35px;
+    height: 20px;
+}
+
+.apple-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #e5e5ea;
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 31px;
+}
+
+.slider::before {
+    position: absolute;
+    content: "";
+    height: 17px;
+    width: 17px;
+    left: -4px;
+    bottom: 2px;
+    background-color: white;
+    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 50%;
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 3px 1px rgba(0, 0, 0, 0.06);
+}
+
+input:checked+.slider {
+    background-color: #34c759;
+}
+
+input:checked+.slider::before {
+    transform: translateX(20px);
+}
+
+.buttonHoldWeekday {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    margin-top: 12px;
+}
+
+.wateringWeekday {
+    font-family: 'Inter';
+    font-size: 11px;
+    font-weight: 500;
+    color: #5A5A5A;
+    background-color: #F5F3EF;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    padding: 0;
+    aspect-ratio: 1 / 1;
+    cursor: pointer;
+    text-align: center;
+    transition: background-color 0.2s, color 0.2s, border-color 0.2s;
+}
+
+.wateringWeekday.active {
+    background-color: #7C9082;
+    color: #FFFFFF;
+    border-color: #7C9082;
 }

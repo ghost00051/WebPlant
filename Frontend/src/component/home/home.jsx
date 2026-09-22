@@ -20,10 +20,11 @@ function Home() {
             try {
                 const API_URL = import.meta.env.VITE_API_URL || 'https://server.checktheplants.ru/api'
                 const res = await fetch(`${API_URL}/users/me`, {
-                    credentials: 'include' 
+                    method: 'GET',
+                    credentials: 'include'
                 })
 
-                if (!res.ok) {
+                if (res.status === 401) {
                     navigate('/')
                     return
                 }
@@ -75,7 +76,7 @@ function Home() {
 
             } catch (error) {
                 console.error('❌ Ошибка проверки:', error)
-                navigate('/')
+                // navigate('/')
             }
         }
 
@@ -87,16 +88,10 @@ function Home() {
 
     return (
         <div className="gofOfMain">
-            {/* <DayPicker
-                mode="single"
-                selected={selected}
-                onSelect={setSelected}
-                footer={
-                    selected ? `Selected: ${selected.toLocaleDateString()}` : "Pick a day."
-                }
-            /> */}
+            <div className="mainContent">
+                <AddPlants />
+            </div>
             <Tools />
-            <AddPlants/>
             {showPrompt && (
                 <NotificationPrompt
                     userId={user.id}
@@ -104,7 +99,7 @@ function Home() {
                 />
             )}
         </div>
-    );
+    )
 }
 
 export default Home

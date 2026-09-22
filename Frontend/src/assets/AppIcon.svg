@@ -1,0 +1,32 @@
+<svg viewBox="0 0 104 104" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="104.000000" height="104.000000" fill="none" customFrame="#000000">
+	<defs>
+		<g id="pixso_custom_effect_0">
+			<effect x="0.000000" y="6.000000" visibility="visible" fill="rgb(127,209,160)" fill-opacity="0.301960796" effectType="dropShadow" stdDeviation="20" radius="0" />
+		</g>
+		<filter id="filter_0" width="104.000000" height="104.000000" x="0.000000" y="0.000000" filterUnits="userSpaceOnUse" customEffect="url(#pixso_custom_effect_0)" color-interpolation-filters="sRGB">
+			<feFlood flood-opacity="0" result="BackgroundImageFix" />
+			<feColorMatrix result="hardAlpha" in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0 " />
+			<feOffset dx="0.000000" dy="6.000000" in="hardAlpha" />
+			<feGaussianBlur stdDeviation="6.66666651" />
+			<feComposite k2="-1" k3="1" in2="hardAlpha" operator="out" />
+			<feColorMatrix type="matrix" values="0 0 0 0 0.498039 0 0 0 0 0.819608 0 0 0 0 0.627451 0 0 0 0.301961 0 " />
+			<feBlend result="effect_dropShadow_1" in2="BackgroundImageFix" mode="normal" />
+			<feBlend result="shape" in="SourceGraphic" in2="effect_dropShadow_1" mode="normal" />
+		</filter>
+		<clipPath id="clipPath_0">
+			<rect width="64.000000" height="64.000000" x="20.000000" y="14.000000" rx="18.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+		<clipPath id="clipPath_1">
+			<rect width="36.000000" height="36.000000" x="34.000000" y="28.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<g id="AppIcon" filter="url(#filter_0)" customFrame="url(#clipPath_0)">
+		<rect id="AppIcon" width="64.000000" height="64.000000" x="20.000000" y="14.000000" rx="18.000000" fill="rgb(124,144,130)" fill-opacity="0.141176477" />
+		<g id="Mark" customFrame="url(#clipPath_1)">
+			<rect id="Mark" width="36.000000" height="36.000000" x="34.000000" y="28.000000" />
+			<path id="Вектор 290" d="M42.25 32.5L42.25 59.5" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.250000" />
+			<path id="Вектор 291" d="M52.75 34.75L58 37L63.25 37C64.0784 37 64.75 37.6716 64.75 38.5L64.75 51.25C64.75 52.0784 64.0784 52.75 63.25 52.75L58 52.75L52.75 50.5L42.25 50.5L42.25 34.75L52.75 34.75Z" fill-rule="nonzero" stroke="rgb(124,144,130)" stroke-linejoin="round" stroke-width="2.250000" />
+			<path id="Вектор 292" d="M39.25 59.5L45.25 59.5" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.250000" />
+		</g>
+	</g>
+</svg>

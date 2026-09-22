@@ -1,4 +1,22 @@
 services:
+  docker-socket-proxy:
+    image: tecnativa/docker-socket-proxy
+    container_name: ctp_docker_socket_proxy
+    restart: always
+    environment:
+      CONTAINERS: 1
+      POST: 0
+      INFO: 0
+      IMAGES: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - ctp_network
+    expose:
+      - "2375"
   postgres:
     image: postgres:16-alpine
     container_name: ctp_postgres
@@ -30,7 +48,9 @@ services:
     restart: always
     depends_on:
       postgres:
-        condition: service_healthy    
+        condition: service_healthy
+      docker-socket-proxy:
+        condition: service_started
     environment:
       NODE_ENV: production
       PORT: 5000
@@ -44,6 +64,7 @@ services:
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
       VAPID_SUBJECT: ${VAPID_SUBJECT}
       FRONTEND_URL: ${FRONTEND_URL}
+      DOCKER_HOST: tcp://docker-socket-proxy:2375
     networks:
       - ctp_network
     expose:

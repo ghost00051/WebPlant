@@ -2,19 +2,26 @@ import express from "express"
 import cors from "cors"
 import dotenv from "dotenv"
 import cookieParser from 'cookie-parser'
+import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
 import sequelize from "./db.js"
+
 import "./models/userModels.js"
 import "./models/userCookieConsentModels.js"
 import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
-import "./models/Plant.js"     
+import "./models/Plant.js"
+import "./models/PlantPhoto.js"
+
+import "./models/associations.js"
+
 import pushRouter from "./routes/pushRoutes.js"
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
-import plantRouter from "./routes/plantRoutes.js" 
-
+import plantRouter from "./routes/plantRoutes.js"
+import systemRouter from "./routes/systemRoutes.js"
+import uploadRouter from "./routes/uploadRoutes.js"
 
 dotenv.config()
 
@@ -22,19 +29,20 @@ const app = express()
 const PORT = process.env.PORT || 5000
 
 app.set('trust proxy', 1)
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() })
-})
 
 app.use(cors({
     origin: (origin, callback) => {
         const allowed = [
             process.env.FRONTEND_URL,
+            'https://frontdevivan.ru',
             'http://localhost:5173',
+            'http://127.0.0.1:5173',
+            'http://localhost:5500',
+            'http://127.0.0.1:5500',
             'http://192.168.0.167:5173',
             'http://192.168.0.176:5173',
         ].filter(Boolean)
-        const isLocalNetwork = origin && /^http:\/\/192\.168\.\d+\.\d+:\d+$/.test(origin)
+        const isLocalNetwork = origin && /^http:\/\/(192\.168\.\d+\.\d+|127\.0\.0\.1|localhost):\d+$/.test(origin)
         if (!origin || allowed.includes(origin) || isLocalNetwork) {
             callback(null, true)
         } else {
@@ -42,7 +50,7 @@ app.use(cors({
         }
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 }))
 
@@ -51,10 +59,18 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(getGuestToken)
 
+app.use('/uploads', express.static(path.resolve('uploads')))
+
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", userCookieConsentRouter)
 app.use("/api/push", pushRouter)
-app.use("/api/plants", plantRouter)    
+app.use("/api/plants", plantRouter)
+app.use("/api/system", systemRouter)
+app.use("/api/upload", uploadRouter)
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
 
 app.use((err, req, res, next) => {
     console.error("❌ Error:", err)
@@ -91,8 +107,6 @@ async function startServer() {
         process.exit(1)
     }
 }
-
-
 
 async function checkTableExists(tableName) {
     try {

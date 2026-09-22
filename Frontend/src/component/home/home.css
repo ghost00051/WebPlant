@@ -1,4 +1,6 @@
-
-.gofOfMain{
-    height: 100vh;
+.gofOfMain {
+    min-height: 100vh;
+    min-height: 100dvh;             
+    box-sizing: border-box;
+    padding-bottom: calc(120px + env(safe-area-inset-bottom, 0px));
 }

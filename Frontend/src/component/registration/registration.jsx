@@ -86,7 +86,7 @@ function Registration() {
         console.log('Login success:', data)
         navigate('/home')
       } else {
-        const responseData = await response.json() 
+        const responseData = await response.json()
         alert('Ошибка входа: ' + (responseData.message || 'Неверный email или пароль'))
       }
     } catch (error) {
