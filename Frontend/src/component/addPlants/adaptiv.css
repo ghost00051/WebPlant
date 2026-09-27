@@ -120,7 +120,7 @@
         padding: 10px 14px;
     }
 
-   
+
     .wateringPreset {
         font-size: 13px;
         padding: 14px 10px;
@@ -145,5 +145,27 @@
 
     .headerOfBlockAddPlants {
         font-size: 34px;
+    }
+}
+
+@media (min-width: 640px) {
+    .toast {
+        padding: 18px 22px;
+        border-radius: 22px;
+    }
+
+    .toastTitle {
+        font-size: 16px;
+    }
+
+    .toastSubtitle {
+        font-size: 13px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .toast {
+        max-width: 560px;
+        bottom: 32px;
     }
 }

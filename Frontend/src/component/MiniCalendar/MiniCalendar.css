@@ -1,0 +1,153 @@
+.mini-calendar {
+  background: #fff;
+  border-radius: 24px;
+  padding: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+  font-family: 'Inter', sans-serif;
+  max-width: 420px;
+  margin: 1% 4%;
+}
+
+.mini-calendar__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.mini-calendar__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d2d2d;
+}
+
+.mini-calendar__nav {
+  display: flex;
+  gap: 8px;
+}
+
+.mini-calendar__nav button {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: #f3f3f3;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.mini-calendar__nav button:hover {
+  background: #e8e8e8;
+}
+
+.mini-calendar__weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 8px;
+}
+
+.mini-calendar__weekdays span {
+  text-align: center;
+  font-size: 14px;
+  color: #b0b0b0;
+  padding: 6px 0;
+}
+
+.mini-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.mini-calendar__day {
+  aspect-ratio: 1 / 1;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 15px;
+  color: #2d2d2d;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  padding: 0;
+}
+
+.mini-calendar__day:hover {
+  background: #f0f2ec;
+}
+
+.mini-calendar__day.is-outside {
+  color: #cfcfcf;
+}
+
+
+.mini-calendar__day.is-watering {}
+
+.mini-calendar__day.is-today {
+  border: 2px solid #7d8f72;
+}
+
+
+.mini-calendar__day-number {
+  line-height: 1;
+}
+
+.mini-calendar__dots {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+  height: 6px;
+
+  align-items: center;
+  justify-content: center;
+}
+
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dot--future {
+  background: #6F9FC4;
+
+}
+
+.dot--past {
+  background: #5FB884;
+
+}
+
+.dot--today {
+  background: #5FB884;
+
+}
+
+
+.mini-calendar__legend {
+  display: flex;
+  gap: 20px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 12px;
+  color: #8a8a8a;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+

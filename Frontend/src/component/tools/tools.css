@@ -1,3 +1,13 @@
+body.keyboard-open .toolsWrapper {
+    display: none !important;
+}
+
+body.vision-open .toolsWrapper {
+    transform: translateY(110%);
+    opacity: 0;
+    pointer-events: none;
+}
+
 .toolsWrapper {
     position: fixed;
     bottom: 0;
@@ -7,7 +17,11 @@
     justify-content: center;
     pointer-events: none;
     z-index: 100;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background-color: #FFFFFF;
+    height: min-content;
+    transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+        opacity 0.22s ease;
+    will-change: transform, opacity;
 }
 
 .tabbar {
@@ -20,7 +34,6 @@
     align-items: center;
     justify-content: center;
     position: relative;
-    overflow: hidden;
     pointer-events: auto;
     border-top: 1px solid #E8E4DF;
 }
@@ -38,7 +51,7 @@
 }
 
 .tabbar li {
-    position: relative;     
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;

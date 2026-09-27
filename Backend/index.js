@@ -12,6 +12,9 @@ import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
+import "./models/WateringLog.js" 
+import "./models/ChatLog.js" 
+
 
 import "./models/associations.js"
 
@@ -22,6 +25,8 @@ import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
 import plantRouter from "./routes/plantRoutes.js"
 import systemRouter from "./routes/systemRoutes.js"
 import uploadRouter from "./routes/uploadRoutes.js"
+import reminderService from './jobs/reminderService.js'
+import chatRouter from './routes/chatRoutes.js'
 
 dotenv.config()
 
@@ -67,6 +72,7 @@ app.use("/api/push", pushRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
+app.use('/api/chat', chatRouter)
 
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
@@ -76,6 +82,10 @@ app.use((err, req, res, next) => {
     console.error("❌ Error:", err)
     res.status(500).json({ message: "Internal server error" })
 })
+
+startCleanupJob()
+console.log("⏰ Запущена очистка истекших согласий")
+reminderService.start() 
 
 async function startServer() {
     try {

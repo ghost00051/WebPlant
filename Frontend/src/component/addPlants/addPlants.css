@@ -8,7 +8,8 @@ body {
 
 .formForPlant {
     box-sizing: border-box;
-    padding: 0 20px 140px;
+    padding: 0 20px 0px;
+    height: 100vh;
 }
 
 .headerOfBlockAddPlants {
@@ -349,6 +350,7 @@ body {
     background-color: #F5F3EF;
     border-radius: 5px;
     padding: 3% 4%;
+    font-size: 16px;
 }
 
 .popularTypes {
@@ -663,4 +665,106 @@ input:checked+.slider::before {
     background-color: #7C9082;
     color: #FFFFFF;
     border-color: #7C9082;
+}
+
+
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 24px;
+    transform: translateX(-50%);
+    width: calc(100% - 40px);
+    max-width: 520px;
+    box-sizing: border-box;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+
+    padding: 16px 20px;
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+
+    z-index: 1000;
+    animation: toastIn 0.35s cubic-bezier(0.2, 0.9, 0.3, 1.1) forwards;
+}
+
+.toast.leaving {
+    animation: toastOut 0.25s ease forwards;
+}
+
+.toastText {
+    flex: 1;
+    min-width: 0;
+}
+
+.toastTitle {
+    font-family: 'Inter';
+    font-size: 15px;
+    font-weight: 600;
+    font-style: normal;
+    color: #2D2D2D;
+    margin: 0;
+}
+
+.toastSubtitle {
+    font-family: 'Inter';
+    font-size: 13px;
+    font-weight: 400;
+    font-style: normal;
+    color: #8A8A8A;
+    margin: 2px 0 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.toastClose {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    color: #B7B7B7;
+    font-size: 20px;
+    line-height: 1;
+    border-radius: 50%;
+    transition: background-color 0.2s, color 0.2s;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.toastClose:hover {
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+}
+
+@keyframes toastIn {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(30px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes toastOut {
+    from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(30px);
+    }
 }

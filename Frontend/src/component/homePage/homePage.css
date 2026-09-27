@@ -1,0 +1,309 @@
+
+.headerOfHOmePagw {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-sizing: border-box;
+  padding: 0 20px 0;
+}
+
+.nameHeaderOfHomePage p:nth-child(2) {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  font-style: normal;
+  color: #8a8a8a;
+  margin: 3% 0;
+}
+
+.nameHeaderOfHomePage p:nth-child(3) {
+  font-family: 'Inter', sans-serif;
+  font-size: 22px;
+  font-weight: bold;
+  font-style: normal;
+  color: #2d2d2d;
+  margin: 2% 0;
+}
+
+.headerNotificiotinsOfHomePAge {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 20px;
+}
+
+.headerNotificiotinsOfHomePAge p {
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  font-style: normal;
+  color: #2d2d2d;
+  margin: 2% 0;
+}
+
+.headerNotificiotinsOfHomePAge button {
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  font-style: normal;
+  color: #7c9082;
+  margin: 2% 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.headerNotificiotinsOfHomePAge button:hover {
+  opacity: 0.7;
+}
+
+
+.plantRender {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin: 0 20px 12px;
+  background-color: #ffffff;
+  border: 1px solid #eaeaea;
+  border-radius: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+  box-sizing: border-box;
+  transform-origin: center;
+}
+
+.description {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+}
+
+.description img,
+.no-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.no-photo {
+  background-color: #e5f0e8;
+}
+
+.plant-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.plant-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: #2d2d2d;
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plant-details {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: #8a8a8a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.separator {
+  color: #c0c0c0;
+}
+
+.watering-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  margin-top: 4px;
+  background-color: #f4f6f4;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: #5c7163;
+  width: fit-content;
+}
+
+.watering-badge img {
+  width: 12px;
+  height: 12px;
+}
+
+
+.plant-empty {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #8a8a8a;
+  text-align: center;
+  padding: 24px 20px;
+  margin: 0;
+}
+
+
+.check-button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background-color: #7c9082;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  isolation: isolate;
+ 
+  transition:
+    background-color 0.2s ease,
+    transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.2s ease;
+}
+
+.check-button:hover:not(:disabled) {
+  background-color: #6f8376;
+}
+
+.check-button:active:not(:disabled) {
+  transform: scale(0.92);
+  transition-duration: 0.09s;
+}
+
+.check-button:disabled {
+  cursor: default;
+}
+
+.check-button img {
+  width: 20px;
+  height: 20px;
+  position: relative;
+  z-index: 2;
+  will-change: transform;
+}
+
+
+.check-button.is-watering {
+  background-color: #6a7e70;
+}
+
+
+.check-button.is-watering::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #7c9082;
+  z-index: 0;
+  pointer-events: none;
+  animation: check-ripple 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+
+.check-button.is-watering::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid #7c9082;
+  z-index: 1;
+  pointer-events: none;
+  animation: check-ring 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.check-button.is-watering img {
+  animation: check-pop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+@keyframes check-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.45;
+  }
+
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes check-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes check-pop {
+  0% {
+    transform: scale(0.55) rotate(-14deg);
+    opacity: 0.5;
+  }
+
+  60% {
+    transform: scale(1.12) rotate(4deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.plantRender.is-removing {
+  pointer-events: none;
+  will-change: transform, opacity;
+  animation: plant-exit 0.42s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes plant-exit {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(-14px) scale(0.96);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+
+  .check-button,
+  .check-button.is-watering::before,
+  .check-button.is-watering::after,
+  .check-button.is-watering img,
+  .plantRender.is-removing {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  .plantRender.is-removing {
+    opacity: 0;
+  }
+}

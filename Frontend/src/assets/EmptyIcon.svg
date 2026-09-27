@@ -1,0 +1,16 @@
+<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64.000000" height="64.000000" fill="none" customFrame="url(#clipPath_8)">
+	<defs>
+		<clipPath id="clipPath_8">
+			<rect width="64.000000" height="64.000000" x="0.000000" y="0.000000" rx="32.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+		<clipPath id="clipPath_9">
+			<rect width="26.000000" height="26.000000" x="19.000000" y="19.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<rect id="EmptyIcon" width="64.000000" height="64.000000" x="0.000000" y="0.000000" rx="32.000000" fill="rgb(241,238,233)" />
+	<g id="droplets" customFrame="url(#clipPath_9)">
+		<rect id="droplets" width="26.000000" height="26.000000" x="19.000000" y="19.000000" />
+		<path id="Вектор 855" d="M30.9167 32.2709C30.9167 31.0142 30.2992 29.8225 29.0642 28.815C27.8292 27.8075 26.8975 26.3125 26.5833 24.7417C26.2692 26.3125 25.3483 27.8184 24.1025 28.815C22.8567 29.8117 22.25 31.025 22.25 32.2709C22.25 34.6759 24.2 36.6584 26.5833 36.6584C28.9667 36.6584 30.9167 34.6759 30.9167 32.2709Z" fill-rule="nonzero" stroke="rgb(173,173,173)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.166667" />
+		<path id="Вектор 856" d="M32.6068 26.1501C33.3519 24.9596 33.8801 23.6465 34.1668 22.2717C34.7085 24.9801 36.3335 27.5801 38.5002 29.3134C40.6668 31.0467 41.7502 33.1051 41.7502 35.2717C41.7563 36.7692 41.3178 38.2348 40.49 39.4827C39.6623 40.7307 38.4826 41.7047 37.1006 42.2814C35.7186 42.8581 34.1965 43.0115 32.7273 42.7221C31.258 42.4327 29.9077 41.7136 28.8477 40.6559" fill-rule="nonzero" stroke="rgb(173,173,173)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.166667" />
+	</g>
+</svg>

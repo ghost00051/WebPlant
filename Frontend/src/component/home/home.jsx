@@ -8,12 +8,17 @@ import {
 } from '../../utils/pushNotifications.js'
 import Tools from '../tools/tools.jsx'
 import AddPlants from '../addPlants/addPlants.jsx'
+import HomePage from '../homePage/homePage.jsx'
+import Chat from '../chat/chat.jsx'
+import Profile from '../profile/profile.jsx'
+import './home.css'
 
 function Home() {
     const navigate = useNavigate()
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
     const [showPrompt, setShowPrompt] = useState(false)
+    const [activeTab, setActiveTab] = useState('home')
 
     useEffect(() => {
         const checkAuth = async () => {
@@ -24,23 +29,16 @@ function Home() {
                     credentials: 'include'
                 })
 
-                if (res.status === 401) {
-                    navigate('/')
-                    return
-                }
-
                 const userData = await res.json()
                 setUser(userData)
                 console.log('✅ Пользователь:', userData)
 
                 if (!isPushSupported()) {
-                    console.log('❌ Push не поддерживается')
                     setLoading(false)
                     return
                 }
 
                 if (isIOS() && !isStandalone()) {
-                    console.log('❌ iOS — не PWA')
                     setLoading(false)
                     return
                 }
@@ -49,14 +47,12 @@ function Home() {
                     const reg = await navigator.serviceWorker.ready
                     const sub = await reg.pushManager.getSubscription()
                     if (sub) {
-                        console.log('✅ Уже подписан на push')
                         setLoading(false)
                         return
                     }
                 }
 
                 if (Notification.permission === 'denied') {
-                    console.log('❌ Уведомления запрещены')
                     setLoading(false)
                     return
                 }
@@ -65,7 +61,6 @@ function Home() {
                 if (lastShown) {
                     const daysSince = (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24)
                     if (daysSince < 7) {
-                        console.log('⏭️ Недавно показывали')
                         setLoading(false)
                         return
                     }
@@ -76,7 +71,7 @@ function Home() {
 
             } catch (error) {
                 console.error('❌ Ошибка проверки:', error)
-                // navigate('/')
+                setLoading(false)
             }
         }
 
@@ -86,12 +81,44 @@ function Home() {
     if (loading) return <div>Загрузка...</div>
     if (!user) return null
 
+    const renderScreen = () => {
+        switch (activeTab) {
+            case 'home':
+                return <HomePage />
+            case 'add':
+                return (
+                    <div className="mainContent">
+                        <AddPlants />
+                    </div>
+                )
+            case 'profile':
+                return <Profile />
+            default:
+                return <HomePage />
+        }
+    }
+
+    if (activeTab === 'chat') {
+        return (
+            <>
+                <Chat />
+                <Tools onTabChange={setActiveTab} activeTab={activeTab} />
+                {showPrompt && (
+                    <NotificationPrompt
+                        userId={user.id}
+                        onClose={() => setShowPrompt(false)}
+                    />
+                )}
+            </>
+        )
+    }
+
     return (
         <div className="gofOfMain">
-            <div className="mainContent">
-                <AddPlants />
+            <div key={activeTab} className="screenTransition">
+                {renderScreen()}
             </div>
-            <Tools />
+            <Tools onTabChange={setActiveTab} activeTab={activeTab} />
             {showPrompt && (
                 <NotificationPrompt
                     userId={user.id}

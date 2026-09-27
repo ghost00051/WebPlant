@@ -2,28 +2,35 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './registration.css'
 import './adaptiv.css'
-import { useEffect } from 'react';
+import { useEffect } from 'react'
+import {
+  subscribeToPush,
+  isPushSupported,
+  isIOS,
+  isStandalone
+} from '../../utils/pushNotifications.js'
 
-
-function Registration() {
+function Registration () {
   const [isLogin, setIsLogin] = useState(true)
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [active, setActive] = useState(false)
-  const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false);
+  const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const [emailEntr, setEmailEntr] = useState('');
-  const [passwordEntr, setPasswordEntr] = useState('');
+  const [emailEntr, setEmailEntr] = useState('')
+  const [passwordEntr, setPasswordEntr] = useState('')
   const navigate = useNavigate()
-
 
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        const response = await fetch('https://server.checktheplants.ru/api/users/me', {
-          method: 'GET',
-          credentials: 'include'
-        })
+        const response = await fetch(
+          'https://server.checktheplants.ru/api/users/me',
+          {
+            method: 'GET',
+            credentials: 'include'
+          }
+        )
         if (response.ok) {
           navigate('/home')
         } else {
@@ -37,27 +44,32 @@ function Registration() {
     checkAuth()
   }, [navigate])
 
-  const handleRegister = async (event) => {
+  const handleRegister = async event => {
     event.preventDefault()
     try {
-      const response = await fetch('https://server.checktheplants.ru/api/users/registration', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: email,
-          password: password,
-          privacyPolicyAccepted: privacyPolicyAccepted,
-          termsAccepted: termsAccepted
-        }),
-        credentials: 'include'
-      })
+      const response = await fetch(
+        'https://server.checktheplants.ru/api/users/registration',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: email,
+            password: password,
+            privacyPolicyAccepted: privacyPolicyAccepted,
+            termsAccepted: termsAccepted
+          }),
+          credentials: 'include'
+        }
+      )
 
       const responseData = await response.json()
 
       if (response.ok) {
         console.log(responseData)
+
+        await reattachPush()
         navigate('/home')
       } else {
         console.error(error)
@@ -68,15 +80,31 @@ function Registration() {
     }
   }
 
-  const handleLogin = async (event) => {
+  const reattachPush = async () => {
+    if (!isPushSupported()) return
+    if (isIOS() && !isStandalone()) return
+    if (Notification.permission !== 'granted') return
+
+    try {
+      await subscribeToPush()
+      console.log('✅ Push-подписка привязана к аккаунту')
+    } catch (e) {
+      console.warn('⚠️ Не удалось привязать push:', e.message)
+    }
+  }
+
+  const handleLogin = async event => {
     event.preventDefault()
     try {
-      const response = await fetch('https://server.checktheplants.ru/api/users/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailEntr, password: passwordEntr }),
-        credentials: 'include'
-      })
+      const response = await fetch(
+        'https://server.checktheplants.ru/api/users/login',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: emailEntr, password: passwordEntr }),
+          credentials: 'include'
+        }
+      )
 
       console.log('Status:', response.status)
       console.log('OK:', response.ok)
@@ -84,10 +112,15 @@ function Registration() {
       if (response.ok) {
         const data = await response.json()
         console.log('Login success:', data)
+
+        await reattachPush()
         navigate('/home')
       } else {
         const responseData = await response.json()
-        alert('Ошибка входа: ' + (responseData.message || 'Неверный email или пароль'))
+        alert(
+          'Ошибка входа: ' +
+            (responseData.message || 'Неверный email или пароль')
+        )
       }
     } catch (error) {
       console.error('Login error:', error)
@@ -98,21 +131,24 @@ function Registration() {
   const handleAcceptAll = async () => {
     setActive(false)
     try {
-      const response = await fetch('https://server.checktheplants.ru/api/cookie-consents/all', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          consents: [
-            { consentType: 'technical', isAccepted: true },
-            { consentType: 'analytics', isAccepted: true },
-            { consentType: 'marketing', isAccepted: true },
-            { consentType: 'personalization', isAccepted: true }
-          ]
-        }),
-        credentials: 'include'
-      })
+      const response = await fetch(
+        'https://server.checktheplants.ru/api/cookie-consents/all',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            consents: [
+              { consentType: 'technical', isAccepted: true },
+              { consentType: 'analytics', isAccepted: true },
+              { consentType: 'marketing', isAccepted: true },
+              { consentType: 'personalization', isAccepted: true }
+            ]
+          }),
+          credentials: 'include'
+        }
+      )
       const data = await response.json()
       console.log('✅ Все согласия сохранены:', data)
     } catch (error) {
@@ -123,21 +159,24 @@ function Registration() {
   const handleRejectAll = async () => {
     setActive(false)
     try {
-      const response = await fetch('https://server.checktheplants.ru/api/cookie-consents/all', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          consents: [
-            { consentType: 'technical', isAccepted: true },
-            { consentType: 'analytics', isAccepted: false },
-            { consentType: 'marketing', isAccepted: false },
-            { consentType: 'personalization', isAccepted: false }
-          ]
-        }),
-        credentials: 'include'
-      })
+      const response = await fetch(
+        'https://server.checktheplants.ru/api/cookie-consents/all',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            consents: [
+              { consentType: 'technical', isAccepted: true },
+              { consentType: 'analytics', isAccepted: false },
+              { consentType: 'marketing', isAccepted: false },
+              { consentType: 'personalization', isAccepted: false }
+            ]
+          }),
+          credentials: 'include'
+        }
+      )
       const data = await response.json()
       console.log('Отказ от куких сохранен', data)
     } catch (error) {
@@ -149,14 +188,12 @@ function Registration() {
     setIsLogin(!isLogin)
   }
 
-
   useEffect(() => {
     const timer = setTimeout(() => {
       setActive(true)
-    }, 1000);
-    return () => clearTimeout(timer);
+    }, 1000)
+    return () => clearTimeout(timer)
   }, [])
-
 
   return (
     <div className='blocksOfToService'>
@@ -185,7 +222,7 @@ function Registration() {
                   className='entranceEmail'
                   autoComplete='email'
                   required
-                  onChange={(e) => setEmailEntr(e.target.value)}
+                  onChange={e => setEmailEntr(e.target.value)}
                 />
                 <input
                   type='password'
@@ -193,7 +230,7 @@ function Registration() {
                   className='entrancePassword'
                   autoComplete='current-password'
                   required
-                  onChange={(e) => setPasswordEntr(e.target.value)}
+                  onChange={e => setPasswordEntr(e.target.value)}
                 />
                 <button className='buttonEntrance' type='submit'>
                   Войти
@@ -214,14 +251,14 @@ function Registration() {
                   placeholder='Email'
                   className='registrationEmail'
                   autoComplete='email'
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={e => setEmail(e.target.value)}
                 />
                 <input
                   type='password'
                   placeholder='Пароль'
                   className='registrationPassword'
                   autoComplete='new-password'
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={e => setPassword(e.target.value)}
                 />
                 <input
                   type='password'
@@ -232,26 +269,37 @@ function Registration() {
                 <div className='personalData'>
                   <input
                     className='chekBoxPersonalData'
-                    type="checkbox"
-                    id="personalDataCheck"
+                    type='checkbox'
+                    id='personalDataCheck'
                     checked={privacyPolicyAccepted}
-                    onChange={(e) => setPrivacyPolicyAccepted(e.target.checked)}
+                    onChange={e => setPrivacyPolicyAccepted(e.target.checked)}
                     required
                   />
                   <div>
                     <p>Согласие на обработку</p>
-                    <a href="../../../document/UserAgreementTemplate.pdf" download="my-document.pdf">персональных данных</a>
+                    <a
+                      href='../../../document/UserAgreementTemplate.pdf'
+                      download='my-document.pdf'
+                    >
+                      персональных данных
+                    </a>
                   </div>
                 </div>
                 <div className='userAgreement'>
                   <input
-                    type="checkbox"
-                    id="userAgreementCheck"
+                    type='checkbox'
+                    id='userAgreementCheck'
                     checked={termsAccepted}
-                    onChange={(e) => setTermsAccepted(e.target.checked)}
-                    required />
+                    onChange={e => setTermsAccepted(e.target.checked)}
+                    required
+                  />
                   <div>
-                    <a href="../../../document/soglasieNaObrabotkuPD.pdf" download="soglasieNaObrabotkuPD.pdf">Пользовательское соглашение</a>
+                    <a
+                      href='../../../document/soglasieNaObrabotkuPD.pdf'
+                      download='soglasieNaObrabotkuPD.pdf'
+                    >
+                      Пользовательское соглашение
+                    </a>
                   </div>
                 </div>
                 <button className='buttonRegistration' type='submit'>
@@ -271,8 +319,12 @@ function Registration() {
       <div className={`cookies ${active ? 'active' : ''}`}>
         <p>Мы используем файлы cookie для улучшения работы сайта</p>
         <div className='buttonOfCookies'>
-          <button className='cookiesGood' onClick={handleAcceptAll}>Принять все</button>
-          <button className='cookiesFail' onClick={handleRejectAll}>Отказаться</button>
+          <button className='cookiesGood' onClick={handleAcceptAll}>
+            Принять все
+          </button>
+          <button className='cookiesFail' onClick={handleRejectAll}>
+            Отказаться
+          </button>
         </div>
       </div>
     </div>

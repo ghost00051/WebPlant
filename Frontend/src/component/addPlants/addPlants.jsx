@@ -52,6 +52,21 @@ function AddPlants() {
     const [species, setSpecies] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
 
+    const [toast, setToast] = useState(null)
+    const [toastLeaving, setToastLeaving] = useState(false)
+    const toastTimerRef = useRef(null)
+    const navigateTimerRef = useRef(null)
+
+    const closeToast = () => {
+        if (toastLeaving) return
+        setToastLeaving(true)
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+        toastTimerRef.current = setTimeout(() => {
+            setToast(null)
+            setToastLeaving(false)
+        }, 250)
+    }
+
     const toggleDay = (id) => {
         setSelectedDays(prev =>
             prev.includes(id) ? prev.filter(d => d !== id) : [...prev, id]
@@ -116,11 +131,12 @@ function AddPlants() {
     useEffect(() => {
         return () => {
             if (timeoutRef.current) clearTimeout(timeoutRef.current)
+            if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+            if (navigateTimerRef.current) clearTimeout(navigateTimerRef.current)
             urlsRef.current.forEach(url => URL.revokeObjectURL(url))
             urlsRef.current = []
         }
     }, [])
-
     const addPlant = async (event) => {
         event.preventDefault()
         if (isSubmitting) return
@@ -157,7 +173,7 @@ function AddPlants() {
                 body: JSON.stringify({
                     name: name.trim(),
                     species: species.trim(),
-                    photo_urls: uploadedUrls,
+                    photos: uploadedUrls,
                     watering_interval_days: days,
                     watering_time_of_day: selectedWatering,
                     notify_morning: notifyMorning,
@@ -178,7 +194,15 @@ function AddPlants() {
                 urlsRef.current.forEach(url => URL.revokeObjectURL(url))
                 urlsRef.current = []
                 filesRef.current = []
-                navigate('/home')
+
+                setToast({
+                    title: 'Растение добавлено',
+                    subtitle: name.trim(),
+                })
+
+                navigateTimerRef.current = setTimeout(() => {
+                    navigate('/home')
+                }, 1600)
             } else {
                 alert(responseData?.message || 'Не удалось сохранить растение')
             }
@@ -462,6 +486,22 @@ function AddPlants() {
                         </div>
                     </div>
                 </form>
+                {toast && (
+                    <div className={`toast ${toastLeaving ? 'leaving' : ''}`} role="status" aria-live="polite">
+                        <div className="toastText">
+                            <p className="toastTitle">{toast.title}</p>
+                            <p className="toastSubtitle">{toast.subtitle}</p>
+                        </div>
+                        <button
+                            type="button"
+                            className="toastClose"
+                            onClick={closeToast}
+                            aria-label="Закрыть уведомление"
+                        >
+                            ×
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     )

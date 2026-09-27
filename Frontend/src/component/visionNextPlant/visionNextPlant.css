@@ -1,0 +1,164 @@
+.vision-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(20, 30, 22, 0.45);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+        opacity 0.28s ease,
+        visibility 0s linear 0.28s;
+}
+
+.vision-overlay.is-active {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+        opacity 0.28s ease,
+        visibility 0s linear 0s;
+    height: 100vh;
+}
+
+
+.visiibleVareingPlant {
+    position: fixed;
+    left: 50%;
+    bottom: 0;
+    transform: translate(-50%, 24px) scale(0.96);
+    width: 100%;
+    max-width: 420px;
+    background: #fff;
+    border-radius: 24px 24px 0 0;
+    padding: 20px 4% 28px;
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
+    opacity: 0;
+    transition:
+        opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, opacity;
+}
+
+.visiibleVareingPlant.active {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+}
+
+.selectDayCheck {
+    font-family: 'Inter', sans-serif;
+    font-size: 17px;
+    font-weight: bolder;
+    color: #2D2D2D;
+    padding-top: 2%;
+    margin: 0;
+}
+
+.selectDayRelative {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: #8A8A8A;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+    .vision-overlay,
+    .vision-overlay.is-active,
+    .visiibleVareingPlant {
+        transition-duration: 0.01ms !important;
+    }
+}
+
+.childOfBlockvisiibleVareingPlant {
+    padding: 0 20px 0;
+}
+
+.selectDayHeader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.selectDayHeader span {
+    width: 4px;
+    height: 4px;
+    border-radius: 50%;
+    background: #C0C0C0;
+    display: inline-block;
+}
+
+.selectDayPlants {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #5C7163;
+    margin: 0;
+}
+
+.plantsPreview {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.plantsPreview__item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    color: #2D2D2D;
+}
+
+.plantsPreview__dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #6F9FC4;
+    flex-shrink: 0;
+}
+
+.plantsPreview__name {
+    font-weight: 500;
+}
+
+.plantsPreview__location {
+    margin-left: auto;
+    font-size: 11px;
+    color: #8A8A8A;
+}
+
+.selectDayEmpty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.selectDayEmpty img {
+    margin-top: 6%;
+}
+
+
+.selectDayEmpty p:nth-child(2) {
+    font-family: 'Inter', sans-serif;
+    font-size: 15px;
+    font-weight: bolder;
+    color: #2D2D2D;
+    margin-bottom: 0;
+}
+
+.selectDayEmpty p:nth-child(3) {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #8A8A8A;
+    text-align: center;
+    width: 89%;
+}

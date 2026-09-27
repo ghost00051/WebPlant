@@ -5,39 +5,49 @@ import {
 } from '../../utils/pushNotifications.js'
 import './NotificationPrompt.css'
 import dropletIcon from '../../assets/droplet.svg'
-import alert from '../../assets/alert-triangle.svg'
+import alertIcon from '../../assets/alert-triangle.svg'
+import appIcon from '../../assets/AppIcon.svg'   // 👈 импорт
 
-function NotificationPrompt({ userId, onClose }) {
+function NotificationPrompt({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+
+  const markShown = () => {
+    localStorage.setItem('push_prompt_last_shown', Date.now().toString())
+  }
 
   const handleAccept = async () => {
     setLoading(true)
     setError('')
     try {
+      if (Notification.permission === 'denied') {
+        setError('Уведомления заблокированы в настройках браузера')
+        markShown()
+        return
+      }
+
       const granted = await requestPermission()
       if (!granted) {
         setError('Разрешение не получено')
-        localStorage.setItem('push_prompt_last_shown', Date.now().toString())
+        markShown()
         setTimeout(onClose, 1500)
         return
       }
 
-      console.log('📤 Подписываемся для user_id =', userId)
       await subscribeToPush()
-
-      alert('✅ Уведомления включены!')
+      console.log('✅ Подписка сохранена на сервере')
+      markShown()
       onClose()
     } catch (err) {
-      console.error('❌ Ошибка:', err)
-      setError(err.message)
+      console.error('❌ Ошибка подписки:', err)
+      setError(err.message || 'Не удалось включить уведомления')
     } finally {
       setLoading(false)
     }
   }
 
   const handleDecline = () => {
-    localStorage.setItem('push_prompt_last_shown', Date.now().toString())
+    markShown()
     onClose()
   }
 
@@ -46,7 +56,7 @@ function NotificationPrompt({ userId, onClose }) {
       <div className='notification-prompt'>
         <div className='godOfNotifications'>
           <div className='notification-prompt-icon'>
-            <img src='../../src/assets/AppIcon.svg' alt='' />
+            <img src={appIcon} alt='' />
           </div>
           <h2>«Лейка» хочет отправлять вам уведомления</h2>
           <p className='notification-prompt-text'>
@@ -59,7 +69,7 @@ function NotificationPrompt({ userId, onClose }) {
               <p>Напомним, когда пора полить</p>
             </div>
             <div className='driedOut'>
-              <img src={alert} alt='предупреждение' />
+              <img src={alertIcon} alt='предупреждение' />
               <p>Предупредим, если почва пересохнет</p>
             </div>
           </div>

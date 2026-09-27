@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Plus from '../../../img/plus-circle.svg'
 import Message from '../../../img/message-circle.svg'
 import Home from '../../../img/Home.svg'
@@ -7,14 +7,21 @@ import '../tools/tools.css'
 import './adaptiv.css'
 
 const TABS = [
-    { id: 'home',     icon: Home,    label: 'Главная' },
-    { id: 'add',      icon: Plus,    label: 'Добавить' },
-    { id: 'chat',     icon: Message, label: 'Чат с ИИ' },
-    { id: 'profile',  icon: Chat,    label: 'Профиль' },
+    { id: 'home', icon: Home, label: 'Главная' },
+    { id: 'add', icon: Plus, label: 'Добавить' },
+    { id: 'chat', icon: Message, label: 'Чат с ИИ' },
+    { id: 'profile', icon: Chat, label: 'Профиль' },
 ]
 
-function Tools({ onTabChange }) {
+function Tools({ onTabChange, activeTab }) {
     const [activeIndex, setActiveIndex] = useState(0)
+
+    useEffect(() => {
+        if (activeTab) {
+            const idx = TABS.findIndex(t => t.id === activeTab)
+            if (idx !== -1) setActiveIndex(idx)
+        }
+    }, [activeTab])
 
     const handleTabClick = (index) => {
         setActiveIndex(index)

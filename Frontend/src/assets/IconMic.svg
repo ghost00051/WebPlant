@@ -1,0 +1,17 @@
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40.000000" height="40.000000" fill="none" customFrame="url(#clipPath_6)">
+	<defs>
+		<clipPath id="clipPath_6">
+			<rect width="40.000000" height="40.000000" x="0.000000" y="0.000000" rx="14.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+		<clipPath id="clipPath_7">
+			<rect width="18.000000" height="18.000000" x="11.000000" y="11.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<rect id="IconMic" width="40.000000" height="40.000000" x="0.000000" y="0.000000" rx="14.000000" fill="rgb(245,243,239)" />
+	<g id="mic" customFrame="url(#clipPath_7)">
+		<rect id="mic" width="18.000000" height="18.000000" x="11.000000" y="11.000000" />
+		<path id="Вектор 111" d="M20 25.25L20 27.5" stroke="rgb(90,90,90)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+		<path id="Вектор 112" d="M25.25 18.5L25.25 20C25.25 21.1087 24.899 22.1889 24.2473 23.0859C23.5957 23.9828 22.6768 24.6504 21.6223 24.993C20.5679 25.3357 19.4321 25.3357 18.3777 24.993C17.3232 24.6504 16.4043 23.9828 15.7527 23.0859C15.101 22.1889 14.75 21.1087 14.75 20L14.75 18.5" fill-rule="nonzero" stroke="rgb(90,90,90)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+		<rect id="Прямоугольник 6" width="4.500000" height="9.750000" x="17.750000" y="12.500000" rx="2.250000" stroke="rgb(90,90,90)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	</g>
+</svg>
