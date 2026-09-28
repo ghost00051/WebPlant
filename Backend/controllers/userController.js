@@ -21,7 +21,7 @@ class UserController {
             const {
                 email,
                 password,
-                role,
+                name,
                 privacyPolicyAccepted,
                 termsAccepted
             } = req.body
@@ -51,13 +51,14 @@ class UserController {
                 })
             }
 
-            const hashPassword = bcrypt.hashSync(password, 5)
+            const hashPassword = await bcrypt.hash(password, 10)
             const user = await User.create({
                 email,
                 password: hashPassword,
-                role: role || 'USER'
+                name: name || null,
+                role: 'USER',
+                privilege_level: 'free'
             })
-
             const guestToken = req.cookies.guest_token
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
@@ -174,8 +175,8 @@ class UserController {
 
             res.cookie('token', token, {
                 httpOnly: true,
-                secure: true,         
-                sameSite: 'none',     
+                secure: true,
+                sameSite: 'none',
                 maxAge: 30 * 24 * 60 * 60 * 1000,
                 path: '/',
             })
@@ -185,7 +186,9 @@ class UserController {
                 user: {
                     id: user.id,
                     email: user.email,
-                    role: user.role
+                    name: user.name,
+                    role: user.role,
+                    privilege_level: user.privilege_level
                 }
             })
         } catch (e) {
@@ -232,7 +235,9 @@ class UserController {
             return res.json({
                 id: user.id,
                 email: user.email,
-                role: user.role
+                name: user.name,
+                role: user.role,
+                privilege_level: user.privilege_level
             })
         } catch (e) {
             console.error("❌ Ошибка проверки пользователя:", e)
@@ -242,7 +247,9 @@ class UserController {
 
     async getAll(req, res) {
         try {
-            const users = await User.findAll()
+            const users = await User.findAll({
+                attributes: { exclude: ['password'] }
+            })
             return res.json(users)
         } catch (e) {
             console.error("❌ Ошибка получения пользователей:", e)

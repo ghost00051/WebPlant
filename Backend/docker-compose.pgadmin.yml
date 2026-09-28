@@ -21,4 +21,4 @@ volumes:
 networks:
   ctp_network:
     external: true
-    name: backend_ctp_network    # ← точное имя
+    name: backend_ctp_network 

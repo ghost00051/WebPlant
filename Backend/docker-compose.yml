@@ -69,8 +69,35 @@ services:
       DOCKER_HOST: tcp://docker-socket-proxy:2375
     networks:
       - ctp_network
+    volumes:
+      - ./uploads:/app/uploads
     expose:
       - "5000"
+
+  backup:
+    image: postgres:16-alpine
+    container_name: ctp_backup
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${DB_NAME}
+      PGUSER: ${DB_USER}
+      PGPASSWORD: ${DB_PASSWORD}
+      BACKUP_RETENTION_DAYS: 14
+    volumes:
+      - ./backups:/backups
+      - ./uploads:/uploads:ro
+      - ./backup.sh:/usr/local/bin/backup.sh:ro
+    networks:
+      - ctp_network
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["while :; do /bin/sh /usr/local/bin/backup.sh || echo 'Backup failed; will retry in 24 hours'; sleep 86400; done"]
 
   nginx:
     image: nginx:alpine

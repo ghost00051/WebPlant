@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import moment from 'moment/min/moment-with-locales'
 moment.locale('ru')
 import CalendarIcon from '../../assets/CalendarIcon.svg'
@@ -9,9 +9,13 @@ import './MiniCalendar.css'
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DAYS_IN_VIEW = 14
 
-function MiniCalendar({ onSelectDay, scheduleMap }) {
+const MiniCalendar = forwardRef(function MiniCalendar(
+  { onSelectDay, scheduleMap, pastDates, externalIso },
+  ref
+) {
   const [anchor, setAnchor] = useState(moment().startOf('isoWeek'))
-  const [pastWaterings, setPastWaterings] = useState([])
+  const [direction, setDirection] = useState('next')
+  const [animKey, setAnimKey] = useState(0)
 
   const futureWaterings = useMemo(
     () => (scheduleMap ? [...scheduleMap.keys()] : []),
@@ -29,39 +33,34 @@ function MiniCalendar({ onSelectDay, scheduleMap }) {
 
   const isSameDay = (a, b) => a.isSame(b, 'day')
 
-  const prev = () => setAnchor(a => a.clone().subtract(DAYS_IN_VIEW, 'days'))
-  const next = () => setAnchor(a => a.clone().add(DAYS_IN_VIEW, 'days'))
+  const prev = () => {
+    setDirection('prev')
+    setAnchor(a => a.clone().subtract(DAYS_IN_VIEW, 'days'))
+    setAnimKey(k => k + 1)
+  }
 
+  const next = () => {
+    setDirection('next')
+    setAnchor(a => a.clone().add(DAYS_IN_VIEW, 'days'))
+    setAnimKey(k => k + 1)
+  }
 
-  const getPlantHistory = useCallback(async () => {
-    try {
-      const response = await fetch(
-        'https://server.checktheplants.ru/api/plants/history',
-        { method: 'GET', credentials: 'include' }
-      )
-      if (response.ok) {
-        const data = await response.json()
-        const plantsArray = Array.isArray(data) ? data : data.plants || []
-        const pastDates = plantsArray
-          .filter(p => p.last_watered_at)
-          .map(p => moment(p.last_watered_at).format('YYYY-MM-DD'))
-        setPastWaterings([...new Set(pastDates)])
-      }
-    } catch (error) {
-      console.error('Ошибка получения истории:', error)
+  useImperativeHandle(ref, () => ({
+    scrollTo(iso) {
+      const m = moment(iso)
+      const target = m.clone().startOf('isoWeek')
+      setDirection(target.isBefore(anchor) ? 'prev' : 'next')
+      setAnchor(target)
+      setAnimKey(k => k + 1)
     }
-  }, [])
-
-  useEffect(() => {
-    getPlantHistory()
-  }, [getPlantHistory])
+  }), [anchor])
 
   return (
     <div className='mini-calendar'>
       <div className='mini-calendar__header'>
         <div className='mini-calendar__title'>
           <img src={CalendarIcon} alt='' />
-          <span>{title}</span>
+          <span key={title}>{title}</span>
         </div>
         <div className='mini-calendar__nav'>
           <button onClick={prev} aria-label='Предыдущие 2 недели'>
@@ -74,32 +73,44 @@ function MiniCalendar({ onSelectDay, scheduleMap }) {
       </div>
 
       <div className='mini-calendar__weekdays'>
-        {WEEK_DAYS.map(d => <span key={d}>{d}</span>)}
+        {WEEK_DAYS.map(d => (
+          <span key={d}>{d}</span>
+        ))}
       </div>
 
-      <div className='mini-calendar__grid'>
-        {days.map(day => {
-          const dateStr = day.format('YYYY-MM-DD')
-          const isToday = isSameDay(day, today)
-          const isFuture = futureWaterings.includes(dateStr)
-          const isPast = pastWaterings.includes(dateStr)
+      <div className='mini-calendar__grid-wrap'>
+        <div
+          key={animKey}
+          className={`mini-calendar__grid slide-${direction}`}
+        >
+          {days.map(day => {
+            const dateStr = day.format('YYYY-MM-DD')
+            const isToday = isSameDay(day, today)
+            const isSelected = externalIso === dateStr
+            const isFuture = futureWaterings.includes(dateStr)
+            const isPast = pastDates?.has?.(dateStr) ?? false
 
-          return (
-            <button
-              key={dateStr}
-              className={['mini-calendar__day', isToday && 'is-today']
-                .filter(Boolean)
-                .join(' ')}
-              onClick={() => onSelectDay?.(day.toDate())}
-            >
-              <span className='mini-calendar__day-number'>{day.date()}</span>
-              <div className='mini-calendar__dots'>
-                {isFuture && <span className='dot dot--future' title='Будущий полив' />}
-                {isPast && <span className='dot dot--past' title='Прошлый полив' />}
-              </div>
-            </button>
-          )
-        })}
+            return (
+              <button
+                key={dateStr}
+                className={[
+                  'mini-calendar__day',
+                  isToday && 'is-today',
+                  isSelected && 'is-selected',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                onClick={() => onSelectDay?.(day.toDate())}
+              >
+                <span className='mini-calendar__day-number'>{day.date()}</span>
+                <div className='mini-calendar__dots'>
+                  {isFuture && <span className='dot dot--future' title='Будущий полив' />}
+                  {isPast && <span className='dot dot--past' title='Прошлый полив' />}
+                </div>
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       <div className='mini-calendar__legend'>
@@ -115,6 +126,6 @@ function MiniCalendar({ onSelectDay, scheduleMap }) {
       </div>
     </div>
   )
-}
+})
 
 export default MiniCalendar

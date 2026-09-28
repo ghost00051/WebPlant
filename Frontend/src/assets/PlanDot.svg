@@ -1,0 +1,9 @@
+<svg viewBox="0 0 12 12" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="12.000000" height="12.000000" fill="none" customFrame="url(#clipPath_2)">
+	<defs>
+		<clipPath id="clipPath_2">
+			<rect width="12.000000" height="12.000000" x="0.000000" y="0.000000" rx="6.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<rect id="PlanDot" width="12.000000" height="12.000000" x="0.000000" y="0.000000" rx="6.000000" fill="rgb(255,255,255)" />
+	<rect id="PlanDot" width="10.500000" height="10.500000" x="0.750000" y="0.750000" rx="5.250000" stroke="rgb(173,173,173)" stroke-width="1.500000" />
+</svg>

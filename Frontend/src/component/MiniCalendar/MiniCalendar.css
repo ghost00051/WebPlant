@@ -6,7 +6,10 @@
   font-family: 'Inter', sans-serif;
   max-width: 420px;
   margin: 1% 4%;
+  transition: box-shadow 0.3s ease;
 }
+
+
 
 .mini-calendar__header {
   display: flex;
@@ -24,6 +27,29 @@
   color: #2d2d2d;
 }
 
+.mini-calendar__title img {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.mini-calendar__title span {
+  display: inline-block;
+  animation: title-fade 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes title-fade {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+
 .mini-calendar__nav {
   display: flex;
   gap: 8px;
@@ -39,12 +65,33 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s;
+  transition:
+    background 0.2s ease,
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s ease;
+}
+
+.mini-calendar__nav button img {
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .mini-calendar__nav button:hover {
   background: #e8e8e8;
+  transform: scale(1.08);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.07);
 }
+
+.mini-calendar__nav button:hover img {
+  transform: scale(1.1);
+}
+
+.mini-calendar__nav button:active {
+  transform: scale(0.92);
+  transition-duration: 0.08s;
+  box-shadow: none;
+}
+
+
 
 .mini-calendar__weekdays {
   display: grid;
@@ -59,13 +106,57 @@
   padding: 6px 0;
 }
 
+
+
+.mini-calendar__grid-wrap {
+  overflow: hidden;
+  padding: 4px;
+  margin: -4px;
+}
+
 .mini-calendar__grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 4px;
+  will-change: transform, opacity;
 }
 
+.mini-calendar__grid.slide-next {
+  animation: grid-from-right 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.mini-calendar__grid.slide-prev {
+  animation: grid-from-left 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes grid-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes grid-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-32px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+
+
 .mini-calendar__day {
+  position: relative;
   aspect-ratio: 1 / 1;
   border: none;
   background: transparent;
@@ -77,62 +168,108 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  transition: background 0.15s, color 0.15s;
   padding: 0;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease,
+    transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.25s ease;
 }
 
 .mini-calendar__day:hover {
   background: #f0f2ec;
+  transform: scale(1.08);
+  box-shadow: 0 4px 12px rgba(125, 143, 114, 0.16);
+}
+
+.mini-calendar__day:active {
+  transform: scale(0.94);
+  transition-duration: 0.08s;
+  box-shadow: none;
 }
 
 .mini-calendar__day.is-outside {
   color: #cfcfcf;
 }
 
-
 .mini-calendar__day.is-watering {}
 
 .mini-calendar__day.is-today {
   border: 2px solid #7d8f72;
+  animation: today-pulse 2.6s ease-in-out infinite;
 }
 
+@keyframes today-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(125, 143, 114, 0);
+  }
+
+  50% {
+    box-shadow: 0 0 0 4px rgba(125, 143, 114, 0.1);
+  }
+}
+
+.mini-calendar__day.is-selected {
+  background: #e9efe9;
+  color: #5c7163;
+  font-weight: 600;
+  box-shadow: 0 4px 14px rgba(125, 143, 114, 0.22);
+}
+
+.mini-calendar__day.is-selected:hover {
+  background: #dfe8e0;
+}
 
 .mini-calendar__day-number {
   line-height: 1;
 }
+
+
 
 .mini-calendar__dots {
   display: flex;
   gap: 4px;
   margin-top: 2px;
   height: 6px;
-
   align-items: center;
   justify-content: center;
 }
-
 
 .dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   display: inline-block;
+  animation: dot-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s both;
+}
+
+@keyframes dot-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 .dot--future {
-  background: #6F9FC4;
-
+  background: #6f9fc4;
 }
 
 .dot--past {
-  background: #5FB884;
-
+  background: #5fb884;
 }
 
 .dot--today {
-  background: #5FB884;
-
+  background: #5fb884;
 }
+
 
 
 .mini-calendar__legend {
@@ -149,5 +286,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  transition: color 0.2s ease;
 }
 
+.legend-item:hover {
+  color: #5c7163;
+}
+
+
+
+@media (prefers-reduced-motion: reduce) {
+
+  .mini-calendar *,
+  .mini-calendar *::before,
+  .mini-calendar *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

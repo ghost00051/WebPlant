@@ -1,0 +1,16 @@
+<svg viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="40.000000" height="40.000000" fill="none" customFrame="url(#clipPath_0)">
+	<defs>
+		<clipPath id="clipPath_0">
+			<rect width="40.000000" height="40.000000" x="0.000000" y="0.000000" rx="12.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+		<clipPath id="clipPath_1">
+			<rect width="18.000000" height="18.000000" x="11.000000" y="11.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<rect id="PlantTile" width="40.000000" height="40.000000" x="0.000000" y="0.000000" rx="12.000000" fill="rgb(239,243,236)" />
+	<g id="droplets" customFrame="url(#clipPath_1)">
+		<rect id="droplets" width="18.000000" height="18.000000" x="11.000000" y="11.000000" />
+		<path id="Вектор 844" d="M19.25 20.1876C19.25 19.3176 18.8225 18.4926 17.9675 17.7951C17.1125 17.0976 16.4675 16.0626 16.25 14.9751C16.0325 16.0626 15.395 17.1051 14.5325 17.7951C13.67 18.4851 13.25 19.3251 13.25 20.1876C13.25 21.8526 14.6 23.2251 16.25 23.2251C17.9 23.2251 19.25 21.8526 19.25 20.1876Z" fill-rule="nonzero" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+		<path id="Вектор 845" d="M20.4199 15.9501C20.9357 15.126 21.3014 14.2169 21.4999 13.2651C21.8749 15.1401 22.9999 16.9401 24.4999 18.1401C25.9999 19.3401 26.7499 20.7651 26.7499 22.2651C26.7542 23.3019 26.4505 24.3165 25.8775 25.1805C25.3044 26.0444 24.4877 26.7188 23.531 27.118C22.5742 27.5173 21.5204 27.6234 20.5033 27.4231C19.4861 27.2227 18.5513 26.7249 17.8174 25.9926" fill-rule="nonzero" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.500000" />
+	</g>
+</svg>

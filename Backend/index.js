@@ -64,7 +64,9 @@ app.use(express.json())
 app.use(express.urlencoded({ extended: true }))
 app.use(getGuestToken)
 
-app.use('/uploads', express.static(path.resolve('uploads')))
+app.use('/uploads', express.static(path.resolve('uploads'), {
+    setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
+}))
 
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", userCookieConsentRouter)

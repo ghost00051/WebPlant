@@ -1,7 +1,7 @@
 import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
 import MiniCalendar from '../MiniCalendar/MiniCalendar'
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import check from '../../assets/check.svg'
 import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
@@ -12,6 +12,15 @@ import './homePage.css'
 
 const EXIT_MS = 420
 
+function pickPhoto(p) {
+  return (
+    p?.photo_url ??
+    p?.photos?.find(ph => ph.is_main)?.url ??
+    p?.photos?.[0]?.url ??
+    null
+  )
+}
+
 function HomePage() {
   const [plant, setPlant] = useState([])
   const [allPlants, setAllPlants] = useState([])
@@ -19,13 +28,29 @@ function HomePage() {
   const [removingId, setRemovingId] = useState(null)
   const [selectedDay, setSelectedDay] = useState(null)
   const [schedule, setSchedule] = useState([])
+  const [history, setHistory] = useState([])
   const [now, setNow] = useState(new Date())
+
+  const calendarRef = useRef(null)
 
   const scheduleMap = useMemo(() => {
     const map = new Map()
     for (const item of schedule) map.set(item.date, item.plants ?? [])
     return map
   }, [schedule])
+
+  const historyMap = useMemo(() => {
+    const map = new Map()
+    for (const item of history) {
+      map.set(item.date, item.plants ?? [])
+    }
+    return map
+  }, [history])
+
+  const pastDatesSet = useMemo(
+    () => new Set(historyMap.keys()),
+    [historyMap]
+  )
 
   const getWateringPlant = useCallback(async () => {
     try {
@@ -72,11 +97,27 @@ function HomePage() {
     }
   }, [])
 
+  const getPlantHistory = useCallback(async () => {
+    try {
+      const response = await fetch(
+        'https://server.checktheplants.ru/api/plants/history?limit=200',
+        { method: 'GET', credentials: 'include' }
+      )
+      if (response.ok) {
+        const data = await response.json()
+        setHistory(Array.isArray(data.items) ? data.items : [])
+      }
+    } catch (error) {
+      console.error('Ошибка получения истории:', error)
+    }
+  }, [])
+
   useEffect(() => {
     getWateringPlant()
     getAllPlants()
     getPlantSchedule()
-  }, [getWateringPlant, getAllPlants, getPlantSchedule])
+    getPlantHistory()
+  }, [getWateringPlant, getAllPlants, getPlantSchedule, getPlantHistory])
 
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 60_000)
@@ -102,12 +143,14 @@ function HomePage() {
           credentials: 'include'
         }
       )
+
       if (!response.ok) {
         setWateringId(null)
         return
       }
 
       setRemovingId(plantId)
+
       setTimeout(() => {
         setPlant(prev => prev.filter(p => p.id !== plantId))
         setRemovingId(null)
@@ -117,6 +160,7 @@ function HomePage() {
       getWateringPlant()
       getAllPlants()
       getPlantSchedule()
+      getPlantHistory()
     } catch (error) {
       console.error('Ошибка полива:', error)
       setWateringId(null)
@@ -137,38 +181,78 @@ function HomePage() {
 
   const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1)
 
+  const buildDay = useCallback((date) => {
+    const m = moment(date)
+    const today = moment().startOf('day')
+    const target = m.clone().startOf('day')
+    const diffDays = target.diff(today, 'days')
+
+    let relative = 'Сегодня'
+    if (diffDays === -1) relative = 'Вчера'
+    else if (diffDays === 1) relative = 'Завтра'
+    else if (diffDays < -1) relative = m.fromNow()
+    else if (diffDays > 1) relative = `через ${target.fromNow(true)}`
+
+    const iso = m.format('YYYY-MM-DD')
+    const futurePlants = scheduleMap.get(iso) ?? []
+    const pastPlants = historyMap.get(iso) ?? []
+
+    let kind = 'empty'
+    let plants = []
+
+    if (futurePlants.length) {
+      kind = 'future'
+      plants = futurePlants
+    } else if (pastPlants.length) {
+      kind = 'past'
+      plants = pastPlants
+    }
+
+    return {
+      date: m.toDate(),
+      diffDays,
+      relative,
+      iso,
+      kind,
+      plants,
+      futurePlants,
+      pastPlants,
+      dayNumber: m.format('D'),
+      dayOfWeek: capitalize(m.format('dddd')),
+      month: capitalize(m.format('MMMM')),
+      year: m.format('YYYY'),
+      full: `${capitalize(m.format('dddd'))}, ${m.format('D MMMM')}`,
+    }
+  }, [scheduleMap, historyMap])
+
   const handleSelectDay = useCallback((date) => {
     setSelectedDay(prev => {
       if (prev && prev.date.getTime() === date.getTime()) return null
-
-      const m = moment(date)
-      const today = moment().startOf('day')
-      const target = m.clone().startOf('day')
-      const diffDays = target.diff(today, 'days')
-
-      let relative = 'Сегодня'
-      if (diffDays === -1) relative = 'Вчера'
-      else if (diffDays === 1) relative = 'Завтра'
-      else if (diffDays < -1) relative = m.fromNow()
-      else if (diffDays > 1) relative = `через ${target.fromNow(true)}`
-
-      const iso = m.format('YYYY-MM-DD')            
-      const plants = scheduleMap.get(iso) ?? []     
-
-      return {
-        date,
-        diffDays,
-        relative,
-        iso,
-        plants,
-        dayNumber: m.format('D'),
-        dayOfWeek: capitalize(m.format('dddd')),
-        month: capitalize(m.format('MMMM')),
-        year: m.format('YYYY'),
-        full: `${capitalize(m.format('dddd'))}, ${m.format('D MMMM')}`,
-      }
+      return buildDay(date)
     })
-  }, [scheduleMap])                               
+  }, [buildDay])
+
+  const nextWatering = useMemo(() => {
+    if (!selectedDay) return null
+    const fromIso = selectedDay.iso
+
+    const upcoming = schedule
+      .filter(item => item.date > fromIso && item.plants?.length)
+      .sort((a, b) => a.date.localeCompare(b.date))
+
+    if (!upcoming.length) return null
+
+    const m = moment(upcoming[0].date)
+    return {
+      iso: upcoming[0].date,
+      label: capitalize(m.format('D MMMM')),
+    }
+  }, [schedule, selectedDay])
+
+  const handleGoToDate = useCallback((iso) => {
+    calendarRef.current?.scrollTo(iso)
+    setSelectedDay(buildDay(moment(iso).toDate()))
+  }, [buildDay])
 
   return (
     <div>
@@ -184,8 +268,11 @@ function HomePage() {
       </div>
 
       <MiniCalendar
+        ref={calendarRef}
         onSelectDay={handleSelectDay}
-        scheduleMap={scheduleMap}                   
+        scheduleMap={scheduleMap}
+        pastDates={pastDatesSet}
+        externalIso={selectedDay?.iso}
       />
 
       <div>
@@ -203,6 +290,7 @@ function HomePage() {
               const mainPhoto =
                 fullInfo?.photos?.find(p => p.is_main)?.url ??
                 fullInfo?.photos?.[0]?.url
+
               const isRemoving = removingId === item.id
               const isWatering = wateringId === item.id
 
@@ -220,6 +308,7 @@ function HomePage() {
 
                     <div className='plant-info'>
                       <p className='plant-name'>{item.name}</p>
+
                       <div className='plant-details'>
                         <span>{item.species}</span>
                         <span className='separator'>·</span>
@@ -227,6 +316,7 @@ function HomePage() {
                           Каждые {fullInfo?.watering_interval_days ?? '—'} дней
                         </span>
                       </div>
+
                       <div className='watering-badge'>
                         <img src={droplets} alt='' />
                         Полить сегодня
@@ -253,6 +343,8 @@ function HomePage() {
       <VisionNextPlant
         active={!!selectedDay}
         day={selectedDay}
+        nextWatering={nextWatering}
+        onGoToDate={handleGoToDate}
         onClose={() => setSelectedDay(null)}
       />
     </div>

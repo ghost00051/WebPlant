@@ -54,6 +54,81 @@ class PlantController {
         }
     }
 
+    async getHistoryAll(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const limit = Math.min(parseInt(req.query.limit) || 200, 500)
+            const offset = parseInt(req.query.offset) || 0
+
+            const logs = await WateringLog.findAndCountAll({
+                where: {
+                    user_id: userId,
+                    action: 'watered'
+                },
+                include: [{
+                    model: Plant,
+                    as: 'plant',
+                    attributes: ['id', 'name', 'species', 'location'],
+                    required: true,
+                    where: { user_id: userId, is_active: true }
+                }],
+                order: [['action_at', 'DESC']],
+                limit,
+                offset,
+                distinct: true
+            })
+
+            const groups = {}
+
+            for (const log of logs.rows) {
+                const iso = new Date(log.action_at).toISOString().slice(0, 10)
+
+                if (!groups[iso]) {
+                    groups[iso] = { date: iso, plants: [] }
+                }
+
+                const already = groups[iso].plants.find(p => p.id === log.plant_id)
+                if (already) {
+                    if (new Date(log.action_at) > new Date(already.watered_at)) {
+                        already.watered_at = log.action_at
+                        already.scheduled_for = log.scheduled_for
+                        already.hours_late = log.hours_late
+                        already.note = log.note
+                    }
+                    continue
+                }
+
+                groups[iso].plants.push({
+                    id: log.plant_id,
+                    name: log.plant?.name ?? null,
+                    species: log.plant?.species ?? null,
+                    location: log.plant?.location ?? null,
+                    watered_at: log.action_at,
+                    scheduled_for: log.scheduled_for,
+                    hours_late: log.hours_late,
+                    note: log.note
+                })
+            }
+
+            const items = Object.values(groups).sort(
+                (a, b) => b.date.localeCompare(a.date)
+            )
+
+            return res.json({
+                generatedAt: new Date().toISOString(),
+                total: logs.count,
+                limit,
+                offset,
+                items
+            })
+        } catch (error) {
+            console.error('❌ Ошибка истории:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
     async getSchedule(req, res) {
         try {
             const userId = getUserId(req)
@@ -65,6 +140,12 @@ class PlantController {
                     user_id: userId,
                     is_active: true
                 },
+                include: [{
+                    model: PlantPhoto,
+                    as: 'photos',
+                    separate: true,
+                    order: [['sort_order', 'ASC']]
+                }],
                 order: [['next_watering_at', 'ASC']]
             })
 
@@ -87,11 +168,25 @@ class PlantController {
                     groups[dateKey] = { date: dateKey, bucket, plants: [] }
                 }
 
+                const photos = p.photos || []
+                const mainPhoto =
+                    photos.find(ph => ph.is_main)?.url ??
+                    photos[0]?.url ??
+                    null
+
                 groups[dateKey].plants.push({
                     id: p.id,
                     name: p.name,
+                    species: p.species,
                     location: p.location,
-                    photo_url: p.photo_url,
+                    description: p.description,
+                    photo_url: mainPhoto,
+                    photos: photos.map(ph => ({
+                        id: ph.id,
+                        url: ph.url,
+                        is_main: ph.is_main,
+                        sort_order: ph.sort_order
+                    })),
                     next_watering_at: p.next_watering_at,
                     watering_interval_days: p.watering_interval_days,
                     watering_time_of_day: p.watering_time_of_day
@@ -463,6 +558,72 @@ class PlantController {
             return res.json(plants)
         } catch (error) {
             console.error('❌ Ошибка получения нуждающихся в поливе:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async getCompletionStats(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plants = await Plant.findAll({
+                where: { user_id: userId, is_active: true },
+                attributes: ['id', 'watering_interval_days', 'created_at'],
+                raw: true
+            })
+
+            const now = new Date()
+            let expected = 0
+
+            for (const p of plants) {
+                const interval = p.watering_interval_days || 7
+                const created = new Date(p.created_at)
+                const daysAlive = Math.max(
+                    0,
+                    Math.floor((now - created) / (24 * 60 * 60 * 1000))
+                )
+                expected += Math.floor(daysAlive / interval)
+            }
+
+            const plantIds = plants.map(p => p.id)
+
+            let actual = 0
+
+            if (plantIds.length) {
+                const [row] = await sequelize.query(`
+                SELECT COUNT(DISTINCT (plant_id, DATE(action_at))) AS count
+                FROM watering_logs
+                WHERE user_id = :userId
+                  AND action = 'watered'
+                  AND plant_id IN (:plantIds)
+            `, {
+                    replacements: { userId, plantIds },
+                    type: sequelize.QueryTypes.SELECT
+                })
+
+                actual = parseInt(row?.count) || 0
+            }
+
+            const percent = expected > 0
+                ? Math.min(100, Math.round((actual / expected) * 100))
+                : null
+
+            const firstPlant = plants.length
+                ? plants.reduce((min, p) =>
+                    new Date(p.created_at) < new Date(min.created_at) ? p : min
+                )
+                : null
+
+            return res.json({
+                plantsCount: plants.length,
+                sinceDate: firstPlant ? firstPlant.created_at : null,
+                expected,
+                actual,
+                percent
+            })
+        } catch (error) {
+            console.error('❌ Ошибка completion stats:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }

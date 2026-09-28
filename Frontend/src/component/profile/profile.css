@@ -1,0 +1,139 @@
+.headerBlocskProfils {
+    font-family: 'Inter', sans-serif;
+    font-size: 22px;
+    font-weight: bold;
+    font-style: normal;
+    color: #2d2d2d;
+    margin: 2% 0;
+    padding: 0 20px 0;
+}
+
+.blocksDescriptionProfile {
+    margin: 0 20px 0;
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    padding: 5% 4%;
+}
+
+.nameBlocksDescriptionProfile {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.imgOfName {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background-color: #E8F5E9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.imgOfName p {
+    font-family: 'Inter', sans-serif;
+    font-size: 20px;
+    font-weight: bold;
+    color: #7C9082;
+    margin: 0;
+    line-height: 1;
+}
+
+.descritpionOfProfile p:nth-child(1) {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: bold;
+    color: #2D2D2D;
+    margin-bottom: 7%;
+    margin-top: 0;
+}
+
+.descritpionOfProfile p:nth-child(2) {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: #8A8A8A;
+    margin: 0;
+}
+
+.buttonOfEdProfile {
+    display: flex;
+    background-color: #F5F3EF;
+    border-radius: 20px;
+    align-items: center;
+    justify-content: center;
+    padding: 3% 0;
+    margin-top: 5%;
+}
+
+.buttonOfEdProfile p {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 400;
+    color: #5A5A5A;
+    margin: 0 0 0 2%;
+}
+
+.plantQuantity,
+.historyWaterPlant,
+.interestPlant {
+    background-color: #FFFFFF;
+    border-radius: 16px;
+    padding: 1% 1%;
+}
+
+.plantQuantity p:nth-child(1),
+.historyWaterPlant p:nth-child(1) {
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    font-weight: bold;
+    color: #2D2D2D;
+    margin: 0;
+}
+
+.plantQuantity p:nth-child(2),
+.historyWaterPlant p:nth-child(2),
+.interestPlant p:nth-child(2) {
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 500;
+    color: #8A8A8A;
+    margin: 0;
+}
+
+.interestPlant p:nth-child(1) {
+    font-family: 'Inter', sans-serif;
+    font-size: 18px;
+    font-weight: bold;
+    color: #7C9082;
+    margin: 0;
+}
+
+.informationOfProfile {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 20px;
+    margin-top: 4%;
+}
+
+.informationOfProfile>div {
+    flex: 1 1 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.plantQuantity,
+.historyWaterPlant,
+.interestPlant {
+    background-color: #FFFFFF;
+    border-radius: 16px;
+    padding: 12px 8px;
+}
