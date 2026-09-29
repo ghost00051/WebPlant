@@ -1,44 +1,46 @@
 import UserCookieConsent from "../models/userCookieConsentModels.js"
 import { Op } from "sequelize"
+import sequelize from "../db.js"
+import { getConsentState } from "../utils/consentState.js"
 
 const GUEST_TOKEN_LIFETIME = 60 * 60 * 1000
 const CONSENT_LIFETIME = 6 * 30 * 24 * 60 * 60 * 1000
+const CONSENT_TYPES = new Set(['technical', 'analytics', 'marketing', 'personalization'])
+const CONSENT_SOURCES = new Set([
+    'banner',
+    'settings',
+    'registration',
+    'legal_update',
+    'registration_linked',
+    'login_linked'
+])
 
 class UserCookieConsentController {
 
     async checkConsent(req, res) {
         try {
             const { consentType } = req.params
+            if (!CONSENT_TYPES.has(consentType)) {
+                return res.status(400).json({ message: 'Некорректный тип согласия' })
+            }
             const userId = req.user?.id || null
             const guestToken = req.guestToken
 
-            const whereClause = {
-                consent_type: consentType,
-                is_accepted: true,
-                is_revoked: false,
-                [Op.or]: [
-                    { expires_at: null },
-                    { expires_at: { [Op.gt]: new Date() } }
-                ]
-            }
-
-            if (userId) {
-                whereClause.user_id = userId
-            } else {
-                whereClause.guest_token = guestToken
-            }
+            const whereClause = userId
+                ? { consent_type: consentType, user_id: userId }
+                : { consent_type: consentType, guest_token: guestToken, user_id: null }
 
             const consent = await UserCookieConsent.findOne({
                 where: whereClause,
-                order: [['created_at', 'DESC']]
+                order: [['created_at', 'DESC'], ['id', 'DESC']]
             })
 
-            const isExpired = consent && consent.expires_at && new Date(consent.expires_at) < new Date()
+            const { hasConsent, isExpired } = getConsentState(consent)
 
             return res.json({
-                hasConsent: !!consent && !isExpired,
+                hasConsent,
                 consent: consent || null,
-                isExpired: isExpired || false
+                isExpired
             })
         } catch (error) {
             console.error("❌ Ошибка проверки согласия:", error)
@@ -49,15 +51,22 @@ class UserCookieConsentController {
     }
 
     async revokeConsent(req, res) {
+        let transaction
         try {
             const { consentType } = req.params
-            const { reason } = req.body
+            const { reason } = req.body || {}
             const userId = req.user?.id
 
+            if (!CONSENT_TYPES.has(consentType)) {
+                return res.status(400).json({ message: 'Некорректный тип согласия' })
+            }
             if (!userId) {
                 return res.status(401).json({
                     message: "Необходима авторизация"
                 })
+            }
+            if (reason !== undefined && (typeof reason !== 'string' || reason.length > 255)) {
+                return res.status(400).json({ message: 'Некорректная причина отзыва' })
             }
 
             const consent = await UserCookieConsent.findOne({
@@ -79,6 +88,7 @@ class UserCookieConsentController {
                 })
             }
 
+            transaction = await sequelize.transaction()
             await UserCookieConsent.update(
                 {
                     is_revoked: true,
@@ -87,7 +97,8 @@ class UserCookieConsentController {
                     is_accepted: false
                 },
                 {
-                    where: { id: consent.id }
+                    where: { id: consent.id },
+                    transaction
                 }
             )
 
@@ -102,12 +113,15 @@ class UserCookieConsentController {
                 ip_address: req.ip || req.connection.remoteAddress,
                 user_agent: req.headers['user-agent'],
                 source: 'settings'
-            })
+            }, { transaction })
+            await transaction.commit()
+            transaction = null
 
             return res.json({
                 message: "Согласие отозвано успешно"
             })
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error("❌ Ошибка отзыва согласия:", error)
             return res.status(500).json({
                 message: "Внутренняя ошибка сервера"
@@ -115,12 +129,22 @@ class UserCookieConsentController {
         }
     }
     async setConsent(req, res) {
+        let transaction
         try {
-            const { consentType, isAccepted, version, source } = req.body
+            const { consentType, isAccepted, version, source } = req.body || {}
             const userId = req.user?.id || null
             const guestToken = req.guestToken
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
+
+            if (
+                !CONSENT_TYPES.has(consentType) ||
+                typeof isAccepted !== 'boolean' ||
+                (version !== undefined && (typeof version !== 'string' || version.length > 10)) ||
+                (source !== undefined && !CONSENT_SOURCES.has(source))
+            ) {
+                return res.status(400).json({ message: 'Некорректные данные согласия' })
+            }
 
             const whereClause = {
                 consent_type: consentType,
@@ -136,6 +160,7 @@ class UserCookieConsentController {
                 whereClause.user_id = userId
             } else {
                 whereClause.guest_token = guestToken
+                whereClause.user_id = null
             }
 
             const existingConsent = await UserCookieConsent.findOne({
@@ -143,11 +168,22 @@ class UserCookieConsentController {
             })
 
             if (existingConsent) {
-                return res.status(409).json({
-                    message: "Активное согласие уже существует"
-                })
+                if (isAccepted) {
+                    return res.status(409).json({
+                        message: "Активное согласие уже существует"
+                    })
+                }
             }
 
+            transaction = await sequelize.transaction()
+            if (existingConsent) {
+                await existingConsent.update({
+                    is_accepted: false,
+                    is_revoked: true,
+                    revoked_at: new Date(),
+                    revoked_reason: 'user_declined'
+                }, { transaction })
+            }
             const consent = await UserCookieConsent.create({
                 user_id: userId,
                 guest_token: guestToken,
@@ -158,13 +194,16 @@ class UserCookieConsentController {
                 source: source || 'banner',
                 ip_address: ip,
                 user_agent: userAgent
-            })
+            }, { transaction })
+            await transaction.commit()
+            transaction = null
 
             return res.status(201).json({
                 message: isAccepted ? "Согласие сохранено" : "Согласие отклонено",
                 consent
             })
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error("❌ Ошибка сохранения согласия:", error)
             return res.status(500).json({
                 message: "Внутренняя ошибка сервера"
@@ -173,32 +212,61 @@ class UserCookieConsentController {
     }
 
     async setAllConsents(req, res) {
+        let transaction
         try {
-            const { consents } = req.body
+            const { consents } = req.body || {}
+            if (
+                !Array.isArray(consents) ||
+                consents.length !== CONSENT_TYPES.size ||
+                consents.some(consent =>
+                    !consent ||
+                    !CONSENT_TYPES.has(consent.consentType) ||
+                    typeof consent.isAccepted !== 'boolean'
+                ) ||
+                new Set(consents.map(consent => consent.consentType)).size !== consents.length
+            ) {
+                return res.status(400).json({ message: 'Передан некорректный список согласий' })
+            }
+
             const userId = req.user?.id || null
             const guestToken = req.guestToken
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
 
-            const results = []
-
             const expiresAt = new Date(Date.now() + CONSENT_LIFETIME)
-
-            for (const consentData of consents) {
-                const consent = await UserCookieConsent.create({
-                    user_id: userId,
-                    guest_token: guestToken,
-                    consent_type: consentData.consentType,
-                    is_accepted: consentData.isAccepted,
-                    version: '1.0',
-                    accepted_at: consentData.isAccepted ? new Date() : null,
-                    expires_at: expiresAt,
-                    source: 'banner',
-                    ip_address: ip,
-                    user_agent: userAgent
-                })
-                results.push(consent)
-            }
+            transaction = await sequelize.transaction()
+            const owner = userId
+                ? { user_id: userId }
+                : { user_id: null, guest_token: guestToken }
+            const revokedAt = new Date()
+            await UserCookieConsent.update({
+                is_accepted: false,
+                is_revoked: true,
+                revoked_at: revokedAt,
+                revoked_reason: 'consent_updated'
+            }, {
+                where: {
+                    ...owner,
+                    consent_type: { [Op.in]: [...CONSENT_TYPES] },
+                    is_accepted: true,
+                    is_revoked: false
+                },
+                transaction
+            })
+            const results = await UserCookieConsent.bulkCreate(consents.map(consentData => ({
+                user_id: userId,
+                guest_token: guestToken,
+                consent_type: consentData.consentType,
+                is_accepted: consentData.isAccepted,
+                version: '1.0',
+                accepted_at: consentData.isAccepted ? new Date() : null,
+                expires_at: expiresAt,
+                source: 'banner',
+                ip_address: ip,
+                user_agent: userAgent
+            })), { transaction })
+            await transaction.commit()
+            transaction = null
 
             return res.status(201).json({
                 message: "Все согласия сохранены",
@@ -206,6 +274,9 @@ class UserCookieConsentController {
                 expires_at: expiresAt
             })
         } catch (error) {
+            if (transaction && !transaction.finished) {
+                await transaction.rollback()
+            }
             console.error("❌ Ошибка сохранения согласий:", error)
             return res.status(500).json({
                 message: "Внутренняя ошибка сервера"
@@ -220,19 +291,22 @@ class UserCookieConsentController {
 
             const whereClause = {
                 is_revoked: false,
-                [Op.or]: [
-                    { expires_at: null },
-                    { expires_at: { [Op.gt]: new Date() } }  
+                [Op.and]: [
+                    {
+                        [Op.or]: [
+                            { expires_at: null },
+                            { expires_at: { [Op.gt]: new Date() } }
+                        ]
+                    },
+                    userId
+                        ? {
+                            [Op.or]: [
+                                { user_id: userId },
+                                { guest_token: guestToken, user_id: null }
+                            ]
+                        }
+                        : { guest_token: guestToken }
                 ]
-            }
-
-            if (userId) {
-                whereClause[Op.or] = [
-                    { user_id: userId },
-                    { guest_token: guestToken, user_id: null }
-                ]
-            } else {
-                whereClause.guest_token = guestToken
             }
 
             const consents = await UserCookieConsent.findAll({
@@ -260,11 +334,12 @@ class UserCookieConsentController {
 
     async linkGuestConsentsToUser(req, res) {
         try {
-            const { userId, guestToken } = req.body
+            const userId = req.user.id
+            const guestToken = req.guestToken
 
-            if (!userId || !guestToken) {
+            if (!guestToken) {
                 return res.status(400).json({
-                    message: "userId и guestToken обязательны"
+                    message: "guest_token не найден"
                 })
             }
 
@@ -282,7 +357,7 @@ class UserCookieConsentController {
                 })
             }
 
-            const updated = await UserCookieConsent.update(
+            const [updatedCount] = await UserCookieConsent.update(
                 {
                     user_id: userId,
                     source: 'registration_linked'
@@ -296,9 +371,8 @@ class UserCookieConsentController {
             )
 
             return res.json({
-                message: `Связано ${guestConsents.length} согласий с пользователем ${userId}`,
-                count: guestConsents.length,
-                consents: guestConsents
+                message: `Связано ${updatedCount} согласий с пользователем ${userId}`,
+                count: updatedCount
             })
         } catch (error) {
             console.error("❌ Ошибка связывания согласий:", error)

@@ -1,34 +1,24 @@
 import PushSubscription from '../models/PushSubscription.js'
 import pushService from '../services/pushService.js'
-import jwt from 'jsonwebtoken'
+import { isValidPushSubscription } from '../utils/pushValidation.js'
 
 class PushController {
     async getVapidPublicKey(req, res) {
+        if (!process.env.VAPID_SUBJECT ||
+            !process.env.VAPID_PUBLIC_KEY ||
+            !process.env.VAPID_PRIVATE_KEY) {
+            return res.status(503).json({ message: 'Push notifications are not configured' })
+        }
         res.json({ publicKey: process.env.VAPID_PUBLIC_KEY })
     }
 
     async subscribe(req, res) {
         try {
-            const { subscription } = req.body
-
-            const token = req.cookies.token
-            let userId = null
-
-            if (token) {
-                try {
-                    const decoded = jwt.verify(token, process.env.SECRET_KEY)
-                    userId = decoded.id
-                    console.log(`✅ Подписка для пользователя ${userId}`)
-                } catch (e) {
-                    console.log('⚠️ Токен невалиден, сохраняем как гостевую')
-                }
-            } else {
-                console.log('⚠️ Нет токена, сохраняем как гостевую')
-            }
-
-            if (!subscription?.endpoint || !subscription?.keys) {
+            const { subscription } = req.body || {}
+            if (!isValidPushSubscription(subscription)) {
                 return res.status(400).json({ message: 'Неверные данные подписки' })
             }
+            const userId = req.user?.id || null
 
             let existing = await PushSubscription.findOne({
                 where: { endpoint: subscription.endpoint }

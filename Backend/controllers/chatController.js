@@ -5,14 +5,25 @@ import ChatLog from '../models/ChatLog.js'
 import { askAi } from '../services/aiService.js'
 
 function getUserId(req) {
-    const token = req.cookies.token
+    const token = req.cookies?.token
     if (!token) return null
     try {
         const decoded = jwt.verify(token, process.env.SECRET_KEY)
         return decoded.id
-    } catch (e) {
+    } catch {
         return null
     }
+}
+
+function getSessionOwner(userId, guestToken) {
+    return userId
+        ? { user_id: userId }
+        : { user_id: null, 'metadata.guestToken': guestToken }
+}
+
+function isSessionId(value) {
+    return typeof value === 'string' &&
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 const MAX_HISTORY = 20          
@@ -23,7 +34,8 @@ class ChatController {
     async send(req, res) {
         try {
             const userId = getUserId(req)
-            const { message, sessionId } = req.body
+            const guestToken = req.guestToken
+            const { message, sessionId } = req.body || {}
 
             if (!message || typeof message !== 'string') {
                 return res.status(400).json({ message: 'Сообщение обязательно' })
@@ -31,15 +43,30 @@ class ChatController {
             if (message.length > 1000) {
                 return res.status(400).json({ message: 'Сообщение слишком длинное' })
             }
-
+            if (sessionId && !isSessionId(sessionId)) {
+                return res.status(400).json({ message: 'Некорректный sessionId' })
+            }
 
             let session = sessionId
             const now = new Date()
 
+            if (session) {
+                const ownedSession = await ChatLog.findOne({
+                    where: {
+                        session_id: session,
+                        ...getSessionOwner(userId, guestToken)
+                    },
+                    attributes: ['id']
+                })
+                if (!ownedSession) {
+                    return res.status(404).json({ message: 'Сессия не найдена' })
+                }
+            }
+
             if (!session) {
                 const where = userId
                     ? { user_id: userId, role: 'user' }
-                    : { user_id: null, 'metadata.ip': req.ip, role: 'user' }
+                    : { user_id: null, 'metadata.guestToken': guestToken, role: 'user' }
 
                 const last = await ChatLog.findOne({
                     where,
@@ -60,7 +87,7 @@ class ChatController {
                 session_id: session || undefined,  
                 role: 'user',
                 text: message,
-                metadata: { ip: req.ip, userAgent: req.headers['user-agent'] }
+                metadata: { ip: req.ip, userAgent: req.headers['user-agent'], guestToken }
             })
             session = userMsg.session_id
 
@@ -68,6 +95,7 @@ class ChatController {
             const historyRows = await ChatLog.findAll({
                 where: {
                     session_id: session,
+                    ...getSessionOwner(userId, guestToken),
                     role: { [Op.in]: ['user', 'assistant'] },
                     error: null
                 },
@@ -120,7 +148,8 @@ class ChatController {
                     session_id: session,
                     role: 'assistant',
                     text: '',
-                    error: aiError.message || 'AI error'
+                    error: aiError.message || 'AI error',
+                    metadata: { guestToken }
                 })
                 throw aiError
             }
@@ -131,7 +160,8 @@ class ChatController {
                 role: 'assistant',
                 text: answer.text,
                 input_tokens: answer.usage?.input_tokens || null,
-                output_tokens: answer.usage?.output_tokens || null
+                output_tokens: answer.usage?.output_tokens || null,
+                metadata: { guestToken }
             })
 
             return res.json({
@@ -149,22 +179,41 @@ class ChatController {
     async history(req, res) {
         try {
             const userId = getUserId(req)
+            const guestToken = req.guestToken
             const { sessionId, limit = 50 } = req.query
 
-            const where = {}
-            if (userId) where.user_id = userId
-            else where.user_id = null        // гость
+            if (sessionId && !isSessionId(sessionId)) {
+                return res.status(400).json({ message: 'Некорректный sessionId' })
+            }
 
-            if (sessionId) where.session_id = sessionId
-            where.error = null
+            let activeSession = sessionId
+            if (!activeSession) {
+                const latest = await ChatLog.findOne({
+                    where: {
+                        ...getSessionOwner(userId, guestToken),
+                        error: null
+                    },
+                    attributes: ['session_id'],
+                    order: [['created_at', 'DESC'], ['id', 'DESC']]
+                })
+                activeSession = latest?.session_id
+            }
+            if (!activeSession) {
+                return res.json({ sessionId: null, items: [] })
+            }
+
+            const where = {
+                ...getSessionOwner(userId, guestToken),
+                session_id: activeSession,
+                error: null
+            }
+            const parsedLimit = Number.parseInt(limit, 10)
 
             const rows = await ChatLog.findAll({
                 where,
                 order: [['created_at', 'DESC']],
-                limit: Math.min(parseInt(limit) || 50, 200)
+                limit: Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 200)) : 50
             })
-
-            const activeSession = sessionId || rows[0]?.session_id
 
             const items = rows
                 .reverse()
@@ -189,14 +238,20 @@ class ChatController {
     async clear(req, res) {
         try {
             const userId = getUserId(req)
-            const { sessionId } = req.body
+            const guestToken = req.guestToken
+            const { sessionId } = req.body || {}
 
             if (!sessionId) {
                 return res.status(400).json({ message: 'sessionId обязателен' })
             }
+            if (!isSessionId(sessionId)) {
+                return res.status(400).json({ message: 'Некорректный sessionId' })
+            }
 
-            const where = { session_id: sessionId }
-            if (userId) where.user_id = userId
+            const where = {
+                session_id: sessionId,
+                ...getSessionOwner(userId, guestToken)
+            }
 
             await ChatLog.destroy({ where })
 

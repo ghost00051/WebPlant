@@ -1,9 +1,11 @@
+import 'dotenv/config'
 import express from "express"
 import cors from "cors"
-import dotenv from "dotenv"
 import cookieParser from 'cookie-parser'
+import helmet from 'helmet'
 import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
+import { isAllowedOrigin } from './utils/origins.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -28,41 +30,75 @@ import uploadRouter from "./routes/uploadRoutes.js"
 import reminderService from './jobs/reminderService.js'
 import chatRouter from './routes/chatRoutes.js'
 
-dotenv.config()
-
 const app = express()
-const PORT = process.env.PORT || 5000
+const PORT = Number(process.env.PORT || 5000)
+
+function validateProductionConfig() {
+    if (process.env.NODE_ENV !== 'production') return
+
+    const required = [
+        'DB_NAME',
+        'DB_USER',
+        'DB_PASSWORD',
+        'SECRET_KEY',
+        'FRONTEND_URL',
+        'VAPID_SUBJECT',
+        'VAPID_PUBLIC_KEY',
+        'VAPID_PRIVATE_KEY'
+    ]
+    const missing = required.filter(name => !process.env[name]?.trim())
+    if (missing.length) {
+        throw new Error(`Missing required production environment variables: ${missing.join(', ')}`)
+    }
+    if (Buffer.byteLength(process.env.SECRET_KEY, 'utf8') < 32) {
+        throw new Error('SECRET_KEY must contain at least 32 bytes in production')
+    }
+
+    let frontendUrl
+    try {
+        frontendUrl = new URL(process.env.FRONTEND_URL)
+    } catch {
+        throw new Error('FRONTEND_URL must be a valid HTTPS origin in production')
+    }
+    if (frontendUrl.protocol !== 'https:' ||
+        frontendUrl.pathname !== '/' ||
+        frontendUrl.search ||
+        frontendUrl.hash) {
+        throw new Error('FRONTEND_URL must be a valid HTTPS origin in production')
+    }
+}
 
 app.set('trust proxy', 1)
 
 app.use(cors({
     origin: (origin, callback) => {
-        const allowed = [
-            process.env.FRONTEND_URL,
-            'https://frontdevivan.ru',
-            'http://localhost:5173',
-            'http://127.0.0.1:5173',
-            'http://localhost:5500',
-            'http://127.0.0.1:5500',
-            'http://192.168.0.167:5173',
-            'http://192.168.0.176:5173',
-        ].filter(Boolean)
-        const isLocalNetwork = origin && /^http:\/\/(192\.168\.\d+\.\d+|127\.0\.0\.1|localhost):\d+$/.test(origin)
-        if (!origin || allowed.includes(origin) || isLocalNetwork) {
-            callback(null, true)
-        } else {
-            callback(new Error('Not allowed by CORS'))
-        }
+        callback(null, isAllowedOrigin(origin))
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
 }))
 
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' }
+}))
 app.use(cookieParser())
-app.use(express.json())
-app.use(express.urlencoded({ extended: true }))
+app.use(express.json({ limit: '100kb' }))
+app.use(express.urlencoded({ extended: true, limit: '100kb', parameterLimit: 1000 }))
 app.use(getGuestToken)
+app.use((req, res, next) => {
+    if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+        const origin = req.get('origin')
+        const fetchSite = req.get('sec-fetch-site')
+        const hasAuthCookie = Boolean(req.cookies?.token)
+        if ((origin && !isAllowedOrigin(origin)) ||
+            (!origin && fetchSite === 'cross-site') ||
+            (hasAuthCookie && !origin)) {
+            return res.status(403).json({ message: 'Запрос с этого источника запрещён' })
+        }
+    }
+    next()
+})
 
 app.use('/uploads', express.static(path.resolve('uploads'), {
     setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -76,39 +112,79 @@ app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
 app.use('/api/chat', chatRouter)
 
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() })
+app.get('/health', async (req, res) => {
+    try {
+        await sequelize.authenticate()
+        return res.json({ status: 'ok', timestamp: new Date().toISOString() })
+    } catch (error) {
+        console.error('❌ Проверка готовности не пройдена:', error)
+        return res.status(503).json({ status: 'unavailable' })
+    }
+})
+
+app.use((req, res) => {
+    res.status(404).json({ message: 'Маршрут не найден' })
 })
 
 app.use((err, req, res, next) => {
     console.error("❌ Error:", err)
-    res.status(500).json({ message: "Internal server error" })
+    const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600
+        ? err.status
+        : err.code === 'LIMIT_FILE_SIZE'
+            ? 413
+            : typeof err.code === 'string' && err.code.startsWith('LIMIT_')
+                ? 400
+                : 500
+    const message = status === 400
+        ? 'Некорректный запрос'
+        : status === 413
+            ? 'Размер запроса превышает допустимый лимит'
+            : 'Internal server error'
+    res.status(status).json({ message })
 })
-
-startCleanupJob()
-console.log("⏰ Запущена очистка истекших согласий")
-reminderService.start() 
 
 async function startServer() {
     try {
+        validateProductionConfig()
+        if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+            throw new Error('PORT must be an integer between 1 and 65535')
+        }
         console.log("🔄 Подключение к базе данных...")
         await sequelize.authenticate()
         console.log("✅ База данных подключена успешно!")
 
-        console.log("🔄 Создание/обновление таблиц...")
-        await sequelize.sync()
-        console.log("✅ Таблицы созданы/обновлены успешно!")
+        if (process.env.NODE_ENV === 'production') {
+            const queryInterface = sequelize.getQueryInterface()
+            const tables = await queryInterface.showAllTables()
+            const existingTables = new Set(tables.map(table =>
+                typeof table === 'string' ? table : table.tableName
+            ))
+            const missing = []
+            for (const model of Object.values(sequelize.models)) {
+                const tableName = model.getTableName()
+                if (!existingTables.has(tableName)) {
+                    missing.push(tableName)
+                    continue
+                }
+                const columns = await queryInterface.describeTable(tableName)
+                for (const attribute of Object.values(model.rawAttributes)) {
+                    const columnName = attribute.field || attribute.fieldName
+                    if (!columns[columnName]) missing.push(`${tableName}.${columnName}`)
+                }
+            }
+            if (missing.length) {
+                throw new Error(`Database schema is missing required tables or columns: ${missing.join(', ')}`)
+            }
+            console.log("✅ Схема production-базы проверена")
+        } else {
+            console.log("🔄 Создание таблиц для непроизводственной среды...")
+            await sequelize.sync()
+            console.log("✅ Таблицы созданы/обновлены успешно!")
+        }
 
         startCleanupJob()
         console.log("⏰ Запущена очистка истекших согласий")
-
-        const tableExists = await checkTableExists('user_cookie_consents')
-        if (tableExists) {
-            console.log("✅ Таблица 'user_cookie_consents' существует")
-            await checkTableStructure()
-        } else {
-            console.warn("⚠️ Таблица 'user_cookie_consents' не найдена!")
-        }
+        reminderService.start()
 
         app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)
@@ -117,54 +193,6 @@ async function startServer() {
     } catch (error) {
         console.error("❌ Ошибка при запуске сервера:", error)
         process.exit(1)
-    }
-}
-
-async function checkTableExists(tableName) {
-    try {
-        const [results] = await sequelize.query(`
-            SELECT EXISTS (
-                SELECT 1 
-                FROM information_schema.tables 
-                WHERE table_name = '${tableName}'
-            );
-        `)
-        return results[0].exists
-    } catch (error) {
-        console.error(`❌ Ошибка проверки таблицы ${tableName}:`, error)
-        return false
-    }
-}
-
-async function checkTableStructure() {
-    try {
-        const [columns] = await sequelize.query(`
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns
-            WHERE table_name = 'user_cookie_consents'
-            ORDER BY ordinal_position;
-        `)
-
-        console.log("📋 Структура таблицы 'user_cookie_consents':")
-        columns.forEach(col => {
-            console.log(`   - ${col.column_name}: ${col.data_type} ${col.is_nullable === 'YES' ? '(NULL)' : '(NOT NULL)'}`)
-        })
-
-        const [indexes] = await sequelize.query(`
-            SELECT indexname, indexdef
-            FROM pg_indexes
-            WHERE tablename = 'user_cookie_consents';
-        `)
-
-        console.log("📋 Индексы таблицы 'user_cookie_consents':")
-        indexes.forEach(idx => {
-            console.log(`   - ${idx.indexname}`)
-        })
-
-        return true
-    } catch (error) {
-        console.error("❌ Ошибка проверки структуры таблицы:", error)
-        return false
     }
 }
 

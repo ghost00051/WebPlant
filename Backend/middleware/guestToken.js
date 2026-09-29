@@ -9,30 +9,18 @@ export function generateGuestToken() {
 const cookieOptions = {
     maxAge: GUEST_TOKEN_LIFETIME,
     httpOnly: true,
-    sameSite: 'none',
-    secure: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
     path: '/'
 }
 
 export function getGuestToken(req, res, next) {
     let guestToken = req.cookies.guest_token
 
-    if (!guestToken) {
+    const tokenData = parseGuestToken(guestToken)
+    if (!tokenData || Date.now() - tokenData.timestamp > GUEST_TOKEN_LIFETIME || tokenData.timestamp > Date.now()) {
         guestToken = generateGuestToken()
         res.cookie('guest_token', guestToken, cookieOptions)
-        console.log(`🆕 Создан новый guest_token: ${guestToken} (живёт 1 час)`)
-    } else {
-        const tokenData = parseGuestToken(guestToken)
-        if (tokenData && tokenData.timestamp) {
-            const tokenAge = Date.now() - tokenData.timestamp
-            if (tokenAge > GUEST_TOKEN_LIFETIME) {
-                guestToken = generateGuestToken()
-                res.cookie('guest_token', guestToken, cookieOptions)
-                console.log(`🔄 Старый guest_token истёк, создан новый: ${guestToken}`)
-            } else {
-                console.log(`🔄 Найден guest_token: ${guestToken} (осталось ${Math.round((GUEST_TOKEN_LIFETIME - tokenAge) / 60000)} мин.)`)
-            }
-        }
     }
 
     req.guestToken = guestToken
@@ -40,16 +28,9 @@ export function getGuestToken(req, res, next) {
 }
 
 function parseGuestToken(token) {
-    try {
-        const parts = token.split('_')
-        if (parts.length === 3) {
-            const timestamp = parseInt(parts[2])
-            if (!isNaN(timestamp)) {
-                return { timestamp }
-            }
-        }
-        return null
-    } catch {
-        return null
-    }
+    if (typeof token !== 'string') return null
+    const match = /^guest_[0-9a-f]{32}_(\d{13})$/i.exec(token)
+    if (!match) return null
+    const timestamp = Number(match[1])
+    return Number.isSafeInteger(timestamp) ? { timestamp } : null
 }

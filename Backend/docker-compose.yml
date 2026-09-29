@@ -38,7 +38,7 @@ services:
       timeout: 5s
       retries: 10
     ports:
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
 
   backend:
     build:
@@ -73,6 +73,12 @@ services:
       - ./uploads:/app/uploads
     expose:
       - "5000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:5000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
   backup:
     image: postgres:16-alpine
@@ -104,7 +110,8 @@ services:
     container_name: ctp_nginx
     restart: always
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     ports:
       - "80:80"
       - "443:443"

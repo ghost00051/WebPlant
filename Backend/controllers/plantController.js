@@ -4,6 +4,7 @@ import WateringLog from '../models/WateringLog.js'
 import sequelize from '../db.js'
 import jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
+import { isValidWateringInterval } from '../utils/validation.js'
 const TIME_OF_DAY_HOURS = { morning: 8, day: 14, evening: 19 }
 
 function computeHoursLate(scheduledFor, actionAt) {
@@ -17,6 +18,24 @@ function computeNextWatering(from, days, timeOfDay = 'morning') {
     d.setDate(d.getDate() + days)
     d.setHours(TIME_OF_DAY_HOURS[timeOfDay] ?? 8, 0, 0, 0)
     return d
+}
+
+function isValidPhotoInput(photo) {
+    if (typeof photo === 'string') return Boolean(photo.trim()) && photo.length <= 2048
+    if (!photo || typeof photo !== 'object' || Array.isArray(photo) ||
+        typeof photo.url !== 'string' || !photo.url.trim() || photo.url.length > 2048) {
+        return false
+    }
+    if (photo.sort_order !== undefined &&
+        (!Number.isInteger(photo.sort_order) || photo.sort_order < 0)) {
+        return false
+    }
+    if (photo.is_main !== undefined && typeof photo.is_main !== 'boolean') return false
+    if (photo.metadata !== undefined &&
+        (!photo.metadata || typeof photo.metadata !== 'object' || Array.isArray(photo.metadata))) {
+        return false
+    }
+    return true
 }
 
 function getUserId(req) {
@@ -217,11 +236,10 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
-            const plant = await Plant.findAll({
-                where: { user_id: userId, is_active: true },
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId, is_active: true },
                 include: [{ model: PlantPhoto, as: 'photos' }],
                 order: [
-                    ['created_at', 'DESC'],
                     [{ model: PlantPhoto, as: 'photos' }, 'sort_order', 'ASC']
                 ]
             })
@@ -255,11 +273,13 @@ class PlantController {
     }
 
     async create(req, res) {
-        const t = await sequelize.transaction()
+        let t
         try {
+            t = await sequelize.transaction()
             const userId = getUserId(req)
             if (!userId) {
                 await t.rollback()
+                t = null
                 return res.status(401).json({ message: 'Не авторизован' })
             }
 
@@ -267,27 +287,47 @@ class PlantController {
                 name, species, location, description,
                 watering_interval_days, metadata,
                 photos = []
-            } = req.body
+            } = req.body || {}
+            const intervalDays = watering_interval_days ?? 7
+            const wateringTime = req.body?.watering_time_of_day || 'morning'
 
-            if (!name) {
+            if (typeof name !== 'string' || !name.trim() || name.length > 255) {
                 await t.rollback()
-                return res.status(400).json({ message: 'Название обязательно' })
+                return res.status(400).json({ message: 'Название обязательно и должно содержать не более 255 символов' })
+            }
+            if (!isValidWateringInterval(intervalDays)) {
+                await t.rollback()
+                return res.status(400).json({ message: 'Интервал полива должен быть целым числом от 1 до 365 дней' })
+            }
+            if (!Object.hasOwn(TIME_OF_DAY_HOURS, wateringTime)) {
+                await t.rollback()
+                return res.status(400).json({ message: 'Некорректное время полива' })
+            }
+            if (!Array.isArray(photos) || photos.length > 10 ||
+                photos.some(photo => !isValidPhotoInput(photo))) {
+                await t.rollback()
+                return res.status(400).json({ message: 'Некорректный список фотографий' })
+            }
+            if (metadata !== undefined &&
+                (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))) {
+                await t.rollback()
+                return res.status(400).json({ message: 'metadata должна быть объектом' })
             }
 
             const plant = await Plant.create({
                 user_id: userId,
                 name, species, location, description,
-                watering_interval_days: watering_interval_days || 7,
-                watering_time_of_day: req.body.watering_time_of_day || 'morning',
+                watering_interval_days: intervalDays,
+                watering_time_of_day: wateringTime,
                 next_watering_at: computeNextWatering(
                     new Date(),
-                    watering_interval_days || 7,
-                    req.body.watering_time_of_day || 'morning'
+                    intervalDays,
+                    wateringTime
                 ),
                 metadata: metadata || {}
             }, { transaction: t })
 
-            if (Array.isArray(photos) && photos.length) {
+            if (photos.length) {
                 const rows = photos.map((p, i) => {
                     const url = typeof p === 'string' ? p : p.url
                     return {
@@ -303,6 +343,7 @@ class PlantController {
             }
 
             await t.commit()
+            t = null
 
             const result = await Plant.findByPk(plant.id, {
                 include: [{ model: PlantPhoto, as: 'photos' }]
@@ -310,31 +351,35 @@ class PlantController {
 
             return res.status(201).json(result)
         } catch (error) {
-            await t.rollback()
+            if (t && !t.finished) await t.rollback()
             console.error('❌ Ошибка создания растения:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
 
     async addPhotos(req, res) {
+        let transaction
         try {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const body = req.body || {}
+            const photos = body.photos
+            if (!Array.isArray(photos) || !photos.length || photos.length > 10 ||
+                photos.some(photo => !isValidPhotoInput(photo))) {
+                return res.status(400).json({ message: 'Некорректный список фотографий' })
+            }
 
             const plant = await Plant.findOne({
                 where: { id: req.params.id, user_id: userId }
             })
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
 
-            const { photos = [] } = req.body
-            if (!Array.isArray(photos) || !photos.length) {
-                return res.status(400).json({ message: 'photos должен быть непустым массивом' })
-            }
-
+            transaction = await sequelize.transaction()
             if (photos.some(p => typeof p === 'object' && p.is_main)) {
                 await PlantPhoto.update(
                     { is_main: false },
-                    { where: { plant_id: plant.id } }
+                    { where: { plant_id: plant.id }, transaction }
                 )
             }
 
@@ -346,9 +391,11 @@ class PlantController {
                 metadata: typeof p === 'object' && p.metadata ? p.metadata : {}
             })).filter(r => r.url)
 
-            const created = await PlantPhoto.bulkCreate(rows)
+            const created = await PlantPhoto.bulkCreate(rows, { transaction })
+            await transaction.commit()
             return res.status(201).json(created)
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка добавления фото:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
@@ -356,6 +403,7 @@ class PlantController {
 
     async update(req, res) {
         try {
+            const body = req.body || {}
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
@@ -370,18 +418,43 @@ class PlantController {
             const allowed = [
                 'name', 'species', 'location', 'description',
                 'photo_url', 'watering_interval_days',
-                'last_watered_at', 'next_watering_at', 'is_active'
+                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'is_active'
             ]
 
             const updates = {}
             for (const key of allowed) {
-                if (req.body[key] !== undefined) {
-                    updates[key] = req.body[key]
+                if (body[key] !== undefined) {
+                    updates[key] = body[key]
                 }
             }
 
-            if (req.body.metadata && typeof req.body.metadata === 'object') {
-                updates.metadata = { ...plant.metadata, ...req.body.metadata }
+            if (updates.name !== undefined &&
+                (typeof updates.name !== 'string' || !updates.name.trim() || updates.name.length > 255)) {
+                return res.status(400).json({ message: 'Некорректное название растения' })
+            }
+            if (updates.watering_interval_days !== undefined &&
+                !isValidWateringInterval(updates.watering_interval_days)) {
+                return res.status(400).json({ message: 'Интервал полива должен быть целым числом от 1 до 365 дней' })
+            }
+            if (updates.watering_time_of_day !== undefined &&
+                !Object.hasOwn(TIME_OF_DAY_HOURS, updates.watering_time_of_day)) {
+                return res.status(400).json({ message: 'Некорректное время полива' })
+            }
+            for (const key of ['last_watered_at', 'next_watering_at']) {
+                const value = updates[key]
+                if (value !== undefined && value !== null &&
+                    (typeof value !== 'string' || !Number.isFinite(Date.parse(value)))) {
+                    return res.status(400).json({ message: 'Некорректная дата полива' })
+                }
+            }
+            if (updates.is_active !== undefined && typeof updates.is_active !== 'boolean') {
+                return res.status(400).json({ message: 'Некорректный статус растения' })
+            }
+
+            if (body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)) {
+                updates.metadata = { ...plant.metadata, ...body.metadata }
+            } else if (body.metadata !== undefined) {
+                return res.status(400).json({ message: 'metadata должна быть объектом' })
             }
 
             await plant.update(updates)
@@ -416,14 +489,27 @@ class PlantController {
     }
 
     async water(req, res) {
+        let transaction
         try {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
+            const note = req.body?.note
+            if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 2000)) {
+                return res.status(400).json({ message: 'Примечание должно быть строкой до 2000 символов' })
+            }
+
+            transaction = await sequelize.transaction()
             const plant = await Plant.findOne({
-                where: { id: req.params.id, user_id: userId }
+                where: { id: req.params.id, user_id: userId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
             })
-            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+            if (!plant) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(404).json({ message: 'Растение не найдено' })
+            }
 
             const now = new Date()
             const scheduledFor = plant.next_watering_at
@@ -442,7 +528,7 @@ class PlantController {
                 last_watered_at: now,
                 next_watering_at: nextWatering,
                 metadata
-            })
+            }, { transaction })
 
             await WateringLog.create({
                 plant_id: plant.id,
@@ -451,33 +537,55 @@ class PlantController {
                 action_at: now,
                 scheduled_for: scheduledFor,
                 hours_late: computeHoursLate(scheduledFor, now),
-                note: req.body?.note || null
-            })
+                note: note || null
+            }, { transaction })
+            await transaction.commit()
 
             return res.json(plant)
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка полива:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
 
     async skip(req, res) {
+        let transaction
         try {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
+            const note = req.body?.note
+            if (note !== undefined && note !== null && (typeof note !== 'string' || note.length > 2000)) {
+                return res.status(400).json({ message: 'Примечание должно быть строкой до 2000 символов' })
+            }
+            const days = req.body?.days === undefined ? 1 : Number(req.body.days)
+            if (!Number.isInteger(days) || days < 1 || days > 365) {
+                return res.status(400).json({ message: 'Количество дней должно быть целым числом от 1 до 365' })
+            }
+
+            transaction = await sequelize.transaction()
             const plant = await Plant.findOne({
-                where: { id: req.params.id, user_id: userId }
+                where: { id: req.params.id, user_id: userId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
             })
-            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+            if (!plant) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(404).json({ message: 'Растение не найдено' })
+            }
 
             const now = new Date()
             const scheduledFor = plant.next_watering_at
 
-
-            const days = parseInt(req.body?.days) || 1
             const next = new Date(scheduledFor || now)
             next.setDate(next.getDate() + days)
+            if (!Number.isFinite(next.getTime())) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(400).json({ message: 'Некорректная дата следующего полива' })
+            }
 
 
             const metadata = {
@@ -488,7 +596,7 @@ class PlantController {
             await plant.update({
                 next_watering_at: next,
                 metadata
-            })
+            }, { transaction })
 
 
             await WateringLog.create({
@@ -498,11 +606,13 @@ class PlantController {
                 action_at: now,
                 scheduled_for: scheduledFor,
                 hours_late: computeHoursLate(scheduledFor, now),
-                note: req.body?.note || null
-            })
+                note: note || null
+            }, { transaction })
+            await transaction.commit()
 
             return res.json(plant)
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка пропуска:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }

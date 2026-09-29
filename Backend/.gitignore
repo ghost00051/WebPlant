@@ -4,5 +4,6 @@ node_modules/
 !.env.example
 logs/
 *.log
+backups/
 certbot/
 *.restart.txt

@@ -1,18 +1,26 @@
 import webpush from 'web-push'
 import dotenv from 'dotenv'
 import PushSubscription from '../models/PushSubscription.js'
-import { Op } from 'sequelize'
 
 dotenv.config()
 
-webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT,
-    process.env.VAPID_PUBLIC_KEY,
+const vapidConfigured = Boolean(
+    process.env.VAPID_SUBJECT &&
+    process.env.VAPID_PUBLIC_KEY &&
     process.env.VAPID_PRIVATE_KEY
 )
 
+if (vapidConfigured) {
+    webpush.setVapidDetails(
+        process.env.VAPID_SUBJECT,
+        process.env.VAPID_PUBLIC_KEY,
+        process.env.VAPID_PRIVATE_KEY
+    )
+}
+
 class PushService {
     async sendToUser(userId, title, body, icon = '/icon-192.png', data = {}) {
+        this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll({
             where: { user_id: userId }
         })
@@ -26,6 +34,7 @@ class PushService {
     }
 
     async sendToAll(title, body, icon = '/icon-192.png', data = {}) {
+        this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll()
         
         if (subscriptions.length === 0) {
@@ -38,6 +47,7 @@ class PushService {
     }
 
     async sendToFiltered(whereCondition, title, body, icon = '/icon-192.png', data = {}) {
+        this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll({
             where: whereCondition
         })
@@ -102,6 +112,12 @@ class PushService {
             failed,
             removed,
             errors: errors.length > 0 ? errors : undefined
+        }
+    }
+
+    ensureConfigured() {
+        if (!vapidConfigured) {
+            throw new Error('Push notifications are not configured')
         }
     }
 }

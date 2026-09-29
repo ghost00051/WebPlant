@@ -4,8 +4,13 @@ import UserLegalConsent from "../models/userLegalConsentModels.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import dotenv from "dotenv"
+import sequelize from "../db.js"
+import { UniqueConstraintError } from "sequelize"
+import { isValidEmail, isValidRegistrationPassword, normalizeEmail } from "../utils/validation.js"
 
 dotenv.config()
+
+const AUTH_TOKEN_LIFETIME = 24 * 60 * 60 * 1000
 
 function generateJWT(id, email, role) {
     return jwt.sign(
@@ -17,6 +22,7 @@ function generateJWT(id, email, role) {
 
 class UserController {
     async registration(req, res) {
+        let transaction
         try {
             const {
                 email,
@@ -24,41 +30,50 @@ class UserController {
                 name,
                 privacyPolicyAccepted,
                 termsAccepted
-            } = req.body
+            } = req.body || {}
+            const normalizedEmail = typeof email === 'string' ? normalizeEmail(email) : ''
 
-            if (!email || !password) {
+            if (
+                !isValidEmail(email) ||
+                !isValidRegistrationPassword(password) ||
+                (name !== undefined && name !== null &&
+                    (typeof name !== 'string' || name.length > 100))
+            ) {
                 return res.status(400).json({
-                    message: "Email и пароль обязательны"
+                    message: "Некорректные данные регистрации"
                 })
             }
 
-            if (!privacyPolicyAccepted) {
+            if (privacyPolicyAccepted !== true) {
                 return res.status(400).json({
                     message: "Необходимо согласие на обработку персональных данных"
                 })
             }
 
-            if (!termsAccepted) {
+            if (termsAccepted !== true) {
                 return res.status(400).json({
                     message: "Необходимо принять пользовательское соглашение"
                 })
             }
 
-            const candidate = await User.findOne({ where: { email } })
+            const candidate = await User.findOne({
+                where: sequelize.where(sequelize.fn('LOWER', sequelize.col('email')), normalizedEmail)
+            })
             if (candidate) {
                 return res.status(409).json({
                     message: "Пользователь с таким email уже существует"
                 })
             }
 
+            transaction = await sequelize.transaction()
             const hashPassword = await bcrypt.hash(password, 10)
             const user = await User.create({
-                email,
+                email: normalizedEmail,
                 password: hashPassword,
                 name: name || null,
                 role: 'USER',
                 privilege_level: 'free'
-            })
+            }, { transaction })
             const guestToken = req.cookies.guest_token
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
@@ -73,7 +88,7 @@ class UserController {
                 ip_address: ip,
                 user_agent: userAgent,
                 source: 'registration'
-            })
+            }, { transaction })
             console.log('✅ Сохранено согласие на обработку ПД')
 
             await UserLegalConsent.create({
@@ -86,7 +101,7 @@ class UserController {
                 ip_address: ip,
                 user_agent: userAgent,
                 source: 'registration'
-            })
+            }, { transaction })
             console.log('✅ Сохранено пользовательское соглашение')
 
             if (guestToken) {
@@ -99,19 +114,22 @@ class UserController {
                         where: {
                             guest_token: guestToken,
                             user_id: null
-                        }
+                        },
+                        transaction
                     }
                 )
                 console.log(`✅ Связано ${updatedCount} куки-согласий с пользователем ${user.id}`)
             }
 
-            const token = generateJWT(user.id, email, user.role)
+            const token = generateJWT(user.id, user.email, user.role)
+            await transaction.commit()
+            transaction = null
 
             res.cookie('token', token, {
                 httpOnly: true,
-                secure: true,
-                sameSite: 'none',
-                maxAge: 30 * 24 * 60 * 60 * 1000,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                maxAge: AUTH_TOKEN_LIFETIME,
                 path: '/',
             })
             return res.status(201).json({
@@ -123,6 +141,14 @@ class UserController {
                 }
             })
         } catch (e) {
+            if (transaction && !transaction.finished) {
+                await transaction.rollback()
+            }
+            if (e instanceof UniqueConstraintError) {
+                return res.status(409).json({
+                    message: "Пользователь с таким email уже существует"
+                })
+            }
             console.error("❌ Ошибка регистрации:", e)
             return res.status(500).json({
                 message: "Внутренняя ошибка сервера"
@@ -132,24 +158,27 @@ class UserController {
 
     async login(req, res) {
         try {
-            const { email, password } = req.body
+            const { email, password } = req.body || {}
+            const normalizedEmail = typeof email === 'string' ? normalizeEmail(email) : ''
 
-            if (!email || !password) {
+            if (!isValidEmail(email) || typeof password !== 'string' || !password || password.length > 1024) {
                 return res.status(400).json({
                     message: "Email и пароль обязательны"
                 })
             }
 
-            const user = await User.findOne({ where: { email } })
+            const user = await User.findOne({
+                where: sequelize.where(sequelize.fn('LOWER', sequelize.col('email')), normalizedEmail)
+            })
 
             if (!user) {
-                return res.status(404).json({ message: "Пользователь не найден" })
+                return res.status(401).json({ message: "Неверный email или пароль" })
             }
 
-            const comparePassword = bcrypt.compareSync(password, user.password)
+            const comparePassword = await bcrypt.compare(password, user.password)
 
             if (!comparePassword) {
-                return res.status(401).json({ message: "Неверный пароль" })
+                return res.status(401).json({ message: "Неверный email или пароль" })
             }
 
             const guestToken = req.cookies.guest_token
@@ -171,13 +200,13 @@ class UserController {
                 console.log('⚠️ guest_token не найден в куках при входе')
             }
 
-            const token = generateJWT(user.id, email, user.role)
+            const token = generateJWT(user.id, user.email, user.role)
 
             res.cookie('token', token, {
                 httpOnly: true,
-                secure: true,
-                sameSite: 'none',
-                maxAge: 30 * 24 * 60 * 60 * 1000,
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+                maxAge: AUTH_TOKEN_LIFETIME,
                 path: '/',
             })
 
@@ -203,8 +232,8 @@ class UserController {
         try {
             res.clearCookie('token', {
                 httpOnly: true,
-                secure: false,
-                sameSite: 'lax',
+                secure: process.env.NODE_ENV === 'production',
+                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
                 path: '/'
             })
 

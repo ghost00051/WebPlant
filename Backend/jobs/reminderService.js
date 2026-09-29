@@ -24,36 +24,63 @@ class ReminderService {
             }
         })
 
-        for (const plant of plants) {
-            const scheduledFor = new Date(plant.next_watering_at)
-            const hoursLate = Math.round(
-                (now - scheduledFor) / (60 * 60 * 1000)
-            )
-
-            const nextWatering = new Date(scheduledFor)
-            nextWatering.setDate(nextWatering.getDate() + 1)
-
-            while (nextWatering <= now) {
-                nextWatering.setDate(nextWatering.getDate() + 1)
-            }
-
-            await plant.update({
-                next_watering_at: nextWatering,
-                metadata: {
-                    ...(plant.metadata || {}),
-                    notifications: {}
+        for (const candidate of plants) {
+            const transaction = await Plant.sequelize.transaction()
+            let plant
+            let hoursLate
+            let nextWatering
+            try {
+                plant = await Plant.findOne({
+                    where: {
+                        id: candidate.id,
+                        is_active: true,
+                        next_watering_at: { [Op.lt]: cutoff }
+                    },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                })
+                if (!plant) {
+                    await transaction.rollback()
+                    continue
                 }
-            })
 
-            await WateringLog.create({
-                plant_id: plant.id,
-                user_id: plant.user_id,
-                action: 'skipped',
-                action_at: now,
-                scheduled_for: scheduledFor,
-                hours_late: hoursLate,
-                note: 'Автоматический пропуск (просрочено > 24ч)'
-            })
+                const scheduledFor = new Date(plant.next_watering_at)
+                hoursLate = Math.round(
+                    (now - scheduledFor) / (60 * 60 * 1000)
+                )
+
+                const intervalDays = Number.isInteger(plant.watering_interval_days) &&
+                    plant.watering_interval_days > 0
+                    ? plant.watering_interval_days
+                    : 7
+                const intervalMs = intervalDays * 24 * HOUR
+                const periodsToAdvance = Math.floor((now - scheduledFor) / intervalMs) + 1
+                nextWatering = new Date(
+                    scheduledFor.getTime() + periodsToAdvance * intervalMs
+                )
+
+                await plant.update({
+                    next_watering_at: nextWatering,
+                    metadata: {
+                        ...(plant.metadata || {}),
+                        notifications: {}
+                    }
+                }, { transaction })
+
+                await WateringLog.create({
+                    plant_id: plant.id,
+                    user_id: plant.user_id,
+                    action: 'skipped',
+                    action_at: now,
+                    scheduled_for: scheduledFor,
+                    hours_late: hoursLate,
+                    note: 'Автоматический пропуск (просрочено > 24ч)'
+                }, { transaction })
+                await transaction.commit()
+            } catch (error) {
+                if (!transaction.finished) await transaction.rollback()
+                throw error
+            }
 
             console.log(
                 `⏭ plant#${plant.id} «${plant.name}»: пропущен ` +

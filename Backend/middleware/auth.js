@@ -1,11 +1,12 @@
 import jwt from 'jsonwebtoken'
 import User from '../models/userModels.js'
 
-export async function requireAuth(req, res, next) {
+async function authenticate(req, res, next, required) {
     const token = req.cookies?.token
-    if (!token) {
+    if (!token && required) {
         return res.status(401).json({ message: 'Не авторизован' })
     }
+    if (!token) return next()
 
     let decoded
     try {
@@ -24,4 +25,12 @@ export async function requireAuth(req, res, next) {
     } catch (error) {
         return next(error)
     }
+}
+
+export function requireAuth(req, res, next) {
+    return authenticate(req, res, next, true)
+}
+
+export function optionalAuth(req, res, next) {
+    return authenticate(req, res, next, false)
 }

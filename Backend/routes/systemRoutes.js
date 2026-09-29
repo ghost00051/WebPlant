@@ -1,5 +1,7 @@
+import 'dotenv/config'
 import express from 'express'
 import Docker from 'dockerode'
+import { requireAdmin } from '../middleware/admin.js'
 
 const router = express.Router()
 
@@ -36,7 +38,7 @@ let cache = {
 
 const CACHE_TTL = 3000
 
-router.get('/docker-stats', async (req, res) => {
+router.get('/docker-stats', requireAdmin, async (req, res) => {
   try {
     if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
       return res.json(cache.data)
@@ -53,7 +55,8 @@ router.get('/docker-stats', async (req, res) => {
         try {
           const container = docker.getContainer(info.Id)
           stats = await container.stats({ stream: false })
-        } catch (e) {
+        } catch (error) {
+          console.error(`Docker stats unavailable for container ${info.Id}:`, error)
         }
 
         if (!stats) {
@@ -63,21 +66,22 @@ router.get('/docker-stats', async (req, res) => {
             state: info.State,
             status: info.Status,
             image: info.Image,
-            cpu: 0,
+            statsAvailable: false,
+            cpu: null,
             memory: {
-              usage: 0,
-              limit: 0,
-              percent: 0,
+              usage: null,
+              limit: null,
+              percent: null,
             },
             network: {
-              rx: 0,
-              tx: 0,
+              rx: null,
+              tx: null,
             },
             block: {
-              read: 0,
-              write: 0,
+              read: null,
+              write: null,
             },
-            pids: 0,
+            pids: null,
           }
         }
 
@@ -111,6 +115,7 @@ router.get('/docker-stats', async (req, res) => {
           state: info.State,
           status: info.Status,
           image: info.Image,
+          statsAvailable: true,
           cpu: Number(calcCpuPercent(stats).toFixed(2)),
           memory: {
             usage: memUsed,
