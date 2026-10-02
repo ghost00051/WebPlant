@@ -1,19 +1,10 @@
-import jwt from 'jsonwebtoken'
-import User from '../models/userModels.js'
+import { requireAuth } from './auth.js'
 
-export async function requireAdmin(req, res, next) {
-    try {
-        const token = req.cookies.token
-        if (!token) return res.status(401).json({ message: 'Не авторизован' })
-
-        const decoded = jwt.verify(token, process.env.SECRET_KEY)
-        const user = await User.findByPk(decoded.id)
-        if (!user || user.role !== 'ADMIN') {
+export function requireAdmin(req, res, next) {
+    return requireAuth(req, res, () => {
+        if (req.user.role !== 'ADMIN') {
             return res.status(403).json({ message: 'Доступ запрещён' })
         }
-        req.user = user
-        next()
-    } catch (e) {
-        return res.status(401).json({ message: 'Невалидный токен' })
-    }
+        return next()
+    })
 }

@@ -3,6 +3,8 @@ import User from './userModels.js'
 import Plant from './Plant.js'
 import PlantPhoto from './PlantPhoto.js'
 import ChatLog from './ChatLog.js'
+import './Passkey.js'
+import './PasskeyChallenge.js'
 
 User.hasMany(Plant, {
     foreignKey: 'user_id',

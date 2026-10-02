@@ -274,7 +274,8 @@
 
 .mini-calendar__legend {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid #f0f0f0;
@@ -286,6 +287,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  white-space: nowrap;
   transition: color 0.2s ease;
 }
 
@@ -304,4 +306,8 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+.dot--overdue {
+  background: #e07a7a;
 }

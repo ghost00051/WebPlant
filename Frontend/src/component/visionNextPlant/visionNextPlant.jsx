@@ -61,23 +61,105 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
   }, [active])
 
   const kind = day?.kind ?? 'empty'
-  const plantsCount = day?.plants?.length ?? 0
 
-  const showFuture = kind === 'future'
-  const showPast = kind === 'past'
-  const showEmpty = kind === 'empty'
+  const isFuture = kind === 'future'
+  const isPast = kind === 'past'
+  const isEmpty = kind === 'empty'
 
-  const plantsLabel = showPast
-    ? (plantsCount === 1
-      ? '1 растение полито'
-      : `${plantsCount} ${pluralizePlants(plantsCount)} политы`)
-    : (plantsCount === 1
+  const futureCount = day?.plants?.length ?? 0
+  const pastEvents = day?.events ?? []
+
+  const wateredEvents = pastEvents.filter(e => e.kind === 'watered')
+  const overdueEvents = pastEvents.filter(e => e.kind === 'overdue')
+
+  let counterLabel = ''
+  if (isFuture) {
+    counterLabel = futureCount === 1
       ? '1 растение ждёт полива'
-      : `${plantsCount} ${pluralizePlants(plantsCount)} ждут полива`)
+      : `${futureCount} ${pluralizePlants(futureCount)} ждут полива`
+  } else if (isPast) {
+    const parts = []
+    if (wateredEvents.length) {
+      parts.push(
+        wateredEvents.length === 1
+          ? '1 полито'
+          : `${wateredEvents.length} полито`
+      )
+    }
+    if (overdueEvents.length) {
+      parts.push(
+        overdueEvents.length === 1
+          ? '1 пропущено'
+          : `${overdueEvents.length} пропущено`
+      )
+    }
+    counterLabel = parts.join(' · ') || 'Событий нет'
+  }
 
   const handleNextClick = () => {
     if (!nextWatering?.iso) return
     onGoToDate?.(nextWatering.iso)
+  }
+
+  const renderPlantRow = (plant, { variant, timeLabel, key }) => {
+    const isOverdue = variant === 'overdue'
+    const isWatered = variant === 'watered'
+    const isFutureRow = variant === 'future'
+
+    return (
+      <li key={key} className='plantsPreview__item'>
+        <div className='plantsPreview__photoWrap'>
+          <div>
+            <img
+              src={getPlantPhoto(plant)}
+              alt={plant.name}
+              className='plantsPreview__photo'
+              onError={e => { e.currentTarget.src = plantPlaceholder }}
+            />
+          </div>
+          <div>
+            <span className='plantsPreview__name'>{plant.name}</span>
+            <div className='descriptionOfplantsPreview__name'>
+              {isWatered && (
+                <>
+                  <p>Полито</p>
+                  {plant.species && <p>{plant.species}</p>}
+                </>
+              )}
+              {isOverdue && (
+                <>
+                  <p className='descriptionOfplantsPreview__name--overdue'>
+                    Пропущено
+                  </p>
+                  {plant.species && <p>{plant.species}</p>}
+                </>
+              )}
+              {isFutureRow && (
+                <>
+                  <p>Цикл:</p>
+                  <p>{formatWateringCycle(plant.watering_interval_days)}</p>
+                  <span />
+                  <p>{plant.species}</p>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+        <div>
+          <div>
+            <p
+              className={[
+                'classOfgetWateringTime',
+                isWatered && 'classOfgetWateringTime--past',
+                isOverdue && 'classOfgetWateringTime--overdue',
+              ].filter(Boolean).join(' ')}
+            >
+              {timeLabel}
+            </p>
+          </div>
+        </div>
+      </li>
+    )
   }
 
   return (
@@ -101,16 +183,16 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
                   <div className='selectDayHeader'>
                     <p className='selectDayRelative'>{day.relative}</p>
                     <span />
-                    {showEmpty ? (
+                    {isEmpty ? (
                       <p className='selectDayPlants selectDayPlants--empty'>
                         Событий нет
                       </p>
-                    ) : showPast ? (
+                    ) : isPast ? (
                       <p className='selectDayPlants selectDayPlants--past'>
-                        {plantsLabel}
+                        {counterLabel}
                       </p>
                     ) : (
-                      <p className='selectDayPlants'>{plantsLabel}</p>
+                      <p className='selectDayPlants'>{counterLabel}</p>
                     )}
                   </div>
                 </>
@@ -119,7 +201,7 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
               )}
             </div>
 
-            {day && showEmpty && (
+            {day && isEmpty && (
               <div className='selectDayEmpty'>
                 <img
                   src={EmptyIcon}
@@ -152,56 +234,31 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
                 )}
               </div>
             )}
-            {day && (showFuture || showPast) && (
-              <ul className='plantsPreview'>
-                {day.plants.map(p => {
-                  const timeLabel = showPast
-                    ? getPastTime(p.watered_at)
-                    : getWateringTime(p.watering_time_of_day)
 
-                  return (
-                    <li key={p.id} className='plantsPreview__item'>
-                      <div className='plantsPreview__photoWrap'>
-                        <div>
-                          <img
-                            src={getPlantPhoto(p)}
-                            alt={p.name}
-                            className='plantsPreview__photo'
-                            onError={e => { e.currentTarget.src = plantPlaceholder }}
-                          />
-                        </div>
-                        <div>
-                          <span className='plantsPreview__name'>{p.name}</span>
-                          <div className='descriptionOfplantsPreview__name'>
-                            {showPast ? (
-                              <>
-                                <p>Полито</p>
-                                <p>{p.species}</p>
-                              </>
-                            ) : (
-                              <>
-                                <p>Цикл:</p>
-                                <p>{formatWateringCycle(p.watering_interval_days)}</p>
-                                <span />
-                                <p>{p.species}</p>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      <div>
-                        <div>
-                          <p
-                            className={`classOfgetWateringTime ${showPast ? 'classOfgetWateringTime--past' : ''
-                              }`}
-                          >
-                            {timeLabel}
-                          </p>
-                        </div>
-                      </div>
-                    </li>
-                  )
-                })}
+            {day && isFuture && futureCount > 0 && (
+              <ul className='plantsPreview'>
+                {day.plants.map(p => renderPlantRow(p, {
+                  variant: 'future',
+                  timeLabel: getWateringTime(p.watering_time_of_day),
+                  key: p.id,
+                }))}
+              </ul>
+            )}
+
+            {day && isPast && pastEvents.length > 0 && (
+              <ul className='plantsPreview'>
+                {overdueEvents.map((ev, i) => renderPlantRow(ev.plant, {
+                  variant: 'overdue',
+                  timeLabel: ev.days_late > 0
+                    ? `${ev.days_late} ${pluralizeDays(ev.days_late)}`
+                    : '—',
+                  key: `overdue-${ev.plant.id}-${i}`,
+                }))}
+                {wateredEvents.map((ev, i) => renderPlantRow(ev.plant, {
+                  variant: 'watered',
+                  timeLabel: getPastTime(ev.watered_at),
+                  key: `watered-${ev.plant.id}-${i}`,
+                }))}
               </ul>
             )}
           </div>

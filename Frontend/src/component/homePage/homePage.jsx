@@ -42,7 +42,7 @@ function HomePage() {
   const historyMap = useMemo(() => {
     const map = new Map()
     for (const item of history) {
-      map.set(item.date, item.plants ?? [])
+      map.set(item.date, item)
     }
     return map
   }, [history])
@@ -51,6 +51,14 @@ function HomePage() {
     () => new Set(historyMap.keys()),
     [historyMap]
   )
+
+  const overdueDatesSet = useMemo(() => {
+    const set = new Set()
+    for (const item of history) {
+      if (item.hasOverdue) set.add(item.date)
+    }
+    return set
+  }, [history])
 
   const getWateringPlant = useCallback(async () => {
     try {
@@ -100,12 +108,26 @@ function HomePage() {
   const getPlantHistory = useCallback(async () => {
     try {
       const response = await fetch(
-        'https://server.checktheplants.ru/api/plants/history?limit=200',
+        'https://server.checktheplants.ru/api/plants/timeline',
         { method: 'GET', credentials: 'include' }
       )
       if (response.ok) {
         const data = await response.json()
-        setHistory(Array.isArray(data.items) ? data.items : [])
+        const items = Array.isArray(data.items) ? data.items : []
+
+        const normalized = items.map(item => {
+          const events = Array.isArray(item.events) ? item.events : []
+          const hasOverdue = events.some(e => e.kind === 'overdue')
+          const hasWatered = events.some(e => e.kind === 'watered')
+          return {
+            date: item.date,
+            events,
+            hasOverdue,
+            hasWatered,
+          }
+        })
+
+        setHistory(normalized)
       }
     } catch (error) {
       console.error('Ошибка получения истории:', error)
@@ -195,17 +217,19 @@ function HomePage() {
 
     const iso = m.format('YYYY-MM-DD')
     const futurePlants = scheduleMap.get(iso) ?? []
-    const pastPlants = historyMap.get(iso) ?? []
+    const pastItem = historyMap.get(iso) ?? null
+    const pastEvents = pastItem?.events ?? []
 
     let kind = 'empty'
     let plants = []
+    let events = []
 
     if (futurePlants.length) {
       kind = 'future'
       plants = futurePlants
-    } else if (pastPlants.length) {
+    } else if (pastEvents.length) {
       kind = 'past'
-      plants = pastPlants
+      events = pastEvents
     }
 
     return {
@@ -215,8 +239,11 @@ function HomePage() {
       iso,
       kind,
       plants,
+      events,
       futurePlants,
-      pastPlants,
+      pastEvents,
+      hasOverdue: pastItem?.hasOverdue ?? false,
+      hasWatered: pastItem?.hasWatered ?? false,
       dayNumber: m.format('D'),
       dayOfWeek: capitalize(m.format('dddd')),
       month: capitalize(m.format('MMMM')),
@@ -272,6 +299,7 @@ function HomePage() {
         onSelectDay={handleSelectDay}
         scheduleMap={scheduleMap}
         pastDates={pastDatesSet}
+        overdueDates={overdueDatesSet}
         externalIso={selectedDay?.iso}
       />
 

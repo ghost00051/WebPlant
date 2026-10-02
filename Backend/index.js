@@ -5,7 +5,9 @@ import cookieParser from 'cookie-parser'
 import helmet from 'helmet'
 import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
-import { isAllowedOrigin } from './utils/origins.js'
+import { refreshRememberedSession } from './middleware/auth.js'
+import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
+import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -14,8 +16,8 @@ import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
-import "./models/WateringLog.js" 
-import "./models/ChatLog.js" 
+import "./models/WateringLog.js"
+import "./models/ChatLog.js"
 
 
 import "./models/associations.js"
@@ -35,6 +37,7 @@ const PORT = Number(process.env.PORT || 5000)
 
 function validateProductionConfig() {
     if (process.env.NODE_ENV !== 'production') return
+    parseLocalDevOrigins(process.env.LOCAL_DEV_ORIGINS)
 
     const required = [
         'DB_NAME',
@@ -42,6 +45,8 @@ function validateProductionConfig() {
         'DB_PASSWORD',
         'SECRET_KEY',
         'FRONTEND_URL',
+        'FRONTEND_ORIGIN',
+        'RP_ID',
         'VAPID_SUBJECT',
         'VAPID_PUBLIC_KEY',
         'VAPID_PRIVATE_KEY'
@@ -54,18 +59,25 @@ function validateProductionConfig() {
         throw new Error('SECRET_KEY must contain at least 32 bytes in production')
     }
 
-    let frontendUrl
-    try {
-        frontendUrl = new URL(process.env.FRONTEND_URL)
-    } catch {
-        throw new Error('FRONTEND_URL must be a valid HTTPS origin in production')
+    const frontendUrls = process.env.FRONTEND_URL.split(',').map(value => value.trim()).filter(Boolean)
+    if (!frontendUrls.length || frontendUrls.some(frontendUrl => {
+        try {
+            const url = new URL(frontendUrl)
+            return url.protocol !== 'https:' ||
+                url.pathname !== '/' ||
+                url.search !== '' ||
+                url.hash !== ''
+        } catch {
+            return true
+        }
+    })) {
+        throw new Error('FRONTEND_URL must contain valid HTTPS origins separated by commas')
     }
-    if (frontendUrl.protocol !== 'https:' ||
-        frontendUrl.pathname !== '/' ||
-        frontendUrl.search ||
-        frontendUrl.hash) {
-        throw new Error('FRONTEND_URL must be a valid HTTPS origin in production')
-    }
+    validateProductionPasskeyConfig({
+        rpId: process.env.RP_ID,
+        frontendOrigin: process.env.FRONTEND_ORIGIN,
+        frontendUrl: process.env.FRONTEND_URL
+    })
 }
 
 app.set('trust proxy', 1)
@@ -85,12 +97,11 @@ app.use(helmet({
 app.use(cookieParser())
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, limit: '100kb', parameterLimit: 1000 }))
-app.use(getGuestToken)
 app.use((req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const origin = req.get('origin')
         const fetchSite = req.get('sec-fetch-site')
-        const hasAuthCookie = Boolean(req.cookies?.token)
+        const hasAuthCookie = Boolean(req.cookies?.token || req.cookies?.refresh_token)
         if ((origin && !isAllowedOrigin(origin)) ||
             (!origin && fetchSite === 'cross-site') ||
             (hasAuthCookie && !origin)) {
@@ -99,18 +110,19 @@ app.use((req, res, next) => {
     }
     next()
 })
+app.use(refreshRememberedSession)
 
 app.use('/uploads', express.static(path.resolve('uploads'), {
     setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
 }))
 
 app.use("/api/users", userRouter)
-app.use("/api/cookie-consents", userCookieConsentRouter)
+app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
-app.use('/api/chat', chatRouter)
+app.use('/api/chat', getGuestToken, chatRouter)
 
 app.get('/health', async (req, res) => {
     try {
@@ -183,7 +195,7 @@ async function startServer() {
         }
 
         startCleanupJob()
-        console.log("⏰ Запущена очистка истекших согласий")
+        console.log("⏰ Запущена очистка истекших согласий и auth-данных")
         reminderService.start()
 
         app.listen(PORT, () => {

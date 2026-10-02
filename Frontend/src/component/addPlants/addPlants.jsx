@@ -9,6 +9,8 @@ import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
 
 const MAX_PHOTOS = 2
+const API_URL = import.meta.env.VITE_API_URL ||
+    'https://server.checktheplants.ru/api'
 
 const PRESETS = [
     { id: 'daily', label: 'Каждый день', days: 1 },
@@ -24,13 +26,13 @@ const WATERING = [
 ]
 
 const WEEKDAY = [
-    { id: 'mon', label: 'Пн' },
-    { id: 'tue', label: 'Вт' },
-    { id: 'wed', label: 'Ср' },
-    { id: 'thu', label: 'Чт' },
-    { id: 'fri', label: 'Пт' },
-    { id: 'sat', label: 'Сб' },
-    { id: 'sun', label: 'Вс' },
+    { id: 1, label: 'Пн' },
+    { id: 2, label: 'Вт' },
+    { id: 3, label: 'Ср' },
+    { id: 4, label: 'Чт' },
+    { id: 5, label: 'Пт' },
+    { id: 6, label: 'Сб' },
+    { id: 0, label: 'Вс' },
 ]
 
 function AddPlants() {
@@ -50,12 +52,24 @@ function AddPlants() {
     const [notifyDayBefore, setNotifyDayBefore] = useState(false)
     const [name, setName] = useState('')
     const [species, setSpecies] = useState('')
+    const [isSuggestingSpecies, setIsSuggestingSpecies] = useState(false)
+    const [speciesSuggestionError, setSpeciesSuggestionError] = useState('')
+    const [isWateringDialogOpen, setIsWateringDialogOpen] = useState(false)
+    const [wateringAnswers, setWateringAnswers] = useState([])
+    const [wateringMessages, setWateringMessages] = useState([])
+    const [wateringAnswer, setWateringAnswer] = useState('')
+    const [wateringRecommendation, setWateringRecommendation] = useState(null)
+    const [isAskingWateringAdvice, setIsAskingWateringAdvice] = useState(false)
+    const [wateringAdviceError, setWateringAdviceError] = useState('')
+    const wateringDialogSessionRef = useRef(0)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [submitError, setSubmitError] = useState('')
 
     const [toast, setToast] = useState(null)
     const [toastLeaving, setToastLeaving] = useState(false)
     const toastTimerRef = useRef(null)
     const navigateTimerRef = useRef(null)
+    const wateringMessagesEndRef = useRef(null)
 
     const closeToast = () => {
         if (toastLeaving) return
@@ -80,7 +94,7 @@ function AddPlants() {
 
     const inc = () => {
         setSelectedPreset('custom')
-        setDays(d => d + 1)
+        setDays(d => Math.min(365, d + 1))
     }
 
     const goToStep = (next) => {
@@ -95,28 +109,182 @@ function AddPlants() {
 
     const goNextFromStep1 = () => {
         if (!name.trim()) {
-            alert('Введите название растения')
+            setSubmitError('Введите название растения')
             return
         }
+        if (name.trim().length > 255) {
+            setSubmitError('Название должно содержать не более 255 символов')
+            return
+        }
+        setSubmitError('')
         goToStep(2)
     }
+
+    const handleSuggestSpecies = async () => {
+        const plantName = name.trim()
+        if (!plantName || isSuggestingSpecies) return
+
+        setIsSuggestingSpecies(true)
+        setSpeciesSuggestionError('')
+        try {
+            const response = await fetch(`${API_URL}/plants/suggest-species`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ name: plantName })
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(data.message || 'Не удалось определить вид растения')
+            }
+            if (typeof data.species !== 'string' || !data.species.trim()) {
+                throw new Error('Не удалось получить название вида. Попробуйте ещё раз.')
+            }
+            setSpecies(data.species.trim())
+        } catch (error) {
+            console.error('Ошибка подсказки вида растения:', error)
+            setSpeciesSuggestionError(error.message || 'Не удалось определить вид растения')
+        } finally {
+            setIsSuggestingSpecies(false)
+        }
+    }
+
+    const requestWateringAdvice = async (answers, sessionId) => {
+        setIsAskingWateringAdvice(true)
+        setWateringAdviceError('')
+        try {
+            const response = await fetch(`${API_URL}/plants/watering-advice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    name: name.trim(),
+                    species: species.trim(),
+                    answers
+                })
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(data.message || 'Не удалось получить рекомендацию')
+            }
+            if (wateringDialogSessionRef.current !== sessionId) return
+
+            if (data.type === 'question' && typeof data.question === 'string') {
+                setWateringMessages(messages => [...messages, {
+                    role: 'assistant',
+                    text: data.question
+                }])
+            } else if (
+                data.type === 'recommendation' &&
+                Number.isInteger(data.intervalDays) &&
+                data.intervalDays >= 1 &&
+                data.intervalDays <= 365 &&
+                typeof data.reason === 'string'
+            ) {
+                setWateringRecommendation(data)
+            } else {
+                throw new Error('ИИ прислал некорректную рекомендацию. Попробуйте ещё раз.')
+            }
+        } catch (error) {
+            if (wateringDialogSessionRef.current !== sessionId) return
+            console.error('Ошибка рекомендации частоты полива:', error)
+            setWateringAdviceError(error.message || 'Не удалось получить рекомендацию')
+        } finally {
+            if (wateringDialogSessionRef.current === sessionId) {
+                setIsAskingWateringAdvice(false)
+            }
+        }
+    }
+
+    const openWateringAdvice = () => {
+        if (!name.trim() || isAskingWateringAdvice) return
+        const sessionId = wateringDialogSessionRef.current + 1
+        wateringDialogSessionRef.current = sessionId
+        setIsWateringDialogOpen(true)
+        setWateringAnswers([])
+        setWateringMessages([])
+        setWateringAnswer('')
+        setWateringRecommendation(null)
+        setWateringAdviceError('')
+        requestWateringAdvice([], sessionId)
+    }
+
+    const closeWateringAdvice = () => {
+        wateringDialogSessionRef.current++
+        setIsWateringDialogOpen(false)
+        setIsAskingWateringAdvice(false)
+    }
+
+    const submitWateringAnswer = event => {
+        event.preventDefault()
+        const answer = wateringAnswer.trim()
+        const lastQuestion = [...wateringMessages].reverse().find(
+            message => message.role === 'assistant'
+        )?.text
+        if (!answer || !lastQuestion || isAskingWateringAdvice) return
+
+        const nextAnswers = [...wateringAnswers, {
+            question: lastQuestion,
+            answer
+        }]
+        const sessionId = wateringDialogSessionRef.current
+        setWateringAnswers(nextAnswers)
+        setWateringMessages(messages => [...messages, { role: 'user', text: answer }])
+        setWateringAnswer('')
+        setWateringAdviceError('')
+        requestWateringAdvice(nextAnswers, sessionId)
+    }
+
+    const applyWateringRecommendation = () => {
+        if (!wateringRecommendation) return
+        const matchingPreset = PRESETS.find(
+            preset => preset.days === wateringRecommendation.intervalDays
+        )
+        setDays(wateringRecommendation.intervalDays)
+        setSelectedPreset(matchingPreset?.id || 'custom')
+        closeWateringAdvice()
+    }
+
+    useEffect(() => {
+        if (isWateringDialogOpen) {
+            wateringMessagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
+        }
+    }, [
+        isWateringDialogOpen,
+        isAskingWateringAdvice,
+        wateringMessages,
+        wateringRecommendation
+    ])
 
     const handleFileChange = (e) => {
         const newFiles = Array.from(e.target.files)
         if (!newFiles.length) return
 
-        const freeSlots = MAX_PHOTOS - filesRef.current.length
-        if (freeSlots <= 0) {
+        const allowedTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic'])
+        if (newFiles.some(file => !allowedTypes.has(file.type) || file.size > 5 * 1024 * 1024)) {
+            setSubmitError('Выберите JPEG, PNG, WebP или HEIC размером до 5 МБ')
             e.target.value = ''
             return
         }
 
-        const toAdd = newFiles.slice(0, freeSlots)
-        const newUrls = toAdd.map(file => URL.createObjectURL(file))
+        const freeSlots = MAX_PHOTOS - filesRef.current.length
+        if (freeSlots <= 0) {
+            setSubmitError(`Можно добавить не более ${MAX_PHOTOS} фотографий`)
+            e.target.value = ''
+            return
+        }
+        if (newFiles.length > freeSlots) {
+            setSubmitError(`Можно добавить ещё ${freeSlots} фотографии`)
+            e.target.value = ''
+            return
+        }
 
-        filesRef.current = [...filesRef.current, ...toAdd]
+        const newUrls = newFiles.map(file => URL.createObjectURL(file))
+
+        filesRef.current = [...filesRef.current, ...newFiles]
         urlsRef.current = [...urlsRef.current, ...newUrls]
         setPreviews([...urlsRef.current])
+        setSubmitError('')
 
         e.target.value = ''
     }
@@ -142,11 +310,16 @@ function AddPlants() {
         if (isSubmitting) return
 
         if (!name.trim()) {
-            alert('Введите название растения')
+            setSubmitError('Введите название растения')
+            return
+        }
+        if (name.trim().length > 255) {
+            setSubmitError('Название должно содержать не более 255 символов')
             return
         }
 
         setIsSubmitting(true)
+        setSubmitError('')
 
         try {
             let uploadedUrls = []
@@ -154,18 +327,20 @@ function AddPlants() {
                 const formData = new FormData()
                 filesRef.current.forEach(file => formData.append('photos', file))
 
-                const uploadRes = await fetch('https://server.checktheplants.ru/api/upload', {
+                const uploadRes = await fetch(`${API_URL}/upload`, {
                     method: 'POST',
                     body: formData,
                     credentials: 'include'
                 })
 
-                if (!uploadRes.ok) throw new Error('Не удалось загрузить фото')
-                const uploadData = await uploadRes.json()
+                const uploadData = await uploadRes.json().catch(() => ({}))
+                if (!uploadRes.ok) {
+                    throw new Error(uploadData.message || 'Не удалось загрузить фото')
+                }
                 uploadedUrls = Array.isArray(uploadData.urls) ? uploadData.urls : []
             }
 
-            const response = await fetch('https://server.checktheplants.ru/api/plants', {
+            const response = await fetch(`${API_URL}/plants`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -183,12 +358,7 @@ function AddPlants() {
                 credentials: 'include'
             })
 
-            let responseData = null
-            try {
-                responseData = await response.json()
-            } catch {
-                responseData = null
-            }
+            const responseData = await response.json().catch(() => ({}))
 
             if (response.ok) {
                 urlsRef.current.forEach(url => URL.revokeObjectURL(url))
@@ -201,14 +371,14 @@ function AddPlants() {
                 })
 
                 navigateTimerRef.current = setTimeout(() => {
-                    navigate('/home')
+                    navigate('/home', { replace: true })
                 }, 1600)
             } else {
-                alert(responseData?.message || 'Не удалось сохранить растение')
+                throw new Error(responseData.message || 'Не удалось сохранить растение')
             }
         } catch (error) {
             console.error('Add plant error:', error)
-            alert('Ошибка при сохранении. Попробуйте ещё раз.')
+            setSubmitError(error.message || 'Ошибка при сохранении. Попробуйте ещё раз.')
         } finally {
             setIsSubmitting(false)
         }
@@ -241,9 +411,10 @@ function AddPlants() {
                                 <label className="add-photo-btn">
                                     <input
                                         type="file"
-                                        accept="image/*"
+                                        accept="image/jpeg,image/png,image/webp,image/heic"
                                         multiple
                                         className="addPhotoPlantInput"
+                                        aria-label="Добавить фотографии растения"
                                         onChange={handleFileChange}
                                     />
                                     <img src={camera} alt="" aria-hidden="true" className="add-photo-icon" />
@@ -289,8 +460,14 @@ function AddPlants() {
                                 <input
                                     type="text"
                                     placeholder='Монстера Анна'
+                                    maxLength={255}
+                                    aria-label="Название растения"
+                                    disabled={isSuggestingSpecies}
                                     value={name}
-                                    onChange={(e) => setName(e.target.value)}
+                                    onChange={(e) => {
+                                        setName(e.target.value)
+                                        setSubmitError('')
+                                    }}
                                 />
                             </div>
                             <div className='speciesName'>
@@ -298,22 +475,46 @@ function AddPlants() {
                                     <p>Вид растения</p>
                                     <div>
                                         <img src={sparkles} alt="" aria-hidden="true" />
-                                        <button type="button">Спросить у ИИ</button>
+                                        <button
+                                            type="button"
+                                            onClick={handleSuggestSpecies}
+                                            disabled={!name.trim() || isSuggestingSpecies}
+                                            aria-busy={isSuggestingSpecies}
+                                        >
+                                            {isSuggestingSpecies ? 'Подбираю…' : 'Спросить у ИИ'}
+                                        </button>
                                     </div>
                                 </div>
-                                <input
-                                    type="text"
-                                    placeholder='Monstera deliciosa'
-                                    value={species}
-                                    onChange={(e) => setSpecies(e.target.value)}
-                                />
+                                <div className={`speciesInputShell ${isSuggestingSpecies ? 'isLoading' : ''}`}>
+                                    <input
+                                        type="text"
+                                        placeholder='Monstera deliciosa'
+                                        maxLength={255}
+                                        aria-label="Вид растения"
+                                        aria-describedby={speciesSuggestionError ? 'speciesSuggestionError' : undefined}
+                                        disabled={isSuggestingSpecies}
+                                        value={species}
+                                        onChange={(e) => setSpecies(e.target.value)}
+                                    />
+                                </div>
+                                {speciesSuggestionError && (
+                                    <p id="speciesSuggestionError" className="speciesSuggestionError" role="alert">
+                                        {speciesSuggestionError}
+                                    </p>
+                                )}
                             </div>
                             <div className='popularTypes'>
-                                <p>Популярные виды — подставим уход автоматически</p>
+                                <p>Популярные виды</p>
                                 <div>
-                                    <button type="button">Монстера</button>
-                                    <button type="button">Фикус</button>
-                                    <button type="button">Суккулент</button>
+                                    {[
+                                        ['Монстера', 'Monstera'],
+                                        ['Фикус', 'Ficus'],
+                                        ['Суккулент', 'Succulent']
+                                    ].map(([label, value]) => (
+                                        <button key={value} type="button" onClick={() => setSpecies(value)}>
+                                            {label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         </div>
@@ -333,10 +534,15 @@ function AddPlants() {
                                 <div>
                                     <div className='headerOfBlockWatering'>
                                         <p>Частота полива</p>
-                                        <div className='askAI'>
+                                        <button
+                                            type="button"
+                                            className='askAI wateringAdviceTrigger'
+                                            onClick={openWateringAdvice}
+                                            disabled={!name.trim() || isAskingWateringAdvice}
+                                        >
                                             <img src={sparkles} alt="" aria-hidden="true" />
-                                            <button type="button">Спросить у ИИ</button>
-                                        </div>
+                                            <span>Спросить ИИ</span>
+                                        </button>
                                     </div>
                                 </div>
                                 <div>
@@ -377,7 +583,7 @@ function AddPlants() {
                                         <p>Когда поливать</p>
                                         <div className='askAI'>
                                             <img src={sparkles} alt="" aria-hidden="true" />
-                                            <button type="button">Спросить у ИИ</button>
+                                            <span>Скоро</span>
                                         </div>
                                     </div>
                                     <div className='buttonHoldPreset'>
@@ -392,7 +598,7 @@ function AddPlants() {
                                             </button>
                                         ))}
                                     </div>
-                                    <p className='commentOfPreset'>Утром вода усваивается лучше, вечером — меньше испаряется</p>
+                                    <p className='commentOfPreset'>Выберите время напоминания. Частоту подбирайте с учётом вида растения и того, как просыхает грунт.</p>
                                 </div>
                             </div>
                             <div className='buttonOfslider'>
@@ -423,18 +629,19 @@ function AddPlants() {
                                 <p>Напоминания</p>
                                 <div className='askAI'>
                                     <img src={sparkles} alt="" aria-hidden="true" />
-                                    <button type="button">Спросить у ИИ</button>
+                                    <span>Скоро</span>
                                 </div>
                             </div>
                             <div className='godblocksOfNotification'>
                                 <div className='blocksOfNotification'>
                                     <p>Утреннее напоминание</p>
-                                    <p>Каждый день в 9:00</p>
+                                    <p>В день полива</p>
                                 </div>
                                 <label className="apple-switch">
                                     <input
                                         type="checkbox"
                                         checked={notifyMorning}
+                                        aria-label="Утреннее напоминание"
                                         onChange={(e) => setNotifyMorning(e.target.checked)}
                                     />
                                     <span className="slider"></span>
@@ -444,12 +651,13 @@ function AddPlants() {
                             <div className='godblocksOfNotification'>
                                 <div className='blocksOfNotification'>
                                     <p>Напоминать за день</p>
-                                    <p>Вечером в 19:00</p>
+                                    <p>За день до полива</p>
                                 </div>
                                 <label className="apple-switch">
                                     <input
                                         type="checkbox"
                                         checked={notifyDayBefore}
+                                        aria-label="Напоминать за день"
                                         onChange={(e) => setNotifyDayBefore(e.target.checked)}
                                     />
                                     <span className="slider"></span>
@@ -462,6 +670,7 @@ function AddPlants() {
                                         type='button'
                                         className={`wateringWeekday ${selectedDays.includes(w.id) ? 'active' : ''}`}
                                         onClick={() => toggleDay(w.id)}
+                                        aria-pressed={selectedDays.includes(w.id)}
                                     >
                                         {w.label}
                                     </button>
@@ -485,7 +694,139 @@ function AddPlants() {
                             </button>
                         </div>
                     </div>
+                    {submitError && <p className='addPlantError' role='alert'>{submitError}</p>}
                 </form>
+                {isWateringDialogOpen && (
+                    <div
+                        className='wateringAdviceOverlay'
+                        onMouseDown={event => {
+                            if (event.target === event.currentTarget && !isAskingWateringAdvice) {
+                                closeWateringAdvice()
+                            }
+                        }}
+                    >
+                        <section
+                            className='wateringAdviceDialog'
+                            role='dialog'
+                            aria-modal='true'
+                            aria-labelledby='wateringAdviceTitle'
+                            aria-describedby='wateringAdviceDescription'
+                        >
+                            <header className='wateringAdviceHeader'>
+                                <div>
+                                    <h2 id='wateringAdviceTitle'>Подберём график полива</h2>
+                                    <p id='wateringAdviceDescription'>
+                                        Ответьте на несколько вопросов. Рекомендация будет ориентировочной.
+                                    </p>
+                                </div>
+                                <button
+                                    type='button'
+                                    className='wateringAdviceClose'
+                                    onClick={closeWateringAdvice}
+                                    aria-label='Закрыть диалог'
+                                >
+                                    ×
+                                </button>
+                            </header>
+                            <div className='wateringAdviceMessages' aria-live='polite'>
+                                <p className='wateringAdvicePlant'>
+                                    Растение: <strong>{name.trim()}</strong>
+                                    {species.trim() && ` · ${species.trim()}`}
+                                </p>
+                                <div className='wateringAdviceMessage assistant'>
+                                    Подберу стартовый интервал с учётом условий. Это не заменяет проверку влажности грунта.
+                                </div>
+                                {wateringMessages.map((message, index) => (
+                                    <div
+                                        key={`${message.role}-${index}`}
+                                        className={`wateringAdviceMessage ${message.role}`}
+                                    >
+                                        {message.text}
+                                    </div>
+                                ))}
+                                {isAskingWateringAdvice && (
+                                    <div className='wateringAdviceMessage assistant' role='status'>
+                                        Подбираю следующий вопрос…
+                                    </div>
+                                )}
+                                {wateringRecommendation && (
+                                    <div className='wateringRecommendation' role='status'>
+                                        <p className='wateringRecommendationInterval'>
+                                            Ориентир: раз в {wateringRecommendation.intervalDays} дн.
+                                        </p>
+                                        <p>{wateringRecommendation.reason}</p>
+                                        <p className='wateringRecommendationConfidence'>
+                                            Уверенность: {
+                                                wateringRecommendation.confidence === 'high'
+                                                    ? 'высокая'
+                                                    : wateringRecommendation.confidence === 'medium'
+                                                        ? 'средняя'
+                                                        : 'низкая'
+                                            }. Проверяйте, просох ли грунт, и корректируйте график.
+                                        </p>
+                                        <button
+                                            type='button'
+                                            className='wateringRecommendationApply'
+                                            onClick={applyWateringRecommendation}
+                                        >
+                                            Применить интервал
+                                        </button>
+                                    </div>
+                                )}
+                                <div ref={wateringMessagesEndRef} />
+                            </div>
+                            {wateringAdviceError && (
+                                <div className='wateringAdviceError' role='alert'>
+                                    <p>{wateringAdviceError}</p>
+                                    <button
+                                        type='button'
+                                        onClick={() => requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current)}
+                                        disabled={isAskingWateringAdvice}
+                                    >
+                                        Попробовать ещё раз
+                                    </button>
+                                </div>
+                            )}
+                            {!wateringRecommendation && (
+                                <form className='wateringAdviceReply' onSubmit={submitWateringAnswer}>
+                                    <label htmlFor='wateringAdviceAnswer'>
+                                        {wateringAnswers.length >= 4
+                                            ? 'Получаем осторожную рекомендацию'
+                                            : 'Ваш ответ'}
+                                    </label>
+                                    <textarea
+                                        id='wateringAdviceAnswer'
+                                        value={wateringAnswer}
+                                        onChange={event => setWateringAnswer(event.target.value)}
+                                        maxLength={500}
+                                        rows={3}
+                                        placeholder='Например: стоит на южном окне, грунт просыхает за 4 дня'
+                                        disabled={
+                                            isAskingWateringAdvice ||
+                                            Boolean(wateringAdviceError) ||
+                                            wateringAnswers.length >= 4 ||
+                                            !wateringMessages.some(message => message.role === 'assistant')
+                                        }
+                                    />
+                                    <div className='wateringAdviceFooter'>
+                                        <span>{wateringAnswers.length}/4 уточнений</span>
+                                        <button
+                                            type='submit'
+                                            disabled={
+                                                !wateringAnswer.trim() ||
+                                                isAskingWateringAdvice ||
+                                                Boolean(wateringAdviceError) ||
+                                                wateringAnswers.length >= 4
+                                            }
+                                        >
+                                            Ответить
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </section>
+                    </div>
+                )}
                 {toast && (
                     <div className={`toast ${toastLeaving ? 'leaving' : ''}`} role="status" aria-live="polite">
                         <div className="toastText">

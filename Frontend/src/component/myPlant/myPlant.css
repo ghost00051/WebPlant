@@ -1,0 +1,105 @@
+.gofOfMyplants {
+    margin: 0 20px 0;
+    padding-top: 30px;
+}
+
+.headerOfPlants {
+    display: flex;
+    justify-content: space-between;
+    width: 50%;
+}
+
+.headerOfPlants p {
+    font-family: 'Inter', sans-serif;
+    font-size: 17px;
+    font-weight: bold;
+    color: #2D2D2D;
+}
+
+.searchButton {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E5E5;
+    display: flex;
+    justify-content: space-between;
+    border-radius: 14px;
+    padding: 3% 2%;
+    align-items: center;
+}
+
+.childOfsearchButton {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.searchPlaceholder {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 300;
+    border: none;
+}
+
+.plantRenderOfPants {
+    background-color: #FFFFFF;
+    border: 1px solid #E5E5E5;
+    border-radius: 16px;
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+
+}
+
+.gridBlocksOfPlant {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 16px;
+    align-items: stretch;
+
+}
+
+.plantRenderOfPants p {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    color: #2D2D2D;
+    font-size: 15px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+}
+
+.plantRenderOfPants p:first-child {
+    font-weight: 600;
+}
+
+.buttonEditPlants {
+    display: flex;
+    gap: 5px;
+}
+
+.buttonEditPlants button:nth-child(1) {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: none;
+    color: #FFFFFF;
+    background-color: #7C9082;
+    padding: 5px 6px;
+}
+
+.buttonEditPlants button:nth-child(2) {
+    font-family: 'Inter', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 8px;
+    border: none;
+    color: #E85A4F;
+    background-color: #FCF0EF;
+    padding: 5px 6px;
+}

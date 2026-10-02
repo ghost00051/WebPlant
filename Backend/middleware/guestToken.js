@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid'
 
-const GUEST_TOKEN_LIFETIME = 60 * 60 * 1000
+const GUEST_TOKEN_LIFETIME = 180 * 24 * 60 * 60 * 1000
 
 export function generateGuestToken() {
     return `guest_${uuidv4().replace(/-/g, '')}_${Date.now()}`
@@ -15,7 +15,7 @@ const cookieOptions = {
 }
 
 export function getGuestToken(req, res, next) {
-    let guestToken = req.cookies.guest_token
+    let guestToken = req.cookies?.guest_token
 
     const tokenData = parseGuestToken(guestToken)
     if (!tokenData || Date.now() - tokenData.timestamp > GUEST_TOKEN_LIFETIME || tokenData.timestamp > Date.now()) {

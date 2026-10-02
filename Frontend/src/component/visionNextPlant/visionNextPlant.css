@@ -264,3 +264,17 @@
   color: #5fb884;
   background-color: #eaf5ee;
 }
+
+.descriptionOfplantsPreview__name--overdue {
+  color: #e07a7a !important;
+  font-weight: 600;
+}
+
+.classOfgetWateringTime--overdue {
+  color: #e07a7a;
+  background-color: #fbecec;
+}
+
+.plantsPreview__dot--overdue {
+  background: #e07a7a;
+}

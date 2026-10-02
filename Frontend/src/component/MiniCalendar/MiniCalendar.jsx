@@ -1,16 +1,16 @@
 import { useState, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react'
 import moment from 'moment/min/moment-with-locales'
-moment.locale('ru')
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ArrowLeft from '../../assets/ArrowLeft.svg'
 import ArrowRight from '../../assets/ArrowRight.svg'
 import './MiniCalendar.css'
+moment.locale('ru')
 
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DAYS_IN_VIEW = 14
 
 const MiniCalendar = forwardRef(function MiniCalendar(
-  { onSelectDay, scheduleMap, pastDates, externalIso },
+  { onSelectDay, scheduleMap, pastDates, overdueDates, externalIso },
   ref
 ) {
   const [anchor, setAnchor] = useState(moment().startOf('isoWeek'))
@@ -89,6 +89,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
             const isSelected = externalIso === dateStr
             const isFuture = futureWaterings.includes(dateStr)
             const isPast = pastDates?.has?.(dateStr) ?? false
+            const isOverdue = overdueDates?.has?.(dateStr) ?? false
 
             return (
               <button
@@ -105,7 +106,8 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                 <span className='mini-calendar__day-number'>{day.date()}</span>
                 <div className='mini-calendar__dots'>
                   {isFuture && <span className='dot dot--future' title='Будущий полив' />}
-                  {isPast && <span className='dot dot--past' title='Прошлый полив' />}
+                  {isOverdue && <span className='dot dot--overdue' title='Пропущенный полив' />}
+                  {isPast && !isOverdue && <span className='dot dot--past' title='Прошлый полив' />}
                 </div>
               </button>
             )
@@ -119,6 +121,9 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         </span>
         <span className='legend-item'>
           <span className='dot dot--past' /> Прошлый полив
+        </span>
+        <span className='legend-item'>
+          <span className='dot dot--overdue' /> Пропущенный
         </span>
         <span className='legend-item'>
           <span className='dot dot--today' /> Сегодня

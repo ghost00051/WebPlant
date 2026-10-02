@@ -1,0 +1,48 @@
+.addPlantPage {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding-top: env(safe-area-inset-top, 0px);
+    background-color: #FAF8F5;
+}
+
+.addPlantPageHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 20px;
+    color: #2D2D2D;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.addPlantPageHeader button {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.addPlantPageHeader img {
+    width: 24px;
+    height: 24px;
+}
+
+.addPlantPage .formForPlant {
+    height: auto;
+    min-height: calc(100vh - 52px);
+    min-height: calc(100dvh - 52px);
+}
+
+.addPlantPageStatus {
+    margin: 0;
+    padding: 32px 20px;
+    color: #5A5A5A;
+    font-family: 'Inter', sans-serif;
+}

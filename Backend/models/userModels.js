@@ -20,6 +20,19 @@ const User = sequelize.define("user", {
         type: DataTypes.STRING(100),
         allowNull: true
     },
+    username: {
+        type: DataTypes.STRING(30),
+        allowNull: true,
+        unique: true
+    },
+    phone: {
+        type: DataTypes.STRING(20),
+        allowNull: true
+    },
+    bio: {
+        type: DataTypes.STRING(300),
+        allowNull: true
+    },
     role: {
         type: DataTypes.ENUM("USER", "ADMIN"),
         defaultValue: "USER"
@@ -31,7 +44,14 @@ const User = sequelize.define("user", {
     }
 }, {
     tableName: 'users',
-    timestamps: false
+    timestamps: false,
+    indexes: [
+        {
+            name: 'idx_users_username_unique',
+            unique: true,
+            fields: ['username']
+        }
+    ]
 })
 
 export default User

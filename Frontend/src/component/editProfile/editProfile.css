@@ -1,0 +1,152 @@
+.editProfilePage {
+    position: fixed;
+    inset: 0;
+    background: #F5F3EF;
+    z-index: 1000;
+    padding: 20px;
+    overflow-y: auto;
+    box-sizing: border-box;
+}
+
+.editProfileHeader {
+    display: flex;
+    align-items: center;
+    gap: 25px;
+}
+
+.editProfileHeader p {
+    font-family: 'Inter', sans-serif;
+    font-size: 20px;
+    font-weight: bold;
+    color: #2D2D2D;
+    margin: 0;
+}
+
+.headerOfImgNames {
+    display: flex;
+    justify-content: center;
+    margin-top: 10%;
+}
+
+.editProfile {
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    padding: 20px 20px;
+    margin-top: 5%;
+}
+
+.editProfile p {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: #8a8a8a;
+}
+
+.editProfile label {
+    display: block;
+    margin-bottom: 16px;
+}
+
+.editProfile input {
+    background-color: #FAF8F5;
+    border-radius: 12px;
+    border: 1px solid #E5E5E5;
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 14px 16px;
+}
+
+.editProfileError {
+    margin-top: 16px;
+    color: #c0392b;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.editProfileSuccess {
+    margin-top: 16px;
+    color: #2e7d32;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    background: rgba(46, 125, 50, 0.08);
+    border: 1px solid rgba(46, 125, 50, 0.12);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+
+.saveOfEditProfile {
+    font-family: 'Inter', sans-serif;
+    font-size: 16px;
+    font-weight: 400;
+    color: #FFFFFF;
+    margin-bottom: 0;
+    margin-top: 5%;
+    padding: 3% 0;
+    border: none;
+    background-color: #7C9082;
+    border-radius: 16px;
+    width: 100%;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+}
+
+.saveOfEditProfile:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+@media (max-width: 480px) {
+    .editProfilePage {
+        padding: 16px;
+    }
+
+    .editProfileHeader {
+        gap: 14px;
+    }
+
+    .editProfileHeader p {
+        font-size: 18px;
+    }
+
+    .headerOfImgNames {
+        margin-top: 24px;
+    }
+
+    .editProfile {
+        margin-top: 24px;
+        padding: 16px;
+    }
+
+    .editProfile p {
+        font-size: 11px;
+    }
+
+    .editProfile input {
+        font-size: 15px;
+        padding: 12px 14px;
+    }
+
+    .saveOfEditProfile {
+        margin-top: 20px;
+        padding: 14px 0;
+        font-size: 15px;
+    }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+    .editProfilePage {
+        padding: 18px;
+    }
+
+    .editProfile {
+        margin-top: 28px;
+    }
+
+    .saveOfEditProfile {
+        padding: 14px 0;
+    }
+}
