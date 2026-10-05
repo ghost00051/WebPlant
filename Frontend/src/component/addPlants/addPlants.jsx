@@ -7,10 +7,9 @@ import leaf from '../../assets/leaf.svg'
 import sparkles from '../../assets/sparkles.svg'
 import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
+import { API_URL } from '../../utils/api.js'
 
 const MAX_PHOTOS = 2
-const API_URL = import.meta.env.VITE_API_URL ||
-    'https://server.checktheplants.ru/api'
 
 const PRESETS = [
     { id: 'daily', label: 'Каждый день', days: 1 },
@@ -35,6 +34,18 @@ const WEEKDAY = [
     { id: 0, label: 'Вс' },
 ]
 
+const getReminderWeekdays = (intervalDays, startDate = new Date()) => {
+    const weekdays = new Set()
+    let weekday = startDate.getDay()
+
+    while (!weekdays.has(weekday)) {
+        weekdays.add(weekday)
+        weekday = (weekday + intervalDays) % 7
+    }
+
+    return [...weekdays]
+}
+
 function AddPlants() {
     const navigate = useNavigate()
     const [previews, setPreviews] = useState([])
@@ -47,7 +58,7 @@ function AddPlants() {
     const [days, setDays] = useState(7)
     const [selectedPreset, setSelectedPreset] = useState('custom')
     const [selectedWatering, setSelectedWatering] = useState('morning')
-    const [selectedDays, setSelectedDays] = useState([])
+    const [selectedDays, setSelectedDays] = useState(() => getReminderWeekdays(7))
     const [notifyMorning, setNotifyMorning] = useState(true)
     const [notifyDayBefore, setNotifyDayBefore] = useState(false)
     const [name, setName] = useState('')
@@ -59,6 +70,10 @@ function AddPlants() {
     const [wateringMessages, setWateringMessages] = useState([])
     const [wateringAnswer, setWateringAnswer] = useState('')
     const [wateringRecommendation, setWateringRecommendation] = useState(null)
+    const [isAskingWateringTime, setIsAskingWateringTime] = useState(false)
+    const [isWateringTimeDialogOpen, setIsWateringTimeDialogOpen] = useState(false)
+    const [wateringTimeAdvice, setWateringTimeAdvice] = useState(null)
+    const [wateringTimeAdviceError, setWateringTimeAdviceError] = useState('')
     const [isAskingWateringAdvice, setIsAskingWateringAdvice] = useState(false)
     const [wateringAdviceError, setWateringAdviceError] = useState('')
     const wateringDialogSessionRef = useRef(0)
@@ -87,14 +102,19 @@ function AddPlants() {
         )
     }
 
+    const setWateringInterval = intervalDays => {
+        setDays(intervalDays)
+        setSelectedDays(getReminderWeekdays(intervalDays))
+    }
+
     const dec = () => {
         setSelectedPreset('custom')
-        setDays(d => Math.max(1, d - 1))
+        setWateringInterval(Math.max(1, days - 1))
     }
 
     const inc = () => {
         setSelectedPreset('custom')
-        setDays(d => Math.min(365, d + 1))
+        setWateringInterval(Math.min(365, days + 1))
     }
 
     const goToStep = (next) => {
@@ -196,6 +216,51 @@ function AddPlants() {
         }
     }
 
+    const requestWateringTimeAdvice = async () => {
+        if (!name.trim() || isAskingWateringTime) return
+
+        setIsWateringTimeDialogOpen(true)
+        setIsAskingWateringTime(true)
+        setWateringTimeAdvice(null)
+        setWateringTimeAdviceError('')
+        try {
+            const response = await fetch(`${API_URL}/plants/watering-time-advice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({
+                    name: name.trim(),
+                    species: species.trim(),
+                    intervalDays: days
+                })
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(data.message || 'Не удалось подобрать время полива')
+            }
+            if (
+                !WATERING.some(option => option.id === data.timeOfDay) ||
+                typeof data.reason !== 'string' ||
+                !data.reason.trim()
+            ) {
+                throw new Error('ИИ прислал некорректную рекомендацию. Попробуйте ещё раз.')
+            }
+            setWateringTimeAdvice(data)
+        } catch (error) {
+            console.error('Ошибка рекомендации времени полива:', error)
+            setWateringTimeAdviceError(error.message || 'Не удалось подобрать время полива')
+        } finally {
+            setIsAskingWateringTime(false)
+        }
+    }
+
+    const applyWateringTimeAdvice = () => {
+        if (!wateringTimeAdvice) return
+        setSelectedWatering(wateringTimeAdvice.timeOfDay)
+        setIsWateringTimeDialogOpen(false)
+        setWateringTimeAdvice(null)
+    }
+
     const openWateringAdvice = () => {
         if (!name.trim() || isAskingWateringAdvice) return
         const sessionId = wateringDialogSessionRef.current + 1
@@ -240,7 +305,7 @@ function AddPlants() {
         const matchingPreset = PRESETS.find(
             preset => preset.days === wateringRecommendation.intervalDays
         )
-        setDays(wateringRecommendation.intervalDays)
+        setWateringInterval(wateringRecommendation.intervalDays)
         setSelectedPreset(matchingPreset?.id || 'custom')
         closeWateringAdvice()
     }
@@ -406,7 +471,6 @@ function AddPlants() {
                         <div className='addPhotoPlant'>
                             <p>Фото растения</p>
                             <p>Сфотографируйте растение или выберите снимок из галереи</p>
-
                             <div className='upload-row'>
                                 <label className="add-photo-btn">
                                     <input
@@ -468,6 +532,7 @@ function AddPlants() {
                                         setName(e.target.value)
                                         setSubmitError('')
                                     }}
+                                    required
                                 />
                             </div>
                             <div className='speciesName'>
@@ -495,6 +560,7 @@ function AddPlants() {
                                         disabled={isSuggestingSpecies}
                                         value={species}
                                         onChange={(e) => setSpecies(e.target.value)}
+                                        required
                                     />
                                 </div>
                                 {speciesSuggestionError && (
@@ -554,7 +620,7 @@ function AddPlants() {
                                                 className={`wateringPreset ${selectedPreset === p.id ? 'active' : ''}`}
                                                 onClick={() => {
                                                     setSelectedPreset(p.id)
-                                                    setDays(p.days)
+                                                    setWateringInterval(p.days)
                                                 }}
                                             >
                                                 {p.label}
@@ -581,10 +647,16 @@ function AddPlants() {
                                 <div>
                                     <div className='headerOfBlockWatering'>
                                         <p>Когда поливать</p>
-                                        <div className='askAI'>
+                                        <button
+                                            type='button'
+                                            className='askAI wateringAdviceTrigger'
+                                            onClick={requestWateringTimeAdvice}
+                                            disabled={!name.trim() || isAskingWateringTime}
+                                            aria-busy={isAskingWateringTime}
+                                        >
                                             <img src={sparkles} alt="" aria-hidden="true" />
-                                            <span>Скоро</span>
-                                        </div>
+                                            <span>{isAskingWateringTime ? 'Подбираю…' : 'Спросить ИИ'}</span>
+                                        </button>
                                     </div>
                                     <div className='buttonHoldPreset'>
                                         {WATERING.map(w => (
@@ -627,10 +699,10 @@ function AddPlants() {
                         <div className='blocksOfWeekDay'>
                             <div className='headerOfBlockWatering'>
                                 <p>Напоминания</p>
-                                <div className='askAI'>
+                                {/* <div className='askAI'>
                                     <img src={sparkles} alt="" aria-hidden="true" />
                                     <span>Скоро</span>
-                                </div>
+                                </div> */}
                             </div>
                             <div className='godblocksOfNotification'>
                                 <div className='blocksOfNotification'>
@@ -663,6 +735,9 @@ function AddPlants() {
                                     <span className="slider"></span>
                                 </label>
                             </div>
+                            <p className='commentOfPreset'>
+                                Дни выбраны по частоте полива. При необходимости измените их вручную.
+                            </p>
                             <div className='buttonHoldWeekday'>
                                 {WEEKDAY.map(w => (
                                     <button
@@ -696,6 +771,83 @@ function AddPlants() {
                     </div>
                     {submitError && <p className='addPlantError' role='alert'>{submitError}</p>}
                 </form>
+                {isWateringTimeDialogOpen && (
+                    <div
+                        className='wateringAdviceOverlay'
+                        onMouseDown={event => {
+                            if (event.target === event.currentTarget) {
+                                setIsWateringTimeDialogOpen(false)
+                            }
+                        }}
+                    >
+                        <section
+                            className='wateringAdviceDialog'
+                            role='dialog'
+                            aria-modal='true'
+                            aria-labelledby='wateringTimeAdviceTitle'
+                            aria-describedby='wateringTimeAdviceDescription'
+                        >
+                            <header className='wateringAdviceHeader'>
+                                <div>
+                                    <h2 id='wateringTimeAdviceTitle'>Когда лучше поливать?</h2>
+                                    <p id='wateringTimeAdviceDescription'>
+                                        Подберу время с учётом растения и частоты полива.
+                                    </p>
+                                </div>
+                                <button
+                                    type='button'
+                                    className='wateringAdviceClose'
+                                    onClick={() => setIsWateringTimeDialogOpen(false)}
+                                    aria-label='Закрыть рекомендацию'
+                                >
+                                    ×
+                                </button>
+                            </header>
+                            <div className='wateringAdviceMessages' aria-live='polite'>
+                                <p className='wateringAdvicePlant'>
+                                    Растение: <strong>{name.trim()}</strong>
+                                    {species.trim() && ` · ${species.trim()}`}
+                                    {' · полив каждые '}{days}{' дн.'}
+                                </p>
+                                {isAskingWateringTime && (
+                                    <div className='wateringAdviceMessage assistant' role='status'>
+                                        Подбираю подходящее время…
+                                    </div>
+                                )}
+                                {wateringTimeAdvice && (
+                                    <div className='wateringRecommendation' role='status'>
+                                        <p className='wateringRecommendationInterval'>
+                                            ИИ рекомендует: {
+                                                WATERING.find(option => option.id === wateringTimeAdvice.timeOfDay)?.label
+                                            }
+                                        </p>
+                                        <p>{wateringTimeAdvice.reason}</p>
+                                        <button
+                                            type='button'
+                                            className='wateringRecommendationApply'
+                                            onClick={applyWateringTimeAdvice}
+                                        >
+                                            Применить время
+                                        </button>
+                                    </div>
+                                )}
+                                <div ref={wateringMessagesEndRef} />
+                            </div>
+                            {wateringTimeAdviceError && (
+                                <div className='wateringAdviceError' role='alert'>
+                                    <p>{wateringTimeAdviceError}</p>
+                                    <button
+                                        type='button'
+                                        onClick={requestWateringTimeAdvice}
+                                        disabled={isAskingWateringTime}
+                                    >
+                                        Попробовать ещё раз
+                                    </button>
+                                </div>
+                            )}
+                        </section>
+                    </div>
+                )}
                 {isWateringDialogOpen && (
                     <div
                         className='wateringAdviceOverlay'
@@ -839,7 +991,6 @@ function AddPlants() {
                             onClick={closeToast}
                             aria-label="Закрыть уведомление"
                         >
-                            ×
                         </button>
                     </div>
                 )}

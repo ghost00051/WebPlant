@@ -16,7 +16,7 @@
 
 .editProfileHeader p {
     font-family: 'Inter', sans-serif;
-    font-size: 20px;
+    font-size: var(--font-size-xl);
     font-weight: bold;
     color: #2D2D2D;
     margin: 0;
@@ -37,7 +37,7 @@
 
 .editProfile p {
     font-family: 'Inter', sans-serif;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: #8a8a8a;
 }
@@ -52,7 +52,7 @@
     border-radius: 12px;
     border: 1px solid #E5E5E5;
     font-family: 'Inter', sans-serif;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     width: 100%;
     box-sizing: border-box;
     padding: 14px 16px;
@@ -62,7 +62,7 @@
     margin-top: 16px;
     color: #c0392b;
     font-family: 'Inter', sans-serif;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 500;
 }
 
@@ -70,7 +70,7 @@
     margin-top: 16px;
     color: #2e7d32;
     font-family: 'Inter', sans-serif;
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     background: rgba(46, 125, 50, 0.08);
     border: 1px solid rgba(46, 125, 50, 0.12);
@@ -80,7 +80,7 @@
 
 .saveOfEditProfile {
     font-family: 'Inter', sans-serif;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     font-weight: 400;
     color: #FFFFFF;
     margin-bottom: 0;
@@ -109,7 +109,7 @@
     }
 
     .editProfileHeader p {
-        font-size: 18px;
+        font-size: var(--font-size-lg);
     }
 
     .headerOfImgNames {
@@ -122,18 +122,18 @@
     }
 
     .editProfile p {
-        font-size: 11px;
+        font-size: var(--font-size-sm);
     }
 
     .editProfile input {
-        font-size: 15px;
+        font-size: var(--font-size-base);
         padding: 12px 14px;
     }
 
     .saveOfEditProfile {
         margin-top: 20px;
         padding: 14px 0;
-        font-size: 15px;
+        font-size: var(--font-size-base);
     }
 }
 

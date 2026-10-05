@@ -27,6 +27,7 @@ const wateringAdviceLimiter = rateLimit({
 
 router.post('/suggest-species', speciesSuggestionLimiter, plantController.suggestSpecies)
 router.post('/watering-advice', wateringAdviceLimiter, plantController.suggestWateringAdvice)
+router.post('/watering-time-advice', wateringAdviceLimiter, plantController.suggestWateringTime)
 router.get('/need-watering', plantController.getNeedWatering)
 router.get('/schedule', plantController.getSchedule)
 router.get('/history', plantController.getHistoryAll)
@@ -42,6 +43,7 @@ router.delete('/:id', plantController.delete)
 
 router.post('/:id/photos', plantController.addPhotos)
 router.post('/:id/water', plantController.water)
+router.delete('/:id/water/:logId', plantController.deleteWatering)
 router.post('/:id/skip', plantController.skip)
 router.get('/:id/history', plantController.getHistory)
 router.get('/:id/stats', plantController.getStats)

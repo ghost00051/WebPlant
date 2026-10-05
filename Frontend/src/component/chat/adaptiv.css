@@ -15,7 +15,7 @@
 
     .chatBubble {
         max-width: 88%;
-        font-size: 13px;
+        font-size: var(--font-size-md);
     }
 
     .chatInputArea {
@@ -28,7 +28,7 @@
     }
 
     .chatSuggestion {
-        font-size: 12px;
+        font-size: var(--font-size-sm);
         padding: 8px 12px;
     }
 }

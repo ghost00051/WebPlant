@@ -1,6 +1,7 @@
 .addPlantPage {
     min-height: 100vh;
     min-height: 100dvh;
+    box-sizing: border-box;
     padding-top: env(safe-area-inset-top, 0px);
     background-color: #FAF8F5;
 }
@@ -13,8 +14,9 @@
     padding: 0 20px;
     color: #2D2D2D;
     font-family: 'Inter', sans-serif;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     font-weight: 600;
+    margin-top: 2%;
 }
 
 .addPlantPageHeader button {

@@ -20,7 +20,7 @@
 
 @media (max-width: 767px) {
   .inputShell input {
-    font-size: 16px;
+    font-size: var(--font-size-base);
   }
 
   .blocksOfToService {
@@ -72,12 +72,12 @@
 
   .slider-panel h1 {
     margin-bottom: 6px;
-    font-size: 21px;
+    font-size: var(--font-size-xl);
   }
 
   .slider-panel p {
     max-width: 340px;
-    font-size: 13px;
+    font-size: var(--font-size-md);
   }
 
   .blocks-wrapper {
@@ -168,7 +168,7 @@
   }
 
   .slider-panel h1 {
-    font-size: 19px;
+    font-size: var(--font-size-lg);
   }
 
   .blocksOfEntrance,

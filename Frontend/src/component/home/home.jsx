@@ -10,6 +10,8 @@ import Tools from '../tools/tools.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
 import Profile from '../profile/profile.jsx'
+import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
+import { API_URL } from '../../utils/api.js'
 import './home.css'
 
 function Home() {
@@ -18,19 +20,13 @@ function Home() {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
     const [showPrompt, setShowPrompt] = useState(false)
-    const [activeTab, setActiveTab] = useState('home')
-
-    useEffect(() => {
-        const requestedTab = location.state?.activeTab
-        if (requestedTab === 'profile') {
-            setActiveTab('profile')
-        }
-    }, [location.state])
+    const [activeTab, setActiveTab] = useState(
+        location.state?.activeTab === 'profile' ? 'profile' : 'home'
+    )
 
     useEffect(() => {
         const checkAuth = async () => {
             try {
-                const API_URL = import.meta.env.VITE_API_URL || 'https://server.checktheplants.ru/api'
                 const res = await fetch(`${API_URL}/users/me`, {
                     method: 'GET',
                     credentials: 'include'
@@ -38,7 +34,7 @@ function Home() {
 
                 if (res.status === 401 || res.status === 404) {
                     setUser(null)
-                    navigate('/', { replace: true })
+                    navigate('/login', { replace: true })
                     return
                 }
                 if (!res.ok) {
@@ -47,14 +43,8 @@ function Home() {
 
                 const userData = await res.json()
                 setUser(userData)
-                console.log('✅ Пользователь:', userData)
 
                 if (!isPushSupported()) {
-                    setLoading(false)
-                    return
-                }
-
-                if (isIOS() && !isStandalone()) {
                     setLoading(false)
                     return
                 }
@@ -74,7 +64,7 @@ function Home() {
                 }
 
                 const lastShown = localStorage.getItem('push_prompt_last_shown')
-                if (lastShown) {
+                if (lastShown && !(isIOS() && isStandalone())) {
                     const daysSince = (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24)
                     if (daysSince < 7) {
                         setLoading(false)
@@ -134,6 +124,7 @@ function Home() {
     return (
         <div className="gofOfMain">
             <div key={activeTab} className="screenTransition">
+                {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}
             </div>
             <Tools onTabChange={handleTabChange} activeTab={activeTab} />

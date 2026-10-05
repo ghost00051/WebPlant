@@ -2,7 +2,6 @@ import { useEffect } from 'react'
 import EmptyIcon from '../../assets/EmptyIcon.svg'
 import chevronRight from '../../assets/chevron-right.svg'
 import plantPlaceholder from '../../assets/PlantTile.svg'
-import PlantDot from '../../assets/PlanDot.svg'
 import './visionNextPlant.css'
 
 function pluralizePlants(n) {
@@ -54,7 +53,15 @@ function formatWateringCycle(days) {
   return `каждые ${days} ${pluralizeDays(days)}`
 }
 
-function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
+function VisionNextPlant({
+  active,
+  day,
+  nextWatering,
+  onGoToDate,
+  onDeleteWatering,
+  deletingWateringId,
+  onClose
+}) {
   useEffect(() => {
     document.body.classList.toggle('vision-open', active)
     return () => document.body.classList.remove('vision-open')
@@ -101,7 +108,12 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
     onGoToDate?.(nextWatering.iso)
   }
 
-  const renderPlantRow = (plant, { variant, timeLabel, key }) => {
+  const renderPlantRow = (plant, {
+    variant,
+    timeLabel,
+    key,
+    wateringLogId
+  }) => {
     const isOverdue = variant === 'overdue'
     const isWatered = variant === 'watered'
     const isFutureRow = variant === 'future'
@@ -114,6 +126,8 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
               src={getPlantPhoto(plant)}
               alt={plant.name}
               className='plantsPreview__photo'
+              loading='lazy'
+              decoding='async'
               onError={e => { e.currentTarget.src = plantPlaceholder }}
             />
           </div>
@@ -145,18 +159,28 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
             </div>
           </div>
         </div>
-        <div>
-          <div>
-            <p
-              className={[
-                'classOfgetWateringTime',
-                isWatered && 'classOfgetWateringTime--past',
-                isOverdue && 'classOfgetWateringTime--overdue',
-              ].filter(Boolean).join(' ')}
+        <div className='plantsPreview__actions'>
+          <p
+            className={[
+              'classOfgetWateringTime',
+              isWatered && 'classOfgetWateringTime--past',
+              isOverdue && 'classOfgetWateringTime--overdue',
+            ].filter(Boolean).join(' ')}
+          >
+            {timeLabel}
+          </p>
+          <button className='deletePlantWatered'>Удалить</button>
+          {isWatered && Number.isInteger(wateringLogId) && (
+            <button
+              type='button'
+              className='plantsPreview__delete'
+              disabled={deletingWateringId === wateringLogId}
+              aria-label={`Удалить запись о поливе растения «${plant.name}»`}
+              onClick={() => onDeleteWatering?.(plant.id, wateringLogId)}
             >
-              {timeLabel}
-            </p>
-          </div>
+              {deletingWateringId === wateringLogId ? 'Удаляем…' : 'Удалить'}
+            </button>
+          )}
         </div>
       </li>
     )
@@ -257,6 +281,7 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
                 {wateredEvents.map((ev, i) => renderPlantRow(ev.plant, {
                   variant: 'watered',
                   timeLabel: getPastTime(ev.watered_at),
+                  wateringLogId: ev.id,
                   key: `watered-${ev.plant.id}-${i}`,
                 }))}
               </ul>

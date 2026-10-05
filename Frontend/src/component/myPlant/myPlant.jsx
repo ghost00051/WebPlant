@@ -4,6 +4,7 @@ import BackBtn from '../../assets/BackBtn.svg'
 import './myPlant.css'
 import search from '../../assets/search.svg'
 import xcircle from '../../assets/x-circle.svg'
+import { API_URL } from '../../utils/api.js'
 
 function MyPlant() {
     const navigate = useNavigate()
@@ -13,7 +14,7 @@ function MyPlant() {
     const getAllPlant = useCallback(async () => {
         try {
             const response = await fetch(
-                'https://server.checktheplants.ru/api/plants/',
+                `${API_URL}/plants/`,
                 { method: 'GET', credentials: 'include' }
             )
             if (response.ok) {
@@ -28,7 +29,7 @@ function MyPlant() {
     const plantDelete = async plantId => {
         try {
             const response = await fetch(
-                `https://server.checktheplants.ru/api/plants/${plantId}`,
+                `${API_URL}/plants/${plantId}`,
                 {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
@@ -51,6 +52,8 @@ function MyPlant() {
     }
 
     useEffect(() => {
+        // The callback updates UI state only after its fetch resolves.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         getAllPlant()
     }, [getAllPlant])
 

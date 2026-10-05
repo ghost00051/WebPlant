@@ -18,6 +18,10 @@ import {
 } from '../utils/authTokens.js'
 import { getPasskeyConfig } from '../utils/passkeyConfig.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    clearGuestTokenCookie,
+    getValidGuestToken
+} from '../middleware/guestToken.js'
 
 dotenv.config()
 
@@ -351,7 +355,7 @@ class PasskeyController {
             }
 
             const user = passkey.user
-            const guestToken = req.cookies?.guest_token
+            const guestToken = getValidGuestToken(req.cookies?.guest_token)
             await sequelize.transaction(async transaction => {
                 await passkey.update({
                     counter: verification.authenticationInfo.newCounter,
@@ -371,6 +375,7 @@ class PasskeyController {
             } else {
                 await setSessionAuth(res, user)
             }
+            clearGuestTokenCookie(res)
 
             return res.json({
                 ok: true,

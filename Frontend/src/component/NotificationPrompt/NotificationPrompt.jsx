@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import {
+  isIOS,
+  isStandalone,
   requestPermission,
   subscribeToPush
 } from '../../utils/pushNotifications.js'
@@ -11,12 +13,15 @@ import appIcon from '../../assets/AppIcon.svg'   // 👈 импорт
 function NotificationPrompt({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const needsIOSInstall = isIOS() && !isStandalone()
 
   const markShown = () => {
     localStorage.setItem('push_prompt_last_shown', Date.now().toString())
   }
 
   const handleAccept = async () => {
+    if (needsIOSInstall) return
+
     setLoading(true)
     setError('')
     try {
@@ -58,21 +63,34 @@ function NotificationPrompt({ onClose }) {
           <div className='notification-prompt-icon'>
             <img src={appIcon} alt='' />
           </div>
-          <h2>«Лейка» хочет отправлять вам уведомления</h2>
-          <p className='notification-prompt-text'>
-            Уведомления помогают не забыть о поливе: напомним в нужный момент и
-            предупредим, если растение пересохло.
-          </p>
-          <div>
-            <div className='whetToWater'>
-              <img src={dropletIcon} alt='когда полить' />
-              <p>Напомним, когда пора полить</p>
-            </div>
-            <div className='driedOut'>
-              <img src={alertIcon} alt='предупреждение' />
-              <p>Предупредим, если почва пересохнет</p>
-            </div>
-          </div>
+          {needsIOSInstall ? (
+            <>
+              <h2>Уведомления на iPhone и iPad</h2>
+              <p className='notification-prompt-text'>
+                Сначала добавьте «Лейку» на экран «Домой»: в Safari нажмите
+                «Поделиться» → «На экран Домой», затем откройте приложение с
+                иконки. Push-уведомления доступны начиная с iOS/iPadOS 16.4.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>«Лейка» хочет отправлять вам уведомления</h2>
+              <p className='notification-prompt-text'>
+                Уведомления помогают не забыть о поливе: напомним в нужный момент и
+                предупредим, если растение пересохло.
+              </p>
+              <div>
+                <div className='whetToWater'>
+                  <img src={dropletIcon} alt='когда полить' />
+                  <p>Напомним, когда пора полить</p>
+                </div>
+                <div className='driedOut'>
+                  <img src={alertIcon} alt='предупреждение' />
+                  <p>Предупредим, если почва пересохнет</p>
+                </div>
+              </div>
+            </>
+          )}
           {error && <p className='notification-prompt-error'>{error}</p>}
         </div>
         <div className='notification-prompt-buttons'>
@@ -81,16 +99,18 @@ function NotificationPrompt({ onClose }) {
             onClick={handleDecline}
             disabled={loading}
           >
-            Не сейчас
+            {needsIOSInstall ? 'Понятно' : 'Не сейчас'}
           </button>
-          <div className='line'></div>
-          <button
-            className='notification-prompt-btn-primary'
-            onClick={handleAccept}
-            disabled={loading}
-          >
-            {loading ? 'Подключение...' : 'Включить'}
-          </button>
+          {!needsIOSInstall && <div className='line'></div>}
+          {!needsIOSInstall && (
+            <button
+              className='notification-prompt-btn-primary'
+              onClick={handleAccept}
+              disabled={loading}
+            >
+              {loading ? 'Подключение...' : 'Включить'}
+            </button>
+          )}
         </div>
       </div>
     </div>

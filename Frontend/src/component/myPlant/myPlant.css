@@ -11,7 +11,7 @@
 
 .headerOfPlants p {
     font-family: 'Inter', sans-serif;
-    font-size: 17px;
+    font-size: var(--font-size-base);
     font-weight: bold;
     color: #2D2D2D;
 }
@@ -34,7 +34,7 @@
 
 .searchPlaceholder {
     font-family: 'Inter', sans-serif;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     font-weight: 300;
     border: none;
 }
@@ -66,7 +66,7 @@
     margin: 0;
     font-family: 'Inter', sans-serif;
     color: #2D2D2D;
-    font-size: 15px;
+    font-size: var(--font-size-base);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -84,7 +84,7 @@
 
 .buttonEditPlants button:nth-child(1) {
     font-family: 'Inter', sans-serif;
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     border-radius: 8px;
     border: none;
@@ -95,7 +95,7 @@
 
 .buttonEditPlants button:nth-child(2) {
     font-family: 'Inter', sans-serif;
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     border-radius: 8px;
     border: none;

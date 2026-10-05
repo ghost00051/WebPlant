@@ -85,15 +85,15 @@ self.addEventListener('push', (event) => {
     let data = {
         title: 'CheckThePlants',
         body: 'Новое уведомление',
-        icon: '/icon-192.png',
-        badge: '/badge-72.png',
+        icon: '/icon-192.v2.png',
+        badge: '/icon-192.v2.png',
         data: {}
     }
 
     if (event.data) {
         try {
             data = { ...data, ...event.data.json() }
-        } catch (e) {
+        } catch {
             data.body = event.data.text()
         }
     }
@@ -128,15 +128,20 @@ self.addEventListener('notificationclick', (event) => {
     event.notification.close()
 
     // Кнопка "Открыть" или клик по телу — ведём на url
-    const urlToOpen = event.notification.data?.url || '/'
+    const targetUrl = new URL(
+        event.notification.data?.url || '/home',
+        self.location.origin
+    )
+    const urlToOpen = targetUrl.origin === self.location.origin
+        ? targetUrl.href
+        : new URL('/home', self.location.origin).href
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
             // Если есть открытое окно — фокусируем и навигируем
             for (const client of clientList) {
                 if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-                    client.navigate(urlToOpen)
-                    return client.focus()
+                    return client.navigate(urlToOpen).then(() => client.focus())
                 }
             }
             if (self.clients.openWindow) {
@@ -156,21 +161,31 @@ self.addEventListener('pushsubscriptionchange', (event) => {
 
     event.waitUntil((async () => {
         try {
-            // Пытаемся получить VAPID-ключ с бэка
-            const res = await fetch('/api/push/vapid-public-key', { credentials: 'include' })
+            const res = await fetch('/api/push/vapid-public-key', {
+                credentials: 'include'
+            })
+            if (!res.ok) {
+                throw new Error(`VAPID key request failed: HTTP ${res.status}`)
+            }
             const { publicKey } = await res.json()
+            if (typeof publicKey !== 'string' || !publicKey) {
+                throw new Error('Server did not return a VAPID public key')
+            }
 
             const sub = await self.registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(publicKey)
             })
 
-            await fetch('/api/push/subscribe', {
+            const saved = await fetch('/api/push/subscribe', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ subscription: sub.toJSON() })
             })
+            if (!saved.ok) {
+                throw new Error(`Saving push subscription failed: HTTP ${saved.status}`)
+            }
             console.log('✅ SW: подписка пересоздана и сохранена')
         } catch (e) {
             console.error('❌ SW: pushsubscriptionchange error:', e)

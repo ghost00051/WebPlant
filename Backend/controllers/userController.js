@@ -22,6 +22,10 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    clearGuestTokenCookie,
+    getValidGuestToken
+} from '../middleware/guestToken.js'
 
 dotenv.config()
 
@@ -171,7 +175,7 @@ class UserController {
                 user.username = generated
             }
 
-            const guestToken = req.cookies?.guest_token
+            const guestToken = getValidGuestToken(req.cookies?.guest_token)
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
 
@@ -222,6 +226,7 @@ class UserController {
             } else {
                 await setSessionAuth(res, user)
             }
+            clearGuestTokenCookie(res)
 
             return res.status(201).json({
                 message: 'Регистрация успешна',
@@ -274,7 +279,7 @@ class UserController {
                 return res.status(401).json({ message: "Неверный email или пароль" })
             }
 
-            const guestToken = req.cookies?.guest_token
+            const guestToken = getValidGuestToken(req.cookies?.guest_token)
             if (guestToken) {
                 const linked = await sequelize.transaction(transaction =>
                     linkGuestDataToUser(
@@ -295,6 +300,7 @@ class UserController {
             } else {
                 await setSessionAuth(res, user)
             }
+            clearGuestTokenCookie(res)
 
             return res.json({
                 message: 'Вход выполнен успешно',
@@ -310,6 +316,7 @@ class UserController {
         try {
             await revokeAuthTokens(req.cookies)
             clearAuthCookies(res)
+            clearGuestTokenCookie(res)
 
             return res.json({ message: "Выход выполнен успешно" })
         } catch (e) {

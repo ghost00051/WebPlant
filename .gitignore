@@ -47,6 +47,9 @@ out/
 # Windows thumbnail cache files
 Thumbs.db
 
+### macOS
+.DS_Store
+
 # Folder config file
 [Dd]esktop.ini
 

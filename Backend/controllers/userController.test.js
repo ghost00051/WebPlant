@@ -126,6 +126,10 @@ test('registration creates a normalized account, records legal consent, and migr
     assert.equal(legalConsents.length >= 2, true)
     assert.equal(legalConsents.at(-2).guest_token, guestToken)
     assert.equal(legalConsents.at(-1).guest_token, guestToken)
+    assert.equal(
+        res.clearedCookies.some(cookie => cookie.name === 'guest_token'),
+        true
+    )
     assert.equal(authSessions.at(-1).user_id, createdUser.id)
     assert.equal(
         jwt.verify(
@@ -173,4 +177,21 @@ test('password login honors remember-me and sets a refresh session', async () =>
         process.env.SECRET_KEY
     ).tokenType, 'refresh')
     assert.equal(res.cookies.get('refresh_token').options.maxAge, 30 * 24 * 60 * 60 * 1000)
+    assert.equal(
+        res.clearedCookies.some(cookie => cookie.name === 'guest_token'),
+        true
+    )
+})
+
+test('logout clears both authentication and guest identity cookies', async () => {
+    const res = createResponse()
+
+    await userController.logout({ cookies: {} }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(
+        res.clearedCookies.some(cookie => cookie.name === 'guest_token'),
+        true
+    )
+    assert.equal(res.body.message, 'Выход выполнен успешно')
 })

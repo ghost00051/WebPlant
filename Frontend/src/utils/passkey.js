@@ -4,11 +4,9 @@ import {
     browserSupportsWebAuthn,
     platformAuthenticatorIsAvailable,
 } from '@simplewebauthn/browser'
+import { API_URL } from './api.js'
 
-const API = (
-    import.meta.env.VITE_API_URL ||
-    (import.meta.env.DEV ? '/api' : 'https://server.checktheplants.ru/api')
-).replace(/\/$/, '')
+const API = API_URL
 
 export async function isPasskeySupported() {
     if (typeof window === 'undefined') return false

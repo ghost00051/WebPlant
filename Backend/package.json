@@ -1,7 +1,7 @@
 {
     "scripts": {
         "start": "node index.js",
-        "dev": "nodemon index.js",
+        "dev": "node --watch index.js",
         "test": "node --test"
     },
     "name": "backend",
@@ -32,9 +32,6 @@
         "sequelize": "^6.37.8",
         "uuid": "^14.0.2",
         "web-push": "^3.6.7"
-    },
-    "devDependencies": {
-        "nodemon": "^3.1.14"
     },
     "overrides": {
         "sequelize": {

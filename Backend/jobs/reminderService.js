@@ -3,6 +3,7 @@ import { Op } from 'sequelize'
 import Plant from '../models/Plant.js'
 import pushService from '../services/pushService.js'
 import WateringLog from '../models/WateringLog.js'
+import { isReminderWeekday } from '../utils/wateringSchedule.js'
 
 const HOUR = 60 * 60 * 1000
 
@@ -115,16 +116,18 @@ class ReminderService {
         })
 
         for (const plant of plants) {
-            if (!this.matchesWeekday(plant, now)) continue
+            if (!this.matchesWeekday(plant)) continue
             if (this.alreadyNotified(plant, 'day_before', now)) continue
 
-            await this.notify(plant, {
+            const result = await this.notify(plant, {
                 title: '🌿 Напоминание',
                 body: `Завтра полить «${plant.name}»${plant.location ? ` (${plant.location})` : ''}`,
                 tag: 'day_before'
             })
 
-            await this.markNotified(plant, 'day_before', now)
+            if (result.sent > 0) {
+                await this.markNotified(plant, 'day_before', now)
+            }
         }
     }
 
@@ -141,23 +144,23 @@ class ReminderService {
         })
 
         for (const plant of plants) {
-            if (!this.matchesWeekday(plant, now)) continue
+            if (!this.matchesWeekday(plant)) continue
             if (this.alreadyNotified(plant, 'on_day', now)) continue
 
-            await this.notify(plant, {
+            const result = await this.notify(plant, {
                 title: '💧 Пора полить!',
                 body: `${plant.name}${plant.location ? ` (${plant.location})` : ''} ждёт воды`,
                 tag: 'on_day'
             })
 
-            await this.markNotified(plant, 'on_day', now)
+            if (result.sent > 0) {
+                await this.markNotified(plant, 'on_day', now)
+            }
         }
     }
 
-    matchesWeekday(plant, now) {
-        const days = plant.reminder_weekdays
-        if (!Array.isArray(days) || days.length === 0) return true
-        return days.includes(now.getDay()) // 0=вс
+    matchesWeekday(plant) {
+        return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at)
     }
 
     alreadyNotified(plant, key, now) {
@@ -178,12 +181,12 @@ class ReminderService {
     }
 
     async notify(plant, { title, body, tag }) {
-        const result = await pushService.sendToUser(
+        return pushService.sendToUser(
             plant.user_id,
             title,
             body,
-            '/icons/plant-192.png',
-            { plantId: plant.id, url: `/plants/${plant.id}`, tag }
+            '/icon-192.v2.png',
+            { plantId: plant.id, url: '/home', tag }
         )
         console.log(`  → plant#${plant.id} «${plant.name}»: sent=${result.sent} failed=${result.failed}`)
     }

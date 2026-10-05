@@ -5,12 +5,12 @@ import IconLeaf from '../../assets/IconLeaf.svg'
 import IconMenu from '../../assets/IconMenu.svg'
 import IconSend from '../../assets/IconSend.svg'
 import IconMic from '../../assets/IconMic.svg'
+import { API_URL } from '../../utils/api.js'
 
 const GREETING = 'Привет! Я Алиса 💚 Помогу с поливом и уходом за растениями. Спроси: «Что полить?», «Покажи график» или «Сколько у меня растений?»'
 
 function Chat() {
 
-    const isFirstRender = useRef(true)
     const [messages, setMessages] = useState([
         {
             id: 'greeting',
@@ -38,12 +38,6 @@ function Chat() {
                 window.innerHeight - viewportHeight
             )
 
-            console.log('Chat visualViewport update', {
-                visualViewportHeight: window.visualViewport?.height,
-                offsetTop: vv?.offsetTop,
-                kbHeight: keyboardHeight,
-            })
-
             document.documentElement.style.setProperty('--visual-viewport-top', `${viewportTop}px`)
             document.documentElement.style.setProperty('--visual-viewport-height', `${viewportHeight}px`)
 
@@ -51,13 +45,11 @@ function Chat() {
             const isKeyboardOpen = inputFocused || (keyboardOpen && keyboardHeight > 100)
             if (isKeyboardOpen) {
                 document.body.classList.add('keyboard-open')
-                console.log('body.keyboard-open added:', document.body.classList.contains('keyboard-open'))
                 if (!keyboardOpen && listRef.current) {
                     listRef.current.scrollTop = listRef.current.scrollHeight
                 }
             } else {
                 document.body.classList.remove('keyboard-open')
-                console.log('body.keyboard-open removed:', document.body.classList.contains('keyboard-open'))
             }
 
             keyboardOpen = isKeyboardOpen
@@ -99,7 +91,7 @@ function Chat() {
         setIsTyping(true)
 
         try {
-            const res = await fetch('https://server.checktheplants.ru/api/chat/chat', {
+            const res = await fetch(`${API_URL}/chat/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

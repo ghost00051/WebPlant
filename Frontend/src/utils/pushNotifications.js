@@ -1,7 +1,10 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://server.checktheplants.ru/api'
+import { API_URL } from './api.js'
 
 export function isPushSupported() {
-    return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+    return window.isSecureContext &&
+        'serviceWorker' in navigator &&
+        'PushManager' in window &&
+        'Notification' in window
 }
 
 export function isStandalone() {
@@ -34,6 +37,16 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 export async function requestPermission() {
+    if (!isPushSupported()) {
+        throw new Error('Push не поддерживается в этом браузере')
+    }
+    if (isIOS() && !isStandalone()) {
+        throw new Error('На iPhone сначала добавьте приложение на экран «Домой»')
+    }
+
+    if (Notification.permission === 'granted') return true
+    if (Notification.permission === 'denied') return false
+
     const permission = await Notification.requestPermission()
     console.log('🔔 Разрешение:', permission)
     return permission === 'granted'
@@ -45,7 +58,10 @@ export async function subscribeToPush() {
     }
 
     if (isIOS() && !isStandalone()) {
-        throw new Error('На iPhone добавьте сайт на домашний экран, чтобы получать уведомления')
+        throw new Error('На iPhone сначала добавьте приложение на экран «Домой»')
+    }
+    if (Notification.permission !== 'granted') {
+        throw new Error('Сначала разрешите отправку уведомлений')
     }
 
     const registration = await navigator.serviceWorker.ready
@@ -54,16 +70,19 @@ export async function subscribeToPush() {
 
     if (!subscription) {
         const res = await fetch(`${API_URL}/push/vapid-public-key`)
+        if (!res.ok) {
+            throw new Error(`Не удалось получить ключ push-подписки: HTTP ${res.status}`)
+        }
         const { publicKey } = await res.json()
+        if (typeof publicKey !== 'string' || !publicKey) {
+            throw new Error('Сервер не вернул ключ push-подписки')
+        }
 
         subscription = await registration.pushManager.subscribe({
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(publicKey)
         })
 
-        console.log('✅ Подписка создана:', subscription.endpoint)
-    } else {
-        console.log('ℹ️ Уже подписан:', subscription.endpoint)
     }
 
     const response = await fetch(`${API_URL}/push/subscribe`, {
@@ -88,12 +107,16 @@ export async function unsubscribeFromPush() {
         return false
     }
 
-    await fetch(`${API_URL}/push/unsubscribe`, {
+    const response = await fetch(`${API_URL}/push/unsubscribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({ endpoint: subscription.endpoint })
     })
+
+    if (!response.ok) {
+        throw new Error(`Не удалось удалить push-подписку: HTTP ${response.status}`)
+    }
 
     await subscription.unsubscribe()
     console.log('✅ Отписан от push')
@@ -101,5 +124,8 @@ export async function unsubscribeFromPush() {
 }
 
 export function isIOS() {
-    return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream
+    const userAgent = navigator.userAgent
+    const isAppleMobile = /iPad|iPhone|iPod/.test(userAgent)
+    const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1
+    return (isAppleMobile || isIPadOS) && !window.MSStream
 }

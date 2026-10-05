@@ -3,7 +3,6 @@ import { Op } from "sequelize"
 import sequelize from "../db.js"
 import { getConsentState } from "../utils/consentState.js"
 
-const GUEST_TOKEN_LIFETIME = 60 * 60 * 1000
 const CONSENT_LIFETIME = 6 * 30 * 24 * 60 * 60 * 1000
 const CONSENT_TYPES = new Set(['technical', 'analytics', 'marketing', 'personalization'])
 const CONSENT_SOURCES = new Set([
@@ -316,8 +315,7 @@ class UserCookieConsentController {
                     'is_accepted',
                     'version',
                     'accepted_at',
-                    'expires_at',  
-                    'guest_token'
+                    'expires_at'
                 ],
                 order: [['created_at', 'DESC']]
             })

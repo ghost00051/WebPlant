@@ -1,13 +1,13 @@
 import { v4 as uuidv4 } from 'uuid'
 
-const GUEST_TOKEN_LIFETIME = 180 * 24 * 60 * 60 * 1000
+export const GUEST_TOKEN_LIFETIME_MS = 180 * 24 * 60 * 60 * 1000
 
 export function generateGuestToken() {
     return `guest_${uuidv4().replace(/-/g, '')}_${Date.now()}`
 }
 
 const cookieOptions = {
-    maxAge: GUEST_TOKEN_LIFETIME,
+    maxAge: GUEST_TOKEN_LIFETIME_MS,
     httpOnly: true,
     sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
     secure: process.env.NODE_ENV === 'production',
@@ -15,16 +15,37 @@ const cookieOptions = {
 }
 
 export function getGuestToken(req, res, next) {
-    let guestToken = req.cookies?.guest_token
+    let guestToken = getValidGuestToken(req.cookies?.guest_token)
 
-    const tokenData = parseGuestToken(guestToken)
-    if (!tokenData || Date.now() - tokenData.timestamp > GUEST_TOKEN_LIFETIME || tokenData.timestamp > Date.now()) {
+    if (!guestToken) {
         guestToken = generateGuestToken()
         res.cookie('guest_token', guestToken, cookieOptions)
     }
 
     req.guestToken = guestToken
     next()
+}
+
+export function getValidGuestToken(token, now = Date.now()) {
+    const tokenData = parseGuestToken(token)
+    if (
+        !tokenData ||
+        now - tokenData.timestamp >= GUEST_TOKEN_LIFETIME_MS ||
+        tokenData.timestamp > now
+    ) {
+        return null
+    }
+    return token
+}
+
+export function clearGuestTokenCookie(res) {
+    const clearOptions = {
+        httpOnly: cookieOptions.httpOnly,
+        sameSite: cookieOptions.sameSite,
+        secure: cookieOptions.secure,
+        path: cookieOptions.path
+    }
+    res.clearCookie('guest_token', clearOptions)
 }
 
 function parseGuestToken(token) {

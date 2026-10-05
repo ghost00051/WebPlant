@@ -66,6 +66,29 @@ body.vision-open .toolsWrapper {
     user-select: none;
 }
 
+.tabbarButton {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tabbarButton:focus-visible {
+    outline: 2px solid #7C9082;
+    outline-offset: -4px;
+    border-radius: 10px;
+}
+
 .tabbar li img {
     width: 24px;
     height: 24px;
@@ -97,7 +120,7 @@ body.vision-open .toolsWrapper {
 
 .tab-label {
     font-family: 'Inter', sans-serif;
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: inherit;
     white-space: nowrap;
