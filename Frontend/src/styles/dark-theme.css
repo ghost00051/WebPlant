@@ -1,0 +1,349 @@
+:root {
+    color-scheme: light;
+    --theme-page: #faf8f5;
+    --theme-surface: #ffffff;
+    --theme-raised: #f5f3ef;
+    --theme-text: #2d2d2d;
+    --theme-muted: #858781;
+    --theme-border: #e5e5df;
+    --theme-accent: #7c9082;
+    --theme-accent-soft: #e9efea;
+    --theme-icon-filter: none;
+}
+
+:root[data-theme='dark'] {
+    color-scheme: dark;
+    --auth-background: #0c0d10;
+    --auth-surface: #191a1f;
+    --auth-panel: #222329;
+    --auth-text: #f4f5f4;
+    --auth-muted: #a7aaa8;
+    --auth-border: #303238;
+    --auth-accent: #8eaa99;
+    --auth-accent-strong: #a5c0ae;
+    --theme-page: #0c0d10;
+    --theme-surface: #191a1f;
+    --theme-raised: #222329;
+    --theme-text: #f4f5f4;
+    --theme-muted: #a7aaa8;
+    --theme-border: #303238;
+    --theme-accent: #8eaa99;
+    --theme-accent-soft: #24332b;
+    --theme-icon-filter: brightness(0) invert(1) saturate(0.8);
+}
+
+html,
+body,
+#root {
+    background-color: var(--theme-page);
+    color: var(--theme-text);
+    transition: background-color 300ms ease, color 300ms ease;
+}
+
+img[src$='.svg'],
+svg {
+    transition: filter 300ms ease;
+}
+
+html[data-theme='dark'] img[src$='.svg'],
+html[data-theme='dark'] svg {
+    filter: var(--theme-icon-filter);
+}
+
+html,
+body,
+#root,
+:is(
+    .landingPage,
+    .landingFeature,
+    .landingPreview,
+    .blocksOfToService,
+    .borderOther,
+    .editProfilePage,
+    .editProfile,
+    .addPlantPage,
+    .formForPlant,
+    .addPhotoPlant,
+    .addNamePlant,
+    .profilePage,
+    .blocksDescriptionProfile,
+    .passkeySettings,
+    .settingsNotification,
+    .visualTheme,
+    .plantQuantity,
+    .historyWaterPlant,
+    .interestPlant,
+    .homePageDashboard,
+    .plantRender,
+    .offScheduleWatering,
+    .plantRenderOfPants,
+    .searchButton,
+    .mini-calendar,
+    .chatWindow,
+    .chatBubbleAi,
+    .chatInputWrapper,
+    .notification-prompt,
+    .cookieConsentBanner,
+    .visiibleVareingPlant,
+    .wateringDeleteDialog__card
+) {
+    transition:
+        background-color 300ms ease,
+        border-color 300ms ease,
+        color 300ms ease,
+        box-shadow 300ms ease;
+}
+
+html[data-theme='dark'] body {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .gofOfMain,
+    .screenTransition,
+    .landingPage,
+    .blocksOfToService,
+    .editProfilePage,
+    .addPlantPage,
+    .chatWindow,
+    .chatHeader,
+    .chatTags,
+    .chatSuggestionsWrapper,
+    .chatInputArea,
+    .vision-overlay,
+    .formForPlant,
+    .gofOfMyplants,
+    .HeaderOdForgotPasssword
+) {
+    background-color: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .landingPage,
+    .blocksOfToService,
+    .gofOfMain,
+    .screenTransition,
+    .homePageDashboard,
+    .profilePage,
+    .gofOfMyplants,
+    .editProfilePage,
+    .addPlantPage,
+    .formForPlant,
+    .chatWindow,
+    .HeaderOdForgotPasssword
+) :is(p, h1, h2, h3, h4, label, li) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .blocksDescriptionProfile,
+    .imgOfName,
+    .passkeySettings,
+    .settingsNotification,
+    .plantRender,
+    .offScheduleWatering,
+    .plantRenderOfPants,
+    .editProfile,
+    .borderOther,
+    .slider-panel,
+    .addPhotoPlant,
+    .addNamePlant,
+    .chatBubbleAi,
+    .chatInputWrapper,
+    .wateringDeleteDialog__card,
+    .visiibleVareingPlant,
+    .plantsPreview__item,
+    .searchButton,
+    .mini-calendar,
+    .landingPreview,
+    .landingFeature,
+    .landingFaq details,
+    .landingGettingStarted,
+    .landingPreviewCalendar,
+    .landingPreviewPlant,
+    .landingPreviewTip,
+    .addPhotoPlant,
+    .addNamePlant,
+    .firstStepCheck,
+    .secondSection,
+    .thirdSection,
+    .plantRenderOfPants,
+    .settingsNotification,
+    .blocksDescriptionProfile,
+    .passkeySettings,
+    .headerOfPlants,
+    .wateringAdviceMessage,
+    .wateringRecommendation,
+    .gridBlocksOfPlant > div,
+    .notification-prompt,
+    .cookieConsentBanner,
+    .wateringAdviceMessages,
+    .wateringRecommendation,
+    .plantQuantity,
+    .historyWaterPlant,
+    .interestPlant
+) {
+    background-color: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .buttonOfEdProfile,
+    .plantSoffSchedule,
+    .godOfplantSoffSchedule,
+    .landingPreviewHeader,
+    .chatAiAdviceBox,
+    .chatSuggestion,
+    .chatTag,
+    .add-photo-btn,
+    .editProfile input,
+    .addNamePlant input,
+    .searchPlaceholder,
+    .wateringAdviceMessage,
+    .wateringRecommendation,
+    .formForPlant input,
+    .formForPlant select,
+    .formForPlant textarea
+) {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    h1, h2, h3, h4, p, label, .plant-name, .HeaderOfAllPlants,
+    .editProfileHeader p, .headerOfPlants p, .headerOfaddNamePlant,
+    .chatHeaderTitle, .chatBubbleText, .selectDayCheck, .plantsPreview__name
+) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .profileAppVersion,
+    .passkeyStatus,
+    .headerOfsettingsNotification,
+    .descritpionOfProfile p:nth-child(2),
+    .plant-details,
+    .descriptioOfoffScheduleWatering p:nth-child(2),
+    .childOfmenuOfSoffSchedule p,
+    .descriptionOfplantsPreview__name p,
+    .selectDayRelative,
+    .chatHeaderSubtitle,
+    .editProfile p,
+    .addPlantPageStatus,
+    .landingIntro,
+    .landingEyebrow,
+    .landingPrivacyNote,
+    .landingPreviewGreeting,
+    .landingPreviewCount,
+    .mini-calendar__weekdays,
+    .mini-calendar__legend,
+    .searchPlaceholder,
+    .plantQuantity p:nth-child(2),
+    .historyWaterPlant p:nth-child(2),
+    .interestPlant p:nth-child(2)
+) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingPage :is(.landingIntro, .landingEyebrow, .landingPrivacyNote),
+html[data-theme='dark'] .homePageDashboard :is(.plant-details, .descriptioOfoffScheduleWatering p:nth-child(2)),
+html[data-theme='dark'] .profilePage :is(.profileAppVersion, .passkeyStatus, .pushSettings p:nth-child(2)),
+html[data-theme='dark'] .mini-calendar :is(.mini-calendar__weekdays, .mini-calendar__legend) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .imgOfName {
+    background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] :is(input, textarea, select) {
+    /* background-color: var(--theme-raised); */
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(
+    .landingLoginLink,
+    .landingFooter a,
+    .buttonOfPlant,
+    .classOfgetWateringTime,
+    .mini-calendar__day-number
+) {
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .landingPrimaryAction,
+html[data-theme='dark'] .buttonEntrance,
+html[data-theme='dark'] .buttonRegistration,
+html[data-theme='dark'] .saveOfEditProfile,
+html[data-theme='dark'] .homePageAddPlant,
+html[data-theme='dark'] .check-button {
+    color: #101612;
+}
+
+html[data-theme='dark'] .chatBubbleUser {
+    background-color: #789080;
+    color: #101612;
+}
+
+html[data-theme='dark'] .tabbar {
+    border-color: var(--theme-border);
+    background-color: #111216;
+}
+
+html[data-theme='dark'] .tabbar li:not(.active) .tabbarButton img {
+    filter: brightness(0) invert(0.82);
+}
+
+html[data-theme='dark'] .plantRenderOfPants p,
+html[data-theme='dark'] .descriptionOfplantsPreview__name p,
+html[data-theme='dark'] .chatBubbleAi,
+html[data-theme='dark'] .wateringAdviceMessage {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .headerNotificiotinsOfHomePAge,
+html[data-theme='dark'] .HeaderOfAllPlants,
+html[data-theme='dark'] .editProfileHeader,
+html[data-theme='dark'] .addPlantPageHeader {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .mini-calendar__day.is-selected,
+html[data-theme='dark'] .mini-calendar__day.is-today {
+    background-color: var(--theme-accent-soft);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] :is(input, textarea, select)::placeholder {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .wateringDeleteDialog {
+    background: rgba(0, 0, 0, 0.48);
+}
+
+html[data-theme='dark'] .plantsPreview__delete,
+html[data-theme='dark'] .wateringDeleteDialog__confirm {
+    background-color: #482a2c;
+    color: #ffb7b7;
+}
+
+html[data-theme='dark'] .appleSwitchSettings input:checked + .sliderSettings {
+    background-color: var(--theme-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html,
+    body,
+    #root,
+    body *,
+    body *::before,
+    body *::after {
+        transition-duration: 0.01ms !important;
+    }
+}

@@ -124,6 +124,8 @@ test('registration creates a normalized account, records legal consent, and migr
     assert.equal(res.body.user.email, createdUser.email)
     assert.equal('password' in res.body.user, false)
     assert.equal(legalConsents.length >= 2, true)
+    assert.equal(legalConsents.at(-2).document_version, '2.0')
+    assert.equal(legalConsents.at(-1).document_version, '2.0')
     assert.equal(legalConsents.at(-2).guest_token, guestToken)
     assert.equal(legalConsents.at(-1).guest_token, guestToken)
     assert.equal(

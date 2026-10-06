@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './registration.css'
+import './dark-theme.css'
 import './adaptiv.css'
 import {
   subscribeToPush,
@@ -18,6 +19,7 @@ import shieldcheck from '../../assets/shield-check.svg'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
+import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import termsDocument from '../../../document/UserAgreementTemplate.pdf'
 
 async function getResponseMessage(response, fallback) {
@@ -484,12 +486,19 @@ function Registration({ initialMode = 'login' }) {
                     required
                   />
                   <span>
-                    Согласие на обработку{' '}
+                    Даю отдельное согласие на обработку{' '}
                     <a href={personalDataDocument} target='_blank' rel='noreferrer'>
                       персональных данных
                     </a>
                   </span>
                 </label>
+                <p className='consentPolicyNotice'>
+                  До регистрации ознакомьтесь с{' '}
+                  <a href={privacyPolicyDocument} target='_blank' rel='noreferrer'>
+                    Политикой обработки персональных данных
+                  </a>
+                  .
+                </p>
 
                 <label className='consentOption'>
                   <input

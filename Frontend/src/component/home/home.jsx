@@ -13,6 +13,7 @@ import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
 import './home.css'
+import './dark-theme.css'
 
 function Home() {
     const navigate = useNavigate()

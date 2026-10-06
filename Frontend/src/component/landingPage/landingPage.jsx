@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import LogoMark from '../../assets/LogoMark.svg'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import './landingPage.css'
+import './dark-theme.css'
 
 const FEATURES = [
     {

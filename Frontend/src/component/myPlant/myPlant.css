@@ -5,15 +5,34 @@
 
 .headerOfPlants {
     display: flex;
-    justify-content: space-between;
-    width: 50%;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
 }
 
-.headerOfPlants p {
+.headerOfPlants h1 {
+    margin: 0;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-base);
     font-weight: bold;
     color: #2D2D2D;
+}
+
+.myPlantsBackButton {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.myPlantsBackButton img {
+    width: 24px;
+    height: 24px;
 }
 
 .searchButton {
@@ -30,6 +49,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    min-width: 0;
+    flex: 1;
 }
 
 .searchPlaceholder {
@@ -37,6 +58,25 @@
     font-size: var(--font-size-base);
     font-weight: 300;
     border: none;
+    min-width: 0;
+    width: 100%;
+    outline: none;
+}
+
+.clearPlantSearch {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+.clearPlantSearch img {
+    width: 20px;
+    height: 20px;
 }
 
 .plantRenderOfPants {
@@ -91,6 +131,7 @@
     color: #FFFFFF;
     background-color: #7C9082;
     padding: 5px 6px;
+    cursor: pointer;
 }
 
 .buttonEditPlants button:nth-child(2) {
@@ -102,4 +143,237 @@
     color: #E85A4F;
     background-color: #FCF0EF;
     padding: 5px 6px;
+    cursor: pointer;
+}
+
+.buttonEditPlants button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.plantListMessage {
+    margin: 16px 0;
+    color: #5A5A5A;
+    font-family: 'Inter', sans-serif;
+}
+
+.plantListMessage button {
+    border: 0;
+    border-radius: 10px;
+    padding: 10px 14px;
+    background: #7C9082;
+    color: #FFFFFF;
+    font: inherit;
+    cursor: pointer;
+}
+
+.plantDialogOverlay {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgb(20 24 22 / 58%);
+}
+
+.plantDialog {
+    width: min(100%, 520px);
+    max-height: min(90dvh, 760px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 24px;
+    border: 1px solid #E5E5E5;
+    border-radius: 20px;
+    background: #FFFFFF;
+    color: #2D2D2D;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
+    font-family: 'Inter', sans-serif;
+}
+
+.plantDialogHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 18px;
+}
+
+.plantDialog h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.plantDialogHeader > button {
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 26px;
+    cursor: pointer;
+}
+
+.plantDialog form {
+    display: grid;
+    gap: 16px;
+}
+
+.plantDialog form > label,
+.plantEditorFields > label {
+    display: grid;
+    gap: 7px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.plantDialog input:not([type='checkbox']),
+.plantDialog select {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    border: 1px solid #D8DED9;
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: #FFFFFF;
+    color: inherit;
+    font: inherit;
+}
+
+.plantEditorFields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.plantEditorReminders {
+    display: grid;
+    gap: 10px;
+}
+
+.plantEditorReminders label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+}
+
+.plantEditorReminders input {
+    width: 18px;
+    height: 18px;
+    accent-color: #7C9082;
+}
+
+.plantEditorWeekdays {
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.plantEditorWeekdays legend {
+    margin-bottom: 9px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.plantEditorWeekdays > div {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.plantEditorWeekdays button {
+    min-width: 0;
+    min-height: 38px;
+    padding: 0;
+    border: 1px solid #D8DED9;
+    border-radius: 9px;
+    background: #FFFFFF;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.plantEditorWeekdays button.active {
+    border-color: #7C9082;
+    background: #7C9082;
+    color: #FFFFFF;
+}
+
+.plantEditorWeekdays small {
+    display: block;
+    margin-top: 8px;
+    color: #686F6A;
+    font-size: 12px;
+}
+
+.plantDialogError {
+    margin: 0;
+    color: #A33E36;
+    font-size: 14px;
+}
+
+.plantDialogActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 6px;
+}
+
+.plantDialogActions button {
+    min-height: 42px;
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 14px;
+    background: #EEF1EE;
+    color: #2D2D2D;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.plantDialogActions button[type='submit'] {
+    background: #7C9082;
+    color: #FFFFFF;
+}
+
+.plantDialogActions .confirmPlantDelete {
+    background: #B74138;
+    color: #FFFFFF;
+}
+
+.plantDialogActions button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.plantDeleteDialog > p {
+    line-height: 1.5;
+}
+
+.plantDialog button:focus-visible,
+.plantDialog input:focus-visible,
+.plantDialog select:focus-visible,
+.myPlantsBackButton:focus-visible,
+.clearPlantSearch:focus-visible,
+.buttonEditPlants button:focus-visible,
+.plantListMessage button:focus-visible {
+    outline: 3px solid #319197;
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .gofOfMyplants {
+        margin-inline: 14px;
+    }
+
+    .gridBlocksOfPlant {
+        grid-template-columns: 1fr;
+    }
+
+    .plantDialog {
+        padding: 20px 16px;
+    }
 }

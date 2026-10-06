@@ -8,6 +8,7 @@ export function isPushSupported() {
 }
 
 export function isStandalone() {
+    if (typeof window === 'undefined') return false
     return window.matchMedia('(display-mode: standalone)').matches ||
         window.navigator.standalone === true
 }
@@ -124,6 +125,7 @@ export async function unsubscribeFromPush() {
 }
 
 export function isIOS() {
+    if (typeof navigator === 'undefined' || typeof window === 'undefined') return false
     const userAgent = navigator.userAgent
     const isAppleMobile = /iPad|iPhone|iPod/.test(userAgent)
     const isIPadOS = navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1

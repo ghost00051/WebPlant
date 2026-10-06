@@ -1,0 +1,18 @@
+html[data-theme='dark'] .chatWindow,
+html[data-theme='dark'] .chatHeader,
+html[data-theme='dark'] .chatTags,
+html[data-theme='dark'] .chatSuggestionsWrapper,
+html[data-theme='dark'] .chatInputArea {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .chatBubbleAi,
+html[data-theme='dark'] .chatInputWrapper,
+html[data-theme='dark'] .chatAiAdviceBox,
+html[data-theme='dark'] .chatSuggestion,
+html[data-theme='dark'] .chatTag {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}

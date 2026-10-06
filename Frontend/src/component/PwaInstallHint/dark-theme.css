@@ -1,0 +1,5 @@
+html[data-theme='dark'] .pwaInstallHint {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}

@@ -1,0 +1,11 @@
+html[data-theme='dark'] .mini-calendar {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .mini-calendar__day.is-today,
+html[data-theme='dark'] .mini-calendar__day.is-selected {
+    background: var(--theme-accent-soft);
+    color: var(--theme-text);
+}

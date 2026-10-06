@@ -14,6 +14,8 @@ import "./models/userModels.js"
 import "./models/userCookieConsentModels.js"
 import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
+import "./models/NotificationPreference.js"
+import "./models/Notification.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
@@ -23,6 +25,7 @@ import "./models/ChatLog.js"
 import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
+import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
@@ -119,6 +122,7 @@ app.use('/uploads', express.static(path.resolve('uploads'), {
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
+app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)

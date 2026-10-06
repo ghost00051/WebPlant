@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import './chat.css'
+import './dark-theme.css'
 import './adaptiv.css'
 import IconLeaf from '../../assets/IconLeaf.svg'
 import IconMenu from '../../assets/IconMenu.svg'

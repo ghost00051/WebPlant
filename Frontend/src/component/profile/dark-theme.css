@@ -1,0 +1,31 @@
+html[data-theme='dark'] .profilePage {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .blocksDescriptionProfile,
+html[data-theme='dark'] .profilePage .passkeySettings,
+html[data-theme='dark'] .profilePage .settingsNotification {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .visualTheme {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .selectThemeColor button {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .selectThemeColor button.is-active {
+    border-color: var(--theme-accent);
+    background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .themeModeDescription {
+    color: var(--theme-muted);
+}

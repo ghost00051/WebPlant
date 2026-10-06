@@ -368,23 +368,6 @@ class PlantController {
         }
     }
 
-    async getNeedWatering(req, res) {
-        const userId = getUserId(req)
-        if (!userId) return res.status(401).json({ message: 'Не авторизован' })
-
-        const now = new Date()
-        const plants = await Plant.findAll({
-            where: {
-                user_id: userId,
-                is_active: true,
-                next_watering_at: { [Op.lte]: now }
-            },
-            order: [['next_watering_at', 'ASC']]
-        })
-
-        return res.json(plants)
-    }
-
     async create(req, res) {
         let t
         try {
@@ -597,7 +580,8 @@ class PlantController {
             const allowed = [
                 'name', 'species', 'location', 'description',
                 'photo_url', 'watering_interval_days',
-                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'is_active'
+                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'is_active',
+                'notify_morning', 'notify_day_before', 'reminder_weekdays'
             ]
 
             const updates = {}
@@ -610,6 +594,18 @@ class PlantController {
             if (updates.name !== undefined &&
                 (typeof updates.name !== 'string' || !updates.name.trim() || updates.name.length > 255)) {
                 return res.status(400).json({ message: 'Некорректное название растения' })
+            }
+            if (updates.name !== undefined) updates.name = updates.name.trim()
+            for (const key of ['species', 'location']) {
+                if (updates[key] !== undefined && updates[key] !== null &&
+                    (typeof updates[key] !== 'string' || updates[key].length > 255)) {
+                    return res.status(400).json({ message: 'Название или местоположение слишком длинное' })
+                }
+                if (typeof updates[key] === 'string') updates[key] = updates[key].trim()
+            }
+            if (updates.description !== undefined && updates.description !== null &&
+                (typeof updates.description !== 'string' || updates.description.length > 10000)) {
+                return res.status(400).json({ message: 'Описание должно содержать не более 10000 символов' })
             }
             if (updates.watering_interval_days !== undefined &&
                 !isValidWateringInterval(updates.watering_interval_days)) {
@@ -629,11 +625,45 @@ class PlantController {
             if (updates.is_active !== undefined && typeof updates.is_active !== 'boolean') {
                 return res.status(400).json({ message: 'Некорректный статус растения' })
             }
+            for (const key of ['notify_morning', 'notify_day_before']) {
+                if (updates[key] !== undefined && typeof updates[key] !== 'boolean') {
+                    return res.status(400).json({ message: 'Настройки напоминаний должны быть логическими значениями' })
+                }
+            }
+            if (updates.reminder_weekdays !== undefined &&
+                !isValidReminderWeekdays(updates.reminder_weekdays)) {
+                return res.status(400).json({ message: 'Некорректные дни напоминаний' })
+            }
 
             if (body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)) {
                 updates.metadata = { ...plant.metadata, ...body.metadata }
             } else if (body.metadata !== undefined) {
                 return res.status(400).json({ message: 'metadata должна быть объектом' })
+            }
+
+            const scheduleChanged = [
+                'next_watering_at',
+                'watering_interval_days',
+                'watering_time_of_day',
+                'last_watered_at'
+            ].some(key => updates[key] !== undefined)
+            if (scheduleChanged) {
+                if (
+                    updates.next_watering_at === undefined &&
+                    (updates.watering_interval_days !== undefined ||
+                        updates.watering_time_of_day !== undefined ||
+                        updates.last_watered_at !== undefined)
+                ) {
+                    updates.next_watering_at = computeNextWatering(
+                        updates.last_watered_at ?? plant.last_watered_at ?? new Date(),
+                        updates.watering_interval_days ?? plant.watering_interval_days ?? 7,
+                        updates.watering_time_of_day ?? plant.watering_time_of_day ?? 'morning'
+                    )
+                }
+                updates.metadata = {
+                    ...(updates.metadata ?? plant.metadata ?? {}),
+                    notifications: {}
+                }
             }
 
             await plant.update(updates)
@@ -1062,12 +1092,14 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
-            const now = new Date()
+            const tomorrow = new Date()
+            tomorrow.setHours(0, 0, 0, 0)
+            tomorrow.setDate(tomorrow.getDate() + 1)
             const plants = await Plant.findAll({
                 where: {
                     user_id: userId,
                     is_active: true,
-                    next_watering_at: { [Op.lte]: now }
+                    next_watering_at: { [Op.lt]: tomorrow }
                 },
                 order: [['next_watering_at', 'ASC']]
             })

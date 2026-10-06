@@ -6,6 +6,7 @@ import {
   subscribeToPush
 } from '../../utils/pushNotifications.js'
 import './NotificationPrompt.css'
+import './dark-theme.css'
 import dropletIcon from '../../assets/droplet.svg'
 import alertIcon from '../../assets/alert-triangle.svg'
 import appIcon from '../../assets/AppIcon.svg'   // 👈 импорт

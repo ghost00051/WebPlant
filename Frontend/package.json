@@ -1,11 +1,11 @@
 {
   "name": "webplant",
   "private": true,
-  "version": "1.1.4",
+  "version": "1.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/prerender.mjs",
     "lint": "eslint .",
     "preview": "vite preview"
   },

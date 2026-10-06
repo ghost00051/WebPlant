@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './addPlants.css'
+import './dark-theme.css'
 import './adaptiv.css'
 import camera from '../../assets/camera.svg'
 import leaf from '../../assets/leaf.svg'

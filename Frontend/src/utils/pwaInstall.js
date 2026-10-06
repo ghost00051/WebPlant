@@ -5,16 +5,18 @@ function emitChange() {
     for (const listener of listeners) listener()
 }
 
-window.addEventListener('beforeinstallprompt', event => {
-    event.preventDefault()
-    installState = { deferredPrompt: event, installed: false }
-    emitChange()
-})
+if (typeof window !== 'undefined') {
+    window.addEventListener('beforeinstallprompt', event => {
+        event.preventDefault()
+        installState = { deferredPrompt: event, installed: false }
+        emitChange()
+    })
 
-window.addEventListener('appinstalled', () => {
-    installState = { deferredPrompt: null, installed: true }
-    emitChange()
-})
+    window.addEventListener('appinstalled', () => {
+        installState = { deferredPrompt: null, installed: true }
+        emitChange()
+    })
+}
 
 export function getInstallState() {
     return installState

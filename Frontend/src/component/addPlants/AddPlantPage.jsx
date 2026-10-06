@@ -4,6 +4,7 @@ import AddPlants from './addPlants.jsx'
 import BackBtn from '../../assets/BackBtn.svg'
 import { API_URL } from '../../utils/api.js'
 import './AddPlantPage.css'
+import './dark-theme.css'
 
 function AddPlantPage() {
     const navigate = useNavigate()

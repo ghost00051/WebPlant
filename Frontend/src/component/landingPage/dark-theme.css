@@ -1,0 +1,9 @@
+html[data-theme='dark'] .landingPage {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingHeader,
+html[data-theme='dark'] .landingFooter {
+    border-color: var(--theme-border);
+}

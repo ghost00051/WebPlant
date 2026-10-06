@@ -1,0 +1,9 @@
+html[data-theme='dark'] .editProfilePage {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .editProfilePage .editProfile {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+}

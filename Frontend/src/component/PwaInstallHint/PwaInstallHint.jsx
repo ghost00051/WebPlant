@@ -6,12 +6,34 @@ import {
     subscribeToInstallState
 } from '../../utils/pwaInstall.js'
 import './PwaInstallHint.css'
+import './dark-theme.css'
 
 const DISMISSED_UNTIL_KEY = 'pwa_install_hint_dismissed_until'
 const DISMISS_DURATION = 30 * 24 * 60 * 60 * 1000
+const dismissedListeners = new Set()
+let dismissedInSession = false
+
+function subscribeToDismissal(listener) {
+    dismissedListeners.add(listener)
+    return () => dismissedListeners.delete(listener)
+}
+
+function subscribeToNoDeviceChanges() {
+    return () => {}
+}
+
+function emitDismissal() {
+    for (const listener of dismissedListeners) listener()
+}
 
 function wasDismissed() {
-    return Number(localStorage.getItem(DISMISSED_UNTIL_KEY) || 0) > Date.now()
+    if (dismissedInSession) return true
+    try {
+        return Number(localStorage.getItem(DISMISSED_UNTIL_KEY) || 0) > Date.now()
+    } catch (error) {
+        console.warn('Не удалось прочитать состояние установки приложения:', error)
+        return false
+    }
 }
 
 function PwaInstallHint() {
@@ -20,20 +42,33 @@ function PwaInstallHint() {
         getInstallState,
         getInstallState
     )
-    const [dismissed, setDismissed] = useState(wasDismissed)
+    const dismissed = useSyncExternalStore(
+        subscribeToDismissal,
+        wasDismissed,
+        () => false
+    )
+    const needsIOSInstructions = useSyncExternalStore(
+        subscribeToNoDeviceChanges,
+        () => isIOS() && !isStandalone(),
+        () => false
+    )
     const [showInstructions, setShowInstructions] = useState(false)
     const [installing, setInstalling] = useState(false)
-    const needsIOSInstructions = isIOS() && !isStandalone()
 
     if (isStandalone() || installState.installed || dismissed) return null
     if (!needsIOSInstructions && !installState.deferredPrompt) return null
 
     const dismiss = () => {
-        localStorage.setItem(
-            DISMISSED_UNTIL_KEY,
-            String(Date.now() + DISMISS_DURATION)
-        )
-        setDismissed(true)
+        try {
+            localStorage.setItem(
+                DISMISSED_UNTIL_KEY,
+                String(Date.now() + DISMISS_DURATION)
+            )
+        } catch (error) {
+            console.warn('Не удалось сохранить состояние установки приложения:', error)
+        }
+        dismissedInSession = true
+        emitDismissal()
     }
 
     const install = async () => {

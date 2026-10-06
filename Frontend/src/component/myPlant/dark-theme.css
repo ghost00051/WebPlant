@@ -1,0 +1,40 @@
+html[data-theme='dark'] .gofOfMyplants {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantRenderOfPants,
+html[data-theme='dark'] .searchButton {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .headerOfPlants h1,
+html[data-theme='dark'] .plantRenderOfPants p,
+html[data-theme='dark'] .plantDialog {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .searchPlaceholder,
+html[data-theme='dark'] .plantDialog,
+html[data-theme='dark'] .plantDialog input:not([type='checkbox']),
+html[data-theme='dark'] .plantDialog select,
+html[data-theme='dark'] .plantEditorWeekdays button {
+    background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .plantDialog,
+html[data-theme='dark'] .plantDialog input:not([type='checkbox']),
+html[data-theme='dark'] .plantDialog select,
+html[data-theme='dark'] .plantEditorWeekdays button {
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .plantListMessage,
+html[data-theme='dark'] .plantEditorWeekdays small {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .plantDialogActions button:not(.confirmPlantDelete) {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+}

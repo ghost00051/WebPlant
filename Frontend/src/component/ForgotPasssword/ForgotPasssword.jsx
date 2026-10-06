@@ -1,4 +1,5 @@
 import './ForgotPaw'
+import './dark-theme.css'
 
 function ForgotPasssword() {
     return (

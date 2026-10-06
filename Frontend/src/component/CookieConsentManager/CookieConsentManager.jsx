@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { API_URL } from '../../utils/api.js'
 import './CookieConsentManager.css'
+import './dark-theme.css'
 
 const CONSENT_TYPES = ['technical', 'analytics', 'marketing', 'personalization']
 const METRIKA_ID = 113420950

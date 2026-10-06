@@ -3,6 +3,7 @@ import Message from '../../../img/message-circle.svg'
 import Home from '../../../img/Home.svg'
 import Chat from '../../../img/user.svg'
 import '../tools/tools.css'
+import './dark-theme.css'
 import './adaptiv.css'
 
 const TABS = [

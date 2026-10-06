@@ -53,11 +53,16 @@ class PushController {
 
     async unsubscribe(req, res) {
         try {
-            const { endpoint } = req.body
-            if (!endpoint) {
+            const endpoint = req.body?.endpoint
+            if (typeof endpoint !== 'string' || !endpoint) {
                 return res.status(400).json({ message: 'endpoint обязателен' })
             }
-            await PushSubscription.destroy({ where: { endpoint } })
+            await PushSubscription.destroy({
+                where: {
+                    endpoint,
+                    user_id: req.user.id
+                }
+            })
             return res.json({ message: 'Подписка удалена' })
         } catch (error) {
             console.error('❌ Ошибка отписки:', error)

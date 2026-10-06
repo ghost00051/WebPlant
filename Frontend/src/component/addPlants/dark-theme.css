@@ -1,0 +1,14 @@
+html[data-theme='dark'] .formForPlant,
+html[data-theme='dark'] .addPlantPage {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .addPhotoPlant,
+html[data-theme='dark'] .formForPlant .addNamePlant,
+html[data-theme='dark'] .formForPlant .wateringAdviceMessages,
+html[data-theme='dark'] .formForPlant .wateringRecommendation {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}

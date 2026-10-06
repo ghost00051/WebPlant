@@ -13,6 +13,7 @@ import { API_URL } from '../../utils/api.js'
 moment.locale('ru')
 
 import './homePage.css'
+import './dark-theme.css'
 
 const EXIT_MS = 420
 
@@ -199,10 +200,7 @@ function HomePage() {
   }
 
   const deleteWatering = async (plantId, logId) => {
-    if (deletingWateringId) return
-    if (!window.confirm('Удалить запись о поливе? Если это последний полив, растение вернётся в расписание с исходной датой.')) {
-      return
-    }
+    if (deletingWateringId) return false
 
     setDeletingWateringId(logId)
     try {
@@ -217,9 +215,11 @@ function HomePage() {
 
       setSelectedDay(null)
       await loadHomeData()
+      return true
     } catch (error) {
       console.error('Ошибка удаления записи о поливе:', error)
       setDataError(error.message || 'Не удалось удалить запись о поливе.')
+      return false
     } finally {
       setDeletingWateringId(null)
     }
