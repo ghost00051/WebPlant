@@ -185,27 +185,9 @@ function Chat() {
                 <div ref={bottomRef} />
             </div>
 
-            {/* Подсказки над вводом
-            <div className='chatSuggestionsWrapper'>
-                <div className='chatSuggestions'>
-                    {SUGGESTIONS.map((s) => (
-                        <button
-                            key={s}
-                            type='button'
-                            className='chatSuggestion'
-                            onClick={() => sendMessage(s)}
-                        >
-                            {s}
-                        </button>
-                    ))}
-                </div>
-            </div> */}
 
             <div className='chatInputArea'>
                 <div className='chatInputWrapper'>
-                    {/* <button className='chatAttachBtn' aria-label='Прикрепить файл'>
-                        <IconPaperclip />
-                    </button> */}
                     <textarea
                         ref={inputRef}
                         className='chatInputField'

@@ -1,60 +1,76 @@
-import { useState, useMemo, forwardRef, useImperativeHandle } from 'react'
-import moment from 'moment/min/moment-with-locales'
+import { useState, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ArrowLeft from '../../assets/ArrowLeft.svg'
 import ArrowRight from '../../assets/ArrowRight.svg'
+import {
+  addDays,
+  dayOfMonth,
+  isBefore,
+  isSameDay,
+  monthNominative,
+  startOfISOWeek,
+  toDate,
+  today,
+  toISODate,
+} from '../../utils/date.js'
 import './MiniCalendar.css'
 import './dark-theme.css'
-moment.locale('ru')
 
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DAYS_IN_VIEW = 14
+
+const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
 
 const MiniCalendar = forwardRef(function MiniCalendar(
   { onSelectDay, scheduleMap, pastDates, overdueDates, externalIso },
   ref
 ) {
-  const [anchor, setAnchor] = useState(moment().startOf('isoWeek'))
+  const [anchorTime, setAnchorTime] = useState(
+    () => startOfISOWeek(today()).getTime()
+  )
   const [direction, setDirection] = useState('next')
   const [animKey, setAnimKey] = useState(0)
+
+  const anchor = useMemo(() => toDate(anchorTime), [anchorTime])
 
   const futureWaterings = useMemo(
     () => (scheduleMap ? [...scheduleMap.keys()] : []),
     [scheduleMap]
   )
 
-  const today = moment().startOf('day')
+  const todayDate = useMemo(() => today(), [])
 
-  const days = Array.from({ length: DAYS_IN_VIEW }, (_, i) =>
-    anchor.clone().add(i, 'day')
+  const days = useMemo(
+    () => Array.from({ length: DAYS_IN_VIEW }, (_, i) => addDays(anchor, i)),
+    [anchor]
   )
 
-  const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1)
-  const title = capitalize(anchor.format('MMMM YYYY'))
-
-  const isSameDay = (a, b) => a.isSame(b, 'day')
+  const title = `${capitalize(monthNominative(anchor))} ${anchor.getFullYear()}`
 
   const prev = () => {
     setDirection('prev')
-    setAnchor(a => a.clone().subtract(DAYS_IN_VIEW, 'days'))
+    setAnchorTime(current => addDays(current, -DAYS_IN_VIEW).getTime())
     setAnimKey(k => k + 1)
   }
 
   const next = () => {
     setDirection('next')
-    setAnchor(a => a.clone().add(DAYS_IN_VIEW, 'days'))
+    setAnchorTime(current => addDays(current, DAYS_IN_VIEW).getTime())
     setAnimKey(k => k + 1)
   }
 
   useImperativeHandle(ref, () => ({
     scrollTo(iso) {
-      const m = moment(iso)
-      const target = m.clone().startOf('isoWeek')
-      setDirection(target.isBefore(anchor) ? 'prev' : 'next')
-      setAnchor(target)
+      const target = startOfISOWeek(toDate(iso))
+      setDirection(isBefore(target, anchor) ? 'prev' : 'next')
+      setAnchorTime(target.getTime())
       setAnimKey(k => k + 1)
     }
   }), [anchor])
+
+  const handleSelect = useCallback((date) => {
+    onSelectDay?.(date)
+  }, [onSelectDay])
 
   return (
     <div className='mini-calendar'>
@@ -85,8 +101,8 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           className={`mini-calendar__grid slide-${direction}`}
         >
           {days.map(day => {
-            const dateStr = day.format('YYYY-MM-DD')
-            const isToday = isSameDay(day, today)
+            const dateStr = toISODate(day)
+            const isToday = isSameDay(day, todayDate)
             const isSelected = externalIso === dateStr
             const isFuture = futureWaterings.includes(dateStr)
             const isPast = pastDates?.has?.(dateStr) ?? false
@@ -102,9 +118,9 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                 ]
                   .filter(Boolean)
                   .join(' ')}
-                onClick={() => onSelectDay?.(day.toDate())}
+                onClick={() => handleSelect(day)}
               >
-                <span className='mini-calendar__day-number'>{day.date()}</span>
+                <span className='mini-calendar__day-number'>{dayOfMonth(day)}</span>
                 <div className='mini-calendar__dots'>
                   {isFuture && <span className='dot dot--future' title='Будущий полив' />}
                   {isOverdue && <span className='dot dot--overdue' title='Пропущенный полив' />}

@@ -196,7 +196,7 @@ class ReminderService {
                     preference.user_id,
                     '🌿 Утренняя сводка',
                     body,
-                    '/icon-192.v2.png',
+                    '/icons/icon-192.png',
                     { url: '/home', tag: 'morning-summary' }
                 )
 
@@ -307,7 +307,7 @@ class ReminderService {
             plant.user_id,
             title,
             body,
-            '/icon-192.v2.png',
+            '/icons/icon-192.png',
             { plantId: plant.id, url: '/home', tag }
         )
     }

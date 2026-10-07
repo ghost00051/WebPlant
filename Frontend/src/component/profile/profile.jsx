@@ -383,11 +383,6 @@ function Profile() {
                     </Link>
                 </div>
                 <div>
-                    {/* {plant.map(plan =>{
-                        return(
-                            <p>{plant}</p>
-                        )
-                    })} */}
                 </div>
             </div>
             <div className='settingsNotification'>

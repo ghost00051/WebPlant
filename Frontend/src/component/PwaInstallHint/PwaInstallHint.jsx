@@ -1,4 +1,4 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { isIOS, isStandalone } from '../../utils/pushNotifications.js'
 import {
     clearInstallPrompt,
@@ -54,6 +54,13 @@ function PwaInstallHint() {
     )
     const [showInstructions, setShowInstructions] = useState(false)
     const [installing, setInstalling] = useState(false)
+
+    useEffect(() => {
+        if (wasDismissed()) {
+            dismissedInSession = true
+            emitDismissal()
+        }
+    }, [])
 
     if (isStandalone() || installState.installed || dismissed) return null
     if (!needsIOSInstructions && !installState.deferredPrompt) return null

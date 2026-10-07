@@ -700,10 +700,6 @@ function AddPlants() {
                         <div className='blocksOfWeekDay'>
                             <div className='headerOfBlockWatering'>
                                 <p>Напоминания</p>
-                                {/* <div className='askAI'>
-                                    <img src={sparkles} alt="" aria-hidden="true" />
-                                    <span>Скоро</span>
-                                </div> */}
                             </div>
                             <div className='godblocksOfNotification'>
                                 <div className='blocksOfNotification'>

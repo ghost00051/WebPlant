@@ -138,6 +138,15 @@ app.get('/health', async (req, res) => {
     }
 })
 
+app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /\n')
+})
+
+app.use((req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+    next()
+})
+
 app.use((req, res) => {
     res.status(404).json({ message: 'Маршрут не найден' })
 })

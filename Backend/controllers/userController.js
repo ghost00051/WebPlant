@@ -79,7 +79,6 @@ async function generateUniqueUsername(base) {
         if (!taken) return candidate
     }
 
-    // fallback — почти нереально, но пусть будет
     return `user_${Date.now().toString(36)}`
 }
 
@@ -437,7 +436,7 @@ class UserController {
                 try {
                     const decoded = jwt.verify(token, process.env.SECRET_KEY)
                     ownId = decoded.id
-                } catch { /* токен протух — игнорируем */ }
+                } catch {  }
             }
 
             const taken = await isUsernameTaken(normalized, ownId)

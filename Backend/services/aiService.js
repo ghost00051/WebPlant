@@ -204,15 +204,6 @@ export function buildChatRequest({ message, history = [], context }) {
     }
 }
 
-/**
- * Отправить запрос в агента Yandex AI Studio через OpenAI-совместимый API.
- *
- * @param {Object} params
- * @param {string} params.message — текущее сообщение юзера
- * @param {Array}  params.history — [{ role: 'user'|'assistant', text: '...' }]
- * @param {Object} params.context — данные о юзере и растениях
- * @returns {Promise<{text: string, usage: Object|null}>}
- */
 export async function askAi({ message, history = [], context }) {
     if (!client) {
         throw new Error('AI service is not configured')

@@ -1,5 +1,7 @@
 User-agent: *
 Allow: /
+
 Disallow: /api/
+Disallow: /uploads/
 
 Sitemap: https://checktheplants.ru/sitemap.xml

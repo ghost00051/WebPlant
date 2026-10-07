@@ -80,6 +80,15 @@
     line-height: 1.08;
 }
 
+.landingSubtitle {
+    max-width: 540px;
+    margin: 20px 0 0;
+    color: #526A59;
+    font-size: var(--font-size-lg);
+    font-weight: 550;
+    line-height: 1.55;
+}
+
 .landingIntro {
     max-width: 510px;
     margin: 22px 0 0;
@@ -583,4 +592,81 @@
     .landingPrimaryAction:hover {
         transform: none;
     }
+}
+
+.landingHeaderNav {
+    display: flex;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    gap: 8px 20px;
+    justify-content: center;
+}
+
+.landingHeaderNav a {
+    color: #718779;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.landingHeaderNav a:hover {
+    color: #2D2D2D;
+    text-decoration: underline;
+}
+
+@media (max-width: 760px) {
+    .landingHeaderNav {
+        order: 3;
+        flex-basis: 100%;
+        justify-content: flex-start;
+    }
+}
+
+.landingGuide {
+    padding: 72px 0 8px;
+    border-top: 1px solid #EAE6E0;
+    margin-top: 72px;
+}
+
+.landingGuideLead {
+    max-width: 560px;
+    margin: 14px 0 0;
+    color: #74746F;
+    font-size: var(--font-size-base);
+    line-height: 1.65;
+}
+
+.landingGuideColumns {
+    display: grid;
+    gap: 40px;
+    margin-top: 32px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.landingGuideColumns h3 {
+    margin: 0 0 16px;
+    font-size: var(--font-size-lg);
+    font-weight: 650;
+}
+
+.landingGuideList {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.landingGuideList li + li {
+    margin-top: 12px;
+}
+
+.landingGuideList a {
+    color: #526A59;
+    font-size: var(--font-size-base);
+    line-height: 1.5;
+    text-decoration: none;
+}
+
+.landingGuideList a:hover {
+    color: #2D2D2D;
+    text-decoration: underline;
 }

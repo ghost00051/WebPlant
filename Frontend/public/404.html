@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" href="/favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#319197" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#872e4e" media="(prefers-color-scheme: dark)">
+  <title>Страница не найдена — Лейка</title>
+  <meta name="description" content="Такой страницы нет. Вернитесь на главную «Лейки» — календарь полива и уход за комнатными растениями.">
+  <meta name="robots" content="noindex, follow">
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      display: grid;
+      min-height: 100vh;
+      min-height: 100dvh;
+      margin: 0;
+      padding: 24px;
+      place-items: center;
+      background: #FAF8F5;
+      color: #2D2D2D;
+      font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.5;
+    }
+
+    main {
+      width: 100%;
+      max-width: 520px;
+      text-align: center;
+    }
+
+    .mark {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 24px;
+    }
+
+    .code {
+      margin: 0 0 8px;
+      color: #319197;
+      font-size: 0.875rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      margin: 0 0 12px;
+      font-size: clamp(1.5rem, 5vw, 2rem);
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    p {
+      margin: 0 0 28px;
+      color: #526A59;
+      font-size: 1rem;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+    }
+
+    a {
+      display: inline-block;
+      padding: 12px 22px;
+      border-radius: 12px;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .primary {
+      background: #319197;
+      color: #FFFFFF;
+    }
+
+    .secondary {
+      border: 1px solid #D9D3CB;
+      color: #526A59;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      body {
+        background: #1E1B1A;
+        color: #F2EDE8;
+      }
+
+      p {
+        color: #C9BFB6;
+      }
+
+      .secondary {
+        border-color: #3A3431;
+        color: #D8CEC5;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <main>
+    <svg class="mark" viewBox="0 0 26 26" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <path d="M13 1.35416C13 1.35416 4.60419 9.74999 4.60419 15.275C4.60419 20.0417 8.34169 23.725 13 23.725C17.6584 23.725 21.3959 20.0417 21.3959 15.275C21.3959 9.74999 13 1.35416 13 1.35416Z" fill="#7C9082" fill-rule="nonzero" />
+      <path d="M13 8.23334C16.25 10.725 17.1167 14.95 13 19.0667C8.88335 14.95 9.75002 10.725 13 8.23334Z" fill="#FAF8F5" fill-rule="nonzero" />
+    </svg>
+    <p class="code">Ошибка 404</p>
+    <h1>Такой страницы нет</h1>
+    <p>Возможно, ссылка устарела или в адресе опечатка. Вернитесь на главную — там рассказ о «Лейке» и вход в приложение.</p>
+    <div class="actions">
+      <a class="primary" href="/">На главную</a>
+      <a class="secondary" href="/login">Войти в аккаунт</a>
+    </div>
+  </main>
+</body>
+
+</html>

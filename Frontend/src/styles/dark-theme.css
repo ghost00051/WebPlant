@@ -261,7 +261,6 @@ html[data-theme='dark'] .imgOfName {
 }
 
 html[data-theme='dark'] :is(input, textarea, select) {
-    /* background-color: var(--theme-raised); */
     border-color: var(--theme-border);
     color: var(--theme-text);
 }

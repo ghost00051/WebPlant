@@ -3,45 +3,73 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/png" href="/icon-192.v2.png" />
-  <link rel="manifest" href="/manifest.json" />
   <meta name="viewport"
     content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-  <meta name="theme-color" content="#319197" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#872e4e" media="(prefers-color-scheme: dark)">
-  <meta name="yandex-verification" content="3eb0439788e93078" />
+
   <title>Лейка — календарь полива и уход за комнатными растениями</title>
   <meta name="description"
     content="Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».">
-  <meta name="robots" content="index, follow, max-image-preview:large">
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1">
   <link rel="canonical" href="https://checktheplants.ru/">
+  <meta name="author" content="Никитин Иван Сергеевич">
+  <meta name="yandex-verification" content="3eb0439788e93078" />
+  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
+
   <meta property="og:type" content="website">
   <meta property="og:locale" content="ru_RU">
   <meta property="og:site_name" content="Лейка">
   <meta property="og:title" content="Лейка — календарь полива и уход за комнатными растениями">
   <meta property="og:description"
-    content="Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания.">
+    content="Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».">
   <meta property="og:url" content="https://checktheplants.ru/">
-  <meta property="og:image" content="https://checktheplants.ru/icon-192.v2.png">
+  <meta property="og:image" content="https://checktheplants.ru/og-image.png">
   <meta property="og:image:type" content="image/png">
-  <meta property="og:image:width" content="192">
-  <meta property="og:image:height" content="192">
-  <meta name="twitter:card" content="summary">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt"
+    content="«Лейка» — календарь полива и уход за комнатными растениями">
+
+  <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Лейка — календарь полива и уход за комнатными растениями">
   <meta name="twitter:description"
     content="Планируйте полив комнатных растений и получайте напоминания с приложением «Лейка».">
-  <meta name="twitter:image" content="https://checktheplants.ru/icon-192.v2.png">
-  <meta name="author" content="Никитин Иван Сергеевич">
-  <link rel="sitemap" type="application/xml" href="/sitemap.xml">
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Лейка" />
-  <link rel="apple-touch-icon" href="/icon-192.v2.png" />
-  <link rel="stylesheet" href="./indes.css">
+  <meta name="twitter:image" content="https://checktheplants.ru/og-image.png">
+  <meta name="twitter:image:alt"
+    content="«Лейка» — календарь полива и уход за комнатными растениями">
+
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.json">
+
+  <meta name="theme-color" content="#319197" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#872e4e" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Лейка">
+
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem('webplant-theme')
+        var theme = saved === 'dark' || saved === 'light'
+          ? saved
+          : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        document.documentElement.dataset.theme = theme
+        document.documentElement.style.colorScheme = theme
+      } catch (error) {
+        document.documentElement.style.colorScheme = 'light'
+      }
+    })()
+  </script>
+
+  <link rel="stylesheet" href="/indes.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">
+
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -53,6 +81,15 @@
       "applicationCategory": "LifestyleApplication",
       "operatingSystem": "Web",
       "inLanguage": "ru",
+      "isAccessibleForFree": true,
+      "featureList": [
+        "График полива для каждого растения",
+        "Календарь ухода и напоминания",
+        "Коллекция растений с фотографиями",
+        "Web Push-напоминания",
+        "ИИ-подсказки по уходу"
+      ],
+      "screenshot": "https://checktheplants.ru/og-image.png",
       "creator": {
         "@type": "Person",
         "name": "Никитин Иван Сергеевич"
@@ -60,11 +97,11 @@
       "offers": {
         "@type": "Offer",
         "price": "0",
-        "priceCurrency": "RUB"
+        "priceCurrency": "RUB",
+        "availability": "https://schema.org/InStock"
       }
     }
   </script>
-
 </head>
 
 <body>

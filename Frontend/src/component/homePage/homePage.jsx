@@ -8,9 +8,17 @@ import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
-import moment from 'moment/min/moment-with-locales'
 import { API_URL } from '../../utils/api.js'
-moment.locale('ru')
+import {
+  dayOfMonth,
+  diffInDays,
+  monthGenitive,
+  monthNominative,
+  relativeDayLabel,
+  toDate,
+  toISODate,
+  weekdayName,
+} from '../../utils/date.js'
 
 import './homePage.css'
 import './dark-theme.css'
@@ -148,7 +156,6 @@ function HomePage() {
   }, [getWateringPlant, getAllPlants, getPlantSchedule, getPlantHistory])
 
   useEffect(() => {
-    // The callbacks update UI state only after their fetches resolve.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     loadHomeData()
   }, [loadHomeData])
@@ -241,18 +248,9 @@ function HomePage() {
   const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1)
 
   const buildDay = useCallback((date) => {
-    const m = moment(date)
-    const today = moment().startOf('day')
-    const target = m.clone().startOf('day')
-    const diffDays = target.diff(today, 'days')
-
-    let relative = 'Сегодня'
-    if (diffDays === -1) relative = 'Вчера'
-    else if (diffDays === 1) relative = 'Завтра'
-    else if (diffDays < -1) relative = m.fromNow()
-    else if (diffDays > 1) relative = `через ${target.fromNow(true)}`
-
-    const iso = m.format('YYYY-MM-DD')
+    const target = toDate(date)
+    const relative = relativeDayLabel(target)
+    const iso = toISODate(target)
     const futurePlants = scheduleMap.get(iso) ?? []
     const pastItem = historyMap.get(iso) ?? null
     const pastEvents = pastItem?.events ?? []
@@ -270,8 +268,8 @@ function HomePage() {
     }
 
     return {
-      date: m.toDate(),
-      diffDays,
+      date: target,
+      diffDays: diffInDays(target, new Date()),
       relative,
       iso,
       kind,
@@ -281,11 +279,11 @@ function HomePage() {
       pastEvents,
       hasOverdue: pastItem?.hasOverdue ?? false,
       hasWatered: pastItem?.hasWatered ?? false,
-      dayNumber: m.format('D'),
-      dayOfWeek: capitalize(m.format('dddd')),
-      month: capitalize(m.format('MMMM')),
-      year: m.format('YYYY'),
-      full: `${capitalize(m.format('dddd'))}, ${m.format('D MMMM')}`,
+      dayNumber: String(dayOfMonth(target)),
+      dayOfWeek: capitalize(weekdayName(target)),
+      month: capitalize(monthNominative(target)),
+      year: String(target.getFullYear()),
+      full: `${capitalize(weekdayName(target))}, ${dayOfMonth(target)} ${monthGenitive(target)}`,
     }
   }, [scheduleMap, historyMap])
 
@@ -306,16 +304,16 @@ function HomePage() {
 
     if (!upcoming.length) return null
 
-    const m = moment(upcoming[0].date)
+    const nextDate = toDate(upcoming[0].date)
     return {
       iso: upcoming[0].date,
-      label: capitalize(m.format('D MMMM')),
+      label: `${dayOfMonth(nextDate)} ${monthGenitive(nextDate)}`,
     }
   }, [schedule, selectedDay])
 
   const handleGoToDate = useCallback((iso) => {
     calendarRef.current?.scrollTo(iso)
-    setSelectedDay(buildDay(moment(iso).toDate()))
+    setSelectedDay(buildDay(toDate(iso)))
   }, [buildDay])
 
 
@@ -450,7 +448,9 @@ function HomePage() {
                       <div>
                         <div>
                           <p>План:</p>
-                          <p>{moment(onePlant.nextDate).format('D MMMM')}</p>
+                          <p>
+                            {dayOfMonth(onePlant.nextDate)} {monthGenitive(onePlant.nextDate)}
+                          </p>
                         </div>
                         <span className='spanOfBlockchildOfmenuOfSoffSchedule'></span>
                         <div>
