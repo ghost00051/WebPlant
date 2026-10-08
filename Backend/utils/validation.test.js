@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+    getUploadedPlantPhotoPath,
     isValidEmail,
     isUploadedPlantPhotoUrl,
     isValidRegistrationPassword,
@@ -54,9 +55,37 @@ test('plant photos must point to uploaded files on the API origin', () => {
         true
     )
     assert.equal(
+        isUploadedPlantPhotoUrl(
+            '/uploads/plants/0123456789abcdef0123456789abcdef.jpeg',
+            origin
+        ),
+        true
+    )
+    assert.equal(
+        isUploadedPlantPhotoUrl(
+            'https://server.example.com/uploads/plants/0123456789abcdef0123456789abcdef.jpeg',
+            origin
+        ),
+        true
+    )
+    assert.equal(
         isUploadedPlantPhotoUrl('https://attacker.example/image.jpg', origin),
         false
     )
+    assert.equal(
+        isUploadedPlantPhotoUrl(
+            'https://other-host.example/uploads/plants/0123456789abcdef0123456789abcdef.jpg',
+            origin
+        ),
+        false
+    )
+    assert.equal(
+        getUploadedPlantPhotoPath(
+            'https://other-host.example/uploads/plants/0123456789abcdef0123456789abcdef.jpg'
+        ),
+        '/uploads/plants/0123456789abcdef0123456789abcdef.jpg'
+    )
+    assert.equal(getUploadedPlantPhotoPath('https://attacker.example/image.jpg'), null)
     assert.equal(
         isUploadedPlantPhotoUrl(
             'https://server.example.com/uploads/plants/0123456789abcdef0123456789abcdef.jpg?tracking=1',

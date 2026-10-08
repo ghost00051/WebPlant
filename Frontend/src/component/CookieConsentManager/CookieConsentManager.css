@@ -1,0 +1,130 @@
+.cookieConsentBanner {
+    position: fixed;
+    z-index: 1100;
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    box-sizing: border-box;
+    width: min(440px, calc(100% - 32px));
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 18px;
+    background: #26352B;
+    box-shadow: 0 16px 48px rgba(24, 35, 27, 0.28);
+    color: #FFFFFF;
+    font-family: 'Inter', sans-serif;
+}
+
+.cookieConsentCopy p {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+.cookieConsentCopy .cookieConsentTitle {
+    margin-bottom: 7px;
+    font-size: var(--font-size-base);
+    font-weight: 700;
+}
+
+.cookieConsentError {
+    margin: 12px 0 0;
+    color: #FFD4D9;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.cookieConsentActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+    padding-right: 28px;
+}
+
+.cookieConsentActions button,
+.cookieConsentSecondary {
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.cookieConsentActions button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.cookieConsentPrimary {
+    background: #FFFFFF;
+    color: #26352B;
+}
+
+.cookieConsentSecondary {
+    border-color: rgba(255, 255, 255, 0.35);
+    background: transparent;
+    color: #FFFFFF;
+}
+
+.cookieConsentClose {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #FFFFFF;
+    font-family: inherit;
+    font-size: var(--font-size-2xl);
+    cursor: pointer;
+}
+
+.cookieConsentActions button:focus-visible,
+.cookieConsentClose:focus-visible,
+.cookieSettingsTrigger:focus-visible {
+    outline: 3px solid #A9BCAF;
+    outline-offset: 3px;
+}
+
+.cookieSettingsTrigger {
+    position: fixed;
+    z-index: 1090;
+    right: 12px;
+    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+    min-height: 40px;
+    padding: 8px 12px;
+    border: 1px solid #E3E9E3;
+    border-radius: 999px;
+    background: #FFFFFF;
+    box-shadow: 0 4px 14px rgba(45, 55, 47, 0.12);
+    color: #526A59;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-xs);
+    font-weight: 650;
+    cursor: pointer;
+}
+
+@media (max-width: 480px) {
+    .cookieConsentBanner {
+        right: 10px;
+        bottom: max(10px, env(safe-area-inset-bottom, 0px));
+        width: calc(100% - 20px);
+        padding: 16px;
+    }
+
+    .cookieConsentActions {
+        padding-right: 24px;
+    }
+
+    .cookieConsentActions button {
+        flex: 1 1 100%;
+    }
+}

@@ -1,12 +1,14 @@
-body.keyboard-open .toolsWrapper {
-    display: none !important;
+@media (max-width: 1023px) {
+    body.keyboard-open .toolsWrapper {
+        display: none !important;
+    }
 }
 
-body.vision-open .toolsWrapper {
+/* body.vision-open .toolsWrapper {
     transform: translateY(110%);
     opacity: 0;
     pointer-events: none;
-}
+} */
 
 .toolsWrapper {
     position: fixed;
@@ -66,6 +68,29 @@ body.vision-open .toolsWrapper {
     user-select: none;
 }
 
+.tabbarButton {
+    display: flex;
+    width: 100%;
+    height: 100%;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.tabbarButton:focus-visible {
+    outline: 2px solid #7C9082;
+    outline-offset: -4px;
+    border-radius: 10px;
+}
+
 .tabbar li img {
     width: 24px;
     height: 24px;
@@ -97,10 +122,14 @@ body.vision-open .toolsWrapper {
 
 .tab-label {
     font-family: 'Inter', sans-serif;
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: inherit;
     white-space: nowrap;
     pointer-events: none;
     transition: color 0.25s ease;
+}
+
+.desktopAssistantLink {
+    display: none;
 }

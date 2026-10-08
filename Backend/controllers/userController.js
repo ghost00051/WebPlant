@@ -22,6 +22,10 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    clearGuestTokenCookie,
+    getValidGuestToken
+} from '../middleware/guestToken.js'
 
 dotenv.config()
 
@@ -75,7 +79,6 @@ async function generateUniqueUsername(base) {
         if (!taken) return candidate
     }
 
-    // fallback — почти нереально, но пусть будет
     return `user_${Date.now().toString(36)}`
 }
 
@@ -171,7 +174,7 @@ class UserController {
                 user.username = generated
             }
 
-            const guestToken = req.cookies?.guest_token
+            const guestToken = getValidGuestToken(req.cookies?.guest_token)
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
 
@@ -179,7 +182,7 @@ class UserController {
                 user_id: user.id,
                 consent_type: 'privacy_policy',
                 is_accepted: true,
-                document_version: '1.0',
+                document_version: '2.0',
                 accepted_at: new Date(),
                 guest_token: guestToken,
                 ip_address: ip,
@@ -192,7 +195,7 @@ class UserController {
                 user_id: user.id,
                 consent_type: 'terms_of_service',
                 is_accepted: true,
-                document_version: '1.0',
+                document_version: '2.0',
                 accepted_at: new Date(),
                 guest_token: guestToken,
                 ip_address: ip,
@@ -222,6 +225,7 @@ class UserController {
             } else {
                 await setSessionAuth(res, user)
             }
+            clearGuestTokenCookie(res)
 
             return res.status(201).json({
                 message: 'Регистрация успешна',
@@ -274,7 +278,7 @@ class UserController {
                 return res.status(401).json({ message: "Неверный email или пароль" })
             }
 
-            const guestToken = req.cookies?.guest_token
+            const guestToken = getValidGuestToken(req.cookies?.guest_token)
             if (guestToken) {
                 const linked = await sequelize.transaction(transaction =>
                     linkGuestDataToUser(
@@ -295,6 +299,7 @@ class UserController {
             } else {
                 await setSessionAuth(res, user)
             }
+            clearGuestTokenCookie(res)
 
             return res.json({
                 message: 'Вход выполнен успешно',
@@ -310,6 +315,7 @@ class UserController {
         try {
             await revokeAuthTokens(req.cookies)
             clearAuthCookies(res)
+            clearGuestTokenCookie(res)
 
             return res.json({ message: "Выход выполнен успешно" })
         } catch (e) {
@@ -430,7 +436,7 @@ class UserController {
                 try {
                     const decoded = jwt.verify(token, process.env.SECRET_KEY)
                     ownId = decoded.id
-                } catch { /* токен протух — игнорируем */ }
+                } catch {  }
             }
 
             const taken = await isUsernameTaken(normalized, ownId)

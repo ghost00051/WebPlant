@@ -19,7 +19,7 @@ if (vapidConfigured) {
 }
 
 class PushService {
-    async sendToUser(userId, title, body, icon = '/icon-192.png', data = {}) {
+    async sendToUser(userId, title, body, icon = '/icons/icon-192.png', data = {}) {
         this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll({
             where: { user_id: userId }
@@ -33,7 +33,7 @@ class PushService {
         return this.sendToSubscriptions(subscriptions, title, body, icon, data)
     }
 
-    async sendToAll(title, body, icon = '/icon-192.png', data = {}) {
+    async sendToAll(title, body, icon = '/icons/icon-192.png', data = {}) {
         this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll()
         
@@ -46,7 +46,7 @@ class PushService {
         return this.sendToSubscriptions(subscriptions, title, body, icon, data)
     }
 
-    async sendToFiltered(whereCondition, title, body, icon = '/icon-192.png', data = {}) {
+    async sendToFiltered(whereCondition, title, body, icon = '/icons/icon-192.png', data = {}) {
         this.ensureConfigured()
         const subscriptions = await PushSubscription.findAll({
             where: whereCondition
@@ -61,7 +61,7 @@ class PushService {
             title,
             body,
             icon,
-            badge: '/badge-72.png',
+            badge: '/icons/icon-192.png',
             data
         })
 
@@ -106,7 +106,7 @@ class PushService {
         console.log(`\n📊 Итого: ${sent} отправлено, ${failed} ошибок, ${removed} удалено\n`)
 
         return {
-            success: true,
+            success: sent > 0,
             total: subscriptions.length,
             sent,
             failed,

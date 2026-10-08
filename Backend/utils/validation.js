@@ -25,17 +25,47 @@ export function isValidReminderWeekdays(days) {
         new Set(days).size === days.length
 }
 
-export function isUploadedPlantPhotoUrl(url, { protocol, host }) {
-    if (typeof url !== 'string' || !url.trim() || url.length > 2048) return false
+export function getUploadedPlantPhotoPath(url) {
+    if (typeof url !== 'string' || !url.trim() || url.length > 2048) return null
+
+    const value = url.trim()
+    const expectedPath = /^\/uploads\/plants\/[a-f0-9]{32}\.(?:jpe?g|png|webp|heic)$/i
+    let pathname
+
+    if (value.startsWith('/')) {
+        pathname = value
+    } else {
+        try {
+            const parsed = new URL(value)
+            if (!['http:', 'https:'].includes(parsed.protocol) ||
+                parsed.username || parsed.password || parsed.search || parsed.hash) {
+                return null
+            }
+            pathname = parsed.pathname
+        } catch {
+            return null
+        }
+    }
+
+    return expectedPath.test(pathname) ? pathname : null
+}
+
+export function isUploadedPlantPhotoUrl(url, { protocol, host } = {}) {
+    const pathname = getUploadedPlantPhotoPath(url)
+    if (!pathname) return false
+    if (url.trim().startsWith('/')) return true
 
     try {
-        const parsed = new URL(url)
-        return parsed.origin === `${protocol}//${host}` &&
+        const parsed = new URL(url.trim())
+        const sameOrigin = protocol && host ? parsed.origin === `${protocol}//${host}` : true
+        return (
+            sameOrigin &&
             !parsed.username &&
             !parsed.password &&
-            /^\/uploads\/plants\/[a-f0-9]{32}\.(?:jpg|png|webp|heic)$/.test(parsed.pathname) &&
+            parsed.pathname === pathname &&
             !parsed.search &&
             !parsed.hash
+        )
     } catch {
         return false
     }

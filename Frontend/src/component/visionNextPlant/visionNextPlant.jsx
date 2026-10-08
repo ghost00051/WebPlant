@@ -1,9 +1,11 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import EmptyIcon from '../../assets/EmptyIcon.svg'
 import chevronRight from '../../assets/chevron-right.svg'
 import plantPlaceholder from '../../assets/PlantTile.svg'
-import PlantDot from '../../assets/PlanDot.svg'
 import './visionNextPlant.css'
+import './adaptiv.css'
+import './dark-theme.css'
+import IconCircle from '../../assets/IconCircle.svg'
 
 function pluralizePlants(n) {
   const abs = Math.abs(n) % 100
@@ -54,11 +56,21 @@ function formatWateringCycle(days) {
   return `каждые ${days} ${pluralizeDays(days)}`
 }
 
-function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
+function VisionNextPlant({
+  active,
+  day,
+  nextWatering,
+  onGoToDate,
+  onDeleteWatering,
+  deletingWateringId,
+  onClose
+}) {
   useEffect(() => {
     document.body.classList.toggle('vision-open', active)
     return () => document.body.classList.remove('vision-open')
   }, [active])
+
+  const [deleteTarget, setDeleteTarget] = useState(null)
 
   const kind = day?.kind ?? 'empty'
 
@@ -69,8 +81,9 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
   const futureCount = day?.plants?.length ?? 0
   const pastEvents = day?.events ?? []
 
-  const wateredEvents = pastEvents.filter(e => e.kind === 'watered')
-  const overdueEvents = pastEvents.filter(e => e.kind === 'overdue')
+  const localEvents = day?.events ?? []
+  const wateredEvents = localEvents.filter(e => e.kind === 'watered')
+  const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
 
   let counterLabel = ''
   if (isFuture) {
@@ -96,24 +109,63 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
     counterLabel = parts.join(' · ') || 'Событий нет'
   }
 
+  useEffect(() => {
+    if (!deleteTarget) return undefined
+
+    const handleKeyDown = event => {
+      if (event.key === 'Escape' && !deletingWateringId) {
+        setDeleteTarget(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [deleteTarget, deletingWateringId])
+
   const handleNextClick = () => {
     if (!nextWatering?.iso) return
     onGoToDate?.(nextWatering.iso)
   }
 
-  const renderPlantRow = (plant, { variant, timeLabel, key }) => {
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget || deletingWateringId) return
+
+    const wasDeleted = await onDeleteWatering?.(
+      deleteTarget.plantId,
+      deleteTarget.wateringLogId
+    )
+    if (wasDeleted !== false) setDeleteTarget(null)
+  }
+
+  const handleOverlayClick = () => {
+    if (deleteTarget) {
+      if (!deletingWateringId) setDeleteTarget(null)
+      return
+    }
+    setDeleteTarget(null)
+    onClose?.()
+  }
+
+  const renderPlantRow = (plant, {
+    variant,
+    timeLabel,
+    key,
+    wateringLogId
+  }) => {
     const isOverdue = variant === 'overdue'
     const isWatered = variant === 'watered'
     const isFutureRow = variant === 'future'
 
     return (
-      <li key={key} className='plantsPreview__item'>
+      <li key={key} className='plantsPreview__item' >
         <div className='plantsPreview__photoWrap'>
           <div>
             <img
               src={getPlantPhoto(plant)}
               alt={plant.name}
               className='plantsPreview__photo'
+              loading='lazy'
+              decoding='async'
               onError={e => { e.currentTarget.src = plantPlaceholder }}
             />
           </div>
@@ -138,25 +190,37 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
                 <>
                   <p>Цикл:</p>
                   <p>{formatWateringCycle(plant.watering_interval_days)}</p>
-                  <span />
-                  <p>{plant.species}</p>
+                  {/* <span />
+                  <p>{plant.species}</p> */}
                 </>
               )}
             </div>
           </div>
         </div>
-        <div>
-          <div>
-            <p
-              className={[
-                'classOfgetWateringTime',
-                isWatered && 'classOfgetWateringTime--past',
-                isOverdue && 'classOfgetWateringTime--overdue',
-              ].filter(Boolean).join(' ')}
+        <div className='plantsPreview__actions'>
+          <p
+            className={[
+              'classOfgetWateringTime',
+              isWatered && 'classOfgetWateringTime--past',
+              isOverdue && 'classOfgetWateringTime--overdue',
+            ].filter(Boolean).join(' ')}
+          >
+            {timeLabel}
+          </p>
+          {isWatered && Number.isInteger(wateringLogId) && (
+            <button
+              type='button'
+              className='plantsPreview__delete'
+              aria-label={`Удалить запись о поливе растения «${plant.name}»`}
+              onClick={() => setDeleteTarget({
+                plantId: plant.id,
+                wateringLogId,
+                plantName: plant.name
+              })}
             >
-              {timeLabel}
-            </p>
-          </div>
+              Удалить
+            </button>
+          )}
         </div>
       </li>
     )
@@ -165,7 +229,7 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
   return (
     <div
       className={`vision-overlay ${active ? 'is-active' : ''}`}
-      onClick={onClose}
+      onClick={handleOverlayClick}
     >
       <div
         className={`visiibleVareingPlant ${active ? 'active' : ''}`}
@@ -257,14 +321,49 @@ function VisionNextPlant({ active, day, nextWatering, onGoToDate, onClose }) {
                 {wateredEvents.map((ev, i) => renderPlantRow(ev.plant, {
                   variant: 'watered',
                   timeLabel: getPastTime(ev.watered_at),
+                  wateringLogId: ev.id,
                   key: `watered-${ev.plant.id}-${i}`,
                 }))}
               </ul>
             )}
           </div>
-          <div />
         </div>
       </div>
+      {deleteTarget && (
+        <div className='wateringDeleteDialog' onClick={event => event.stopPropagation()}>
+          <section
+            className='wateringDeleteDialog__card'
+            role='dialog'
+            aria-modal='true'
+            aria-labelledby='watering-delete-title'
+            aria-describedby='watering-delete-description'
+          >
+            <img src={IconCircle} alt='' className='wateringDeleteDialog__icon' />
+            <h2 id='watering-delete-title'>Удалить запись о поливе?</h2>
+            <p id='watering-delete-description'>
+              Полив растения «{deleteTarget.plantName}» будет удалён. Это действие нельзя отменить. Полив будет удален.
+            </p>
+            <div className='wateringDeleteDialog__actions'>
+              <button
+                type='button'
+                className='wateringDeleteDialog__cancel'
+                disabled={Boolean(deletingWateringId)}
+                onClick={() => setDeleteTarget(null)}
+              >
+                Отмена
+              </button>
+              <button
+                type='button'
+                className='wateringDeleteDialog__confirm'
+                disabled={Boolean(deletingWateringId)}
+                onClick={handleConfirmDelete}
+              >
+                {deletingWateringId ? 'Удаляем…' : 'Удалить'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

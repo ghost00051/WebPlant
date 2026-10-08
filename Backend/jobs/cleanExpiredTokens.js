@@ -2,19 +2,37 @@ import UserCookieConsent from "../models/userCookieConsentModels.js"
 import AuthSession from '../models/AuthSession.js'
 import PasskeyChallenge from '../models/PasskeyChallenge.js'
 import PlantPhoto from '../models/PlantPhoto.js'
+import ChatLog from '../models/ChatLog.js'
 import { Op } from "sequelize"
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 
+const GUEST_DATA_RETENTION_MS = 180 * 24 * 60 * 60 * 1000
 
 export async function cleanExpiredAuthData() {
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+    const guestDataCutoff = new Date(Date.now() - GUEST_DATA_RETENTION_MS)
 
-    const [deletedConsents, deletedSessions, deletedChallenges, deletedPhotos] = await Promise.all([
+    const [
+        deletedConsents,
+        deletedGuestChatLogs,
+        deletedSessions,
+        deletedChallenges,
+        deletedPhotos
+    ] = await Promise.all([
         UserCookieConsent.destroy({
             where: {
-                expires_at: { [Op.lt]: thirtyDaysAgo },
+                [Op.or]: [
+                    { expires_at: { [Op.lt]: thirtyDaysAgo } },
+                    { created_at: { [Op.lt]: guestDataCutoff } }
+                ],
                 user_id: null
+            }
+        }),
+        ChatLog.destroy({
+            where: {
+                user_id: null,
+                created_at: { [Op.lt]: guestDataCutoff }
             }
         }),
         AuthSession.destroy({
@@ -34,9 +52,11 @@ export async function cleanExpiredAuthData() {
             }))
     ])
 
-    const deleted = deletedConsents + deletedSessions + deletedChallenges
+    const deleted =
+        deletedConsents + deletedGuestChatLogs + deletedSessions + deletedChallenges
     console.log(
-        `🧹 Очищено согласий: ${deletedConsents}, сессий: ${deletedSessions}, ` +
+        `🧹 Очищено гостевых согласий: ${deletedConsents}, гостевых сообщений: ${deletedGuestChatLogs}, ` +
+        `сессий: ${deletedSessions}, ` +
         `passkey-челленджей: ${deletedChallenges}, фото-файлов: ${deletedPhotos}`
     )
     return deleted

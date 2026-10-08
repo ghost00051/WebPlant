@@ -4,7 +4,7 @@
     height: 100vh;
     align-items: center;
     font-family: 'Inter', sans-serif;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: #5A5A5A;
     margin-bottom: 3%;

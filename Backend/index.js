@@ -14,6 +14,10 @@ import "./models/userModels.js"
 import "./models/userCookieConsentModels.js"
 import "./models/userLegalConsentModels.js"
 import "./models/PushSubscription.js"
+import "./models/NotificationPreference.js"
+import "./models/Notification.js"
+import "./models/PushBroadcast.js"
+import "./models/PushBroadcastRecipient.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
@@ -23,7 +27,10 @@ import "./models/ChatLog.js"
 import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
+import adminPushRouter from './routes/adminPushRoutes.js'
+import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
+import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
 import plantRouter from "./routes/plantRoutes.js"
@@ -34,6 +41,26 @@ import chatRouter from './routes/chatRoutes.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
+const MIGRATION_FILES_BY_TABLE = {
+    auth_sessions: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
+    passkeys: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
+    passkey_challenges: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
+    notification_preferences: 'Backend/migrations/20261005_create_notification_preferences.sql',
+    notifications: 'Backend/migrations/20261006_create_notifications.sql',
+    push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql'
+}
+
+function formatSchemaMigrationHint(missing) {
+    const hintedFiles = new Set()
+    for (const entry of missing) {
+        const [tableName] = entry.split('.')
+        const migrationFile = MIGRATION_FILES_BY_TABLE[tableName]
+        if (migrationFile) hintedFiles.add(migrationFile)
+    }
+    if (!hintedFiles.size) return 'Review Backend/migrations/ and apply the missing SQL manually.'
+    return `Apply migration(s): ${[...hintedFiles].join(' ; ')}`
+}
 
 function validateProductionConfig() {
     if (process.env.NODE_ENV !== 'production') return
@@ -119,6 +146,8 @@ app.use('/uploads', express.static(path.resolve('uploads'), {
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
+app.use("/api/admin/push", adminPushRouter)
+app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
@@ -132,6 +161,15 @@ app.get('/health', async (req, res) => {
         console.error('❌ Проверка готовности не пройдена:', error)
         return res.status(503).json({ status: 'unavailable' })
     }
+})
+
+app.get('/robots.txt', (req, res) => {
+    res.type('text/plain').send('User-agent: *\nDisallow: /\n')
+})
+
+app.use((req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+    next()
 })
 
 app.use((req, res) => {
@@ -185,7 +223,8 @@ async function startServer() {
                 }
             }
             if (missing.length) {
-                throw new Error(`Database schema is missing required tables or columns: ${missing.join(', ')}`)
+                const migrationHint = formatSchemaMigrationHint(missing)
+                throw new Error(`Database schema is missing required tables or columns: ${missing.join(', ')}. ${migrationHint}`)
             }
             console.log("✅ Схема production-базы проверена")
         } else {
@@ -197,6 +236,8 @@ async function startServer() {
         startCleanupJob()
         console.log("⏰ Запущена очистка истекших согласий и auth-данных")
         reminderService.start()
+        startPushBroadcastJob()
+        console.log("📣 Планировщик отложенных рассылок запущен")
 
         app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)

@@ -2,6 +2,8 @@ import { useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import BackBtn from '../../assets/BackBtn.svg'
 import './editProfile.css'
+import './dark-theme.css'
+import { API_URL } from '../../utils/api.js'
 
 function EditProfile() {
     const navigate = useNavigate()
@@ -48,7 +50,7 @@ function EditProfile() {
 
         try {
             const response = await fetch(
-                'https://server.checktheplants.ru/api/users/me',
+                `${API_URL}/users/me`,
                 {
                     method: 'PATCH',
                     headers: { 'Content-Type': 'application/json' },
@@ -119,7 +121,7 @@ function EditProfile() {
 
             try {
                 const response = await fetch(
-                    'https://server.checktheplants.ru/api/users/me',
+                    `${API_URL}/users/me`,
                     { method: 'GET', credentials: 'include' }
                 )
                 if (!response.ok) throw new Error(`HTTP ${response.status}`)

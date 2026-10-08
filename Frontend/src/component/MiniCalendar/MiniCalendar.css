@@ -1,11 +1,13 @@
 .mini-calendar {
+  box-sizing: border-box;
   background: #fff;
   border-radius: 24px;
   padding: 20px;
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
   font-family: 'Inter', sans-serif;
-  max-width: 420px;
-  margin: 1% 4%;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
   transition: box-shadow 0.3s ease;
 }
 
@@ -22,7 +24,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   font-weight: 600;
   color: #2d2d2d;
 }
@@ -101,7 +103,7 @@
 
 .mini-calendar__weekdays span {
   text-align: center;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: #b0b0b0;
   padding: 6px 0;
 }
@@ -161,7 +163,7 @@
   border: none;
   background: transparent;
   border-radius: 50%;
-  font-size: 15px;
+  font-size: var(--font-size-base);
   color: #2d2d2d;
   cursor: pointer;
   display: flex;
@@ -279,7 +281,7 @@
   margin-top: 18px;
   padding-top: 14px;
   border-top: 1px solid #f0f0f0;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: #8a8a8a;
 }
 
@@ -310,4 +312,8 @@
 
 .dot--overdue {
   background: #e07a7a;
+}
+
+.mini-calendar__desktop-view {
+  display: none;
 }

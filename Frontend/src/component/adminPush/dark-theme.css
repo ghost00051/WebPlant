@@ -1,0 +1,140 @@
+html[data-theme='dark'] .adminPushPanel {
+    background-color: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel :is(h2, p, span, label, legend) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel :is(
+    .adminPushStatValue,
+    .adminPushStatLabel,
+    .adminPushFieldLabel,
+    .adminPushCounter,
+    .adminPushHint,
+    .adminPushSelectedCount,
+    .adminPushSelectedTitle,
+    .adminPushRecipientMeta,
+    .adminPushPreviewUrl,
+    .adminPushRecentMeta,
+    .adminPushRecentCounts,
+    .adminPushMessage
+) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushStatValue,
+html[data-theme='dark'] .adminPushPanel .adminPushSelectedCount {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel :is(
+    .adminPushStat,
+    .adminPushRecipients,
+    .adminPushRecentItem,
+    .adminPushRecipients input,
+    .adminPushField input,
+    .adminPushField textarea,
+    .adminPushScheduleRow input,
+    .adminPushModeSwitch button,
+    .adminPushSecondaryButton,
+    .adminPushRemoveButton
+) {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushPreviewCard,
+html[data-theme='dark'] .adminPushPanel .adminPushRecipient {
+    background-color: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel :is(input, textarea)::placeholder {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushModeSwitch button.is-active {
+    border-color: var(--theme-accent);
+    background-color: var(--theme-accent-soft);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushSubmitButton {
+    background-color: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushSubmitButton:disabled {
+    background-color: var(--theme-raised);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushWarning {
+    border-color: #6a4a22;
+    background-color: #33260f;
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushError {
+    color: #ff9b9b;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushSuccess {
+    color: #9fd8b4;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushRecipientSubs {
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushRecipientNoPush {
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushPreviewIcon {
+    filter: none;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushRecent {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushSelected {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushPreviewCard {
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushCancelButton {
+    border-color: #6a4a22;
+    background-color: #33260f;
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushStatusPending,
+html[data-theme='dark'] .adminPushPanel .adminPushStatusSending,
+html[data-theme='dark'] .adminPushPanel .adminPushStatusSent,
+html[data-theme='dark'] .adminPushPanel .adminPushStatusFailed,
+html[data-theme='dark'] .adminPushPanel .adminPushStatusCanceled {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushStatusPending,
+html[data-theme='dark'] .adminPushPanel .adminPushStatusSending {
+    color: #8fb8e8;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushStatusSent {
+    color: #9fd8b4;
+}
+
+html[data-theme='dark'] .adminPushPanel .adminPushStatusFailed {
+    color: #ff9b9b;
+}

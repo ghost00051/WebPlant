@@ -1,0 +1,5 @@
+html[data-theme='dark'] .notification-prompt {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './registration.css'
+import './dark-theme.css'
 import './adaptiv.css'
 import {
   subscribeToPush,
@@ -16,16 +17,10 @@ import fingerprint from '../../assets/fingerprint.svg'
 import user from '../../assets/user.svg'
 import shieldcheck from '../../assets/shield-check.svg'
 import { loginWithPasskey } from '../../utils/passkey.js'
+import { API_URL } from '../../utils/api.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
+import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import termsDocument from '../../../document/UserAgreementTemplate.pdf'
-
-const API = 'https://server.checktheplants.ru/api'
-const COOKIE_CONSENT_TYPES = [
-  'technical',
-  'analytics',
-  'marketing',
-  'personalization'
-]
 
 async function getResponseMessage(response, fallback) {
   try {
@@ -36,8 +31,8 @@ async function getResponseMessage(response, fallback) {
   }
 }
 
-function Registration() {
-  const [isLogin, setIsLogin] = useState(true)
+function Registration({ initialMode = 'login' }) {
+  const [isLogin, setIsLogin] = useState(initialMode !== 'register')
   const [mobilePanelsHeight, setMobilePanelsHeight] = useState(null)
   const blocksWrapperRef = useRef(null)
   const loginPanelRef = useRef(null)
@@ -55,9 +50,6 @@ function Registration() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isPasskeyLoginLoading, setIsPasskeyLoginLoading] = useState(false)
   const [formError, setFormError] = useState('')
-  const [isCookieBannerVisible, setIsCookieBannerVisible] = useState(false)
-  const [isSavingConsent, setIsSavingConsent] = useState(false)
-  const [consentError, setConsentError] = useState('')
   const navigate = useNavigate()
 
   useLayoutEffect(() => {
@@ -90,7 +82,7 @@ function Registration() {
 
     const checkAuth = async () => {
       try {
-        const response = await fetch(`${API}/users/me`, {
+        const response = await fetch(`${API_URL}/users/me`, {
           method: 'GET',
           credentials: 'include',
           signal: controller.signal
@@ -111,58 +103,6 @@ function Registration() {
     checkAuth()
     return () => controller.abort()
   }, [navigate])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let timer
-
-    const scheduleBanner = () => {
-      timer = window.setTimeout(() => setIsCookieBannerVisible(true), 1000)
-    }
-
-    const checkCookieConsent = async () => {
-      try {
-        const response = await fetch(`${API}/cookie-consents`, {
-          credentials: 'include',
-          signal: controller.signal
-        })
-        if (!response.ok) {
-          throw new Error(
-            await getResponseMessage(
-              response,
-              'Не удалось проверить сохранённый выбор cookie.'
-            )
-          )
-        }
-
-        const consents = await response.json()
-        const latestByType = new Map()
-        for (const consent of consents) {
-          if (!latestByType.has(consent.consent_type)) {
-            latestByType.set(consent.consent_type, consent)
-          }
-        }
-
-        const hasCompleteConsent = COOKIE_CONSENT_TYPES.every(type =>
-          latestByType.has(type)
-        )
-        if (!hasCompleteConsent) scheduleBanner()
-      } catch (error) {
-        if (error.name === 'AbortError') return
-        console.error('Ошибка проверки согласия cookie:', error)
-        setConsentError(
-          'Не удалось проверить сохранённый выбор. Проверьте подключение и повторите попытку.'
-        )
-        scheduleBanner()
-      }
-    }
-
-    checkCookieConsent()
-    return () => {
-      controller.abort()
-      window.clearTimeout(timer)
-    }
-  }, [])
 
   const reattachPush = async () => {
     if (!isPushSupported()) return
@@ -190,7 +130,7 @@ function Registration() {
     setIsSubmitting(true)
     setFormError('')
     try {
-      const response = await fetch(`${API}/users/registration`, {
+      const response = await fetch(`${API_URL}/users/registration`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -227,7 +167,7 @@ function Registration() {
     setIsSubmitting(true)
     setFormError('')
     try {
-      const response = await fetch(`${API}/users/login`, {
+      const response = await fetch(`${API_URL}/users/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -273,41 +213,6 @@ function Registration() {
     }
   }
 
-  const saveCookieConsent = async acceptOptionalCookies => {
-    if (isSavingConsent) return
-
-    setIsSavingConsent(true)
-    setConsentError('')
-    try {
-      const response = await fetch(`${API}/cookie-consents/all`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          consents: [
-            { consentType: 'technical', isAccepted: true },
-            { consentType: 'analytics', isAccepted: acceptOptionalCookies },
-            { consentType: 'marketing', isAccepted: acceptOptionalCookies },
-            { consentType: 'personalization', isAccepted: acceptOptionalCookies }
-          ]
-        }),
-        credentials: 'include'
-      })
-
-      if (!response.ok) {
-        throw new Error(
-          await getResponseMessage(response, 'Не удалось сохранить выбор.')
-        )
-      }
-
-      setIsCookieBannerVisible(false)
-    } catch (error) {
-      console.error('Ошибка сохранения согласия cookie:', error)
-      setConsentError(error.message || 'Не удалось сохранить выбор.')
-    } finally {
-      setIsSavingConsent(false)
-    }
-  }
-
   const getPasswordStrength = value => {
     if (!value) return -1
 
@@ -337,7 +242,7 @@ function Registration() {
 
   return (
     <main
-      className={`blocksOfToService ${isLogin ? 'authModeLogin' : 'authModeRegistration'} ${isCookieBannerVisible ? 'hasCookieBanner' : ''}`}
+      className={`blocksOfToService ${isLogin ? 'authModeLogin' : 'authModeRegistration'}`}
     >
       <section className='borderOther' aria-label='Вход и регистрация'>
         <div className='borderInner'>
@@ -581,12 +486,19 @@ function Registration() {
                     required
                   />
                   <span>
-                    Согласие на обработку{' '}
+                    Даю отдельное согласие на обработку{' '}
                     <a href={personalDataDocument} target='_blank' rel='noreferrer'>
                       персональных данных
                     </a>
                   </span>
                 </label>
+                <p className='consentPolicyNotice'>
+                  До регистрации ознакомьтесь с{' '}
+                  <a href={privacyPolicyDocument} target='_blank' rel='noreferrer'>
+                    Политикой обработки персональных данных
+                  </a>
+                  .
+                </p>
 
                 <label className='consentOption'>
                   <input
@@ -634,37 +546,6 @@ function Registration() {
         </div>
       </section>
 
-      <aside
-        className={`cookies ${isLogin ? 'rightSide' : 'leftSide'} ${isCookieBannerVisible ? 'active' : ''}`}
-        aria-label='Настройки cookie'
-        aria-hidden={!isCookieBannerVisible}
-        inert={!isCookieBannerVisible}
-      >
-        <p>Мы используем cookie для работы сайта. Разрешить необязательные cookie?</p>
-        {consentError && (
-          <p className='consentError' role='alert'>
-            {consentError}
-          </p>
-        )}
-        <div className='buttonOfCookies'>
-          <button
-            className='cookiesGood'
-            type='button'
-            disabled={isSavingConsent}
-            onClick={() => saveCookieConsent(true)}
-          >
-            {isSavingConsent ? 'Сохраняем...' : 'Принять все'}
-          </button>
-          <button
-            className='cookiesFail'
-            type='button'
-            disabled={isSavingConsent}
-            onClick={() => saveCookieConsent(false)}
-          >
-            Отказаться
-          </button>
-        </div>
-      </aside>
     </main>
   )
 }

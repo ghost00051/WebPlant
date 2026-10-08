@@ -1,0 +1,12 @@
+html[data-theme='dark'] .homePageDashboard {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantRender,
+html[data-theme='dark'] .offScheduleWatering,
+html[data-theme='dark'] .plantSoffSchedule,
+html[data-theme='dark'] .godOfplantSoffSchedule {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}

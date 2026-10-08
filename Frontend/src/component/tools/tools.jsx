@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react'
 import Plus from '../../../img/plus-circle.svg'
 import Message from '../../../img/message-circle.svg'
 import Home from '../../../img/Home.svg'
 import Chat from '../../../img/user.svg'
+import IconTile from '../../assets/IconTile.svg'
 import '../tools/tools.css'
+import './dark-theme.css'
 import './adaptiv.css'
+import './tools.desktop.css'
 
 const TABS = [
     { id: 'home', icon: Home, label: 'Главная' },
@@ -14,38 +16,46 @@ const TABS = [
 ]
 
 function Tools({ onTabChange, activeTab }) {
-    const [activeIndex, setActiveIndex] = useState(0)
+    const selectedTab = activeTab || TABS[0].id
 
-    useEffect(() => {
-        if (activeTab) {
-            const idx = TABS.findIndex(t => t.id === activeTab)
-            if (idx !== -1) setActiveIndex(idx)
-        }
-    }, [activeTab])
-
-    const handleTabClick = (index) => {
-        setActiveIndex(index)
-        onTabChange?.(TABS[index].id)
+    const handleTabClick = tab => {
+        onTabChange?.(tab.id)
     }
 
     return (
         <div className="toolsWrapper">
             <nav className="tabbar">
                 <ul>
-                    {TABS.map((tab, index) => (
+                    {TABS.map(tab => (
                         <li
                             key={tab.id}
-                            className={index === activeIndex ? 'active' : ''}
-                            onClick={() => handleTabClick(index)}
-                            aria-label={tab.label}
-                            role="button"
+                            className={tab.id === selectedTab ? 'active' : ''}
                         >
-                            <img src={tab.icon} alt="" />
-                            <span className="tab-label">{tab.label}</span>
+                            <button
+                                type='button'
+                                className='tabbarButton'
+                                onClick={() => handleTabClick(tab)}
+                                aria-label={tab.label}
+                                aria-current={tab.id === selectedTab ? 'page' : undefined}
+                            >
+                                <img src={tab.icon} alt="" />
+                                <span className="tab-label">{tab.label}</span>
+                            </button>
                         </li>
                     ))}
                 </ul>
             </nav>
+            <button
+                type="button"
+                className="desktopAssistantLink"
+                onClick={() => onTabChange?.('chat')}
+            >
+                <img src={IconTile} alt="" />
+                <span>
+                    <strong>Спросить ИИ-помощника</strong>
+                    <small>Подскажет, когда и как поливать</small>
+                </span>
+            </button>
         </div>
     )
 }

@@ -1,0 +1,153 @@
+@media (min-width: 1024px) {
+  .mini-calendar {
+    border: 1px solid #ebe8e3;
+    box-shadow: none;
+  }
+
+  .mini-calendar > .mini-calendar__mobile-header,
+  .mini-calendar > .mini-calendar__weekdays,
+  .mini-calendar > .mini-calendar__grid-wrap,
+  .mini-calendar > .mini-calendar__legend {
+    display: none;
+  }
+
+  .mini-calendar__desktop-view {
+    display: block;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__header {
+    margin-bottom: 10px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__title {
+    gap: 8px;
+    font-size: 14px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__title img {
+    width: 14px;
+    height: 14px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__nav {
+    gap: 6px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__nav button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__nav img {
+    width: 14px;
+    height: 14px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__weekdays {
+    margin-bottom: 4px;
+  }
+
+  .mini-calendar__desktop-view .mini-calendar__weekdays span {
+    padding: 4px 0;
+    font-size: 10px;
+  }
+
+  .mini-calendar__month-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 5px;
+  }
+
+  .mini-calendar__month-day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    aspect-ratio: 1.2 / 1;
+    min-width: 0;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 12px;
+    background: transparent;
+    color: #353535;
+    font: inherit;
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .mini-calendar__month-day .mini-calendar__dots {
+    height: auto;
+    margin-top: 0;
+    gap: 3px;
+  }
+
+  .mini-calendar__month-day .mini-calendar__dots .dot {
+    width: 4px;
+    height: 4px;
+  }
+
+  .mini-calendar__month-day.is-outside .mini-calendar__dots {
+    opacity: 0.6;
+  }
+
+  .mini-calendar__month-day.is-today .dot--future {
+    background: #d3e5f3;
+  }
+
+  .mini-calendar__month-day.is-today .dot--past {
+    background: #c8e9d5;
+  }
+
+  .mini-calendar__month-day.is-today .dot--overdue {
+    background: #f4c6c6;
+  }
+
+  .mini-calendar__month-day:hover {
+    background: #f0f2ec;
+  }
+
+  .mini-calendar__month-day.is-outside {
+    color: #c8c7c3;
+  }
+
+  .mini-calendar__month-day.is-watering-day {
+    border-color: #a8b7aa;
+    background: #f4f6f3;
+    color: #718578;
+  }
+
+  .mini-calendar__month-day.is-today {
+    border-color: #7c9082;
+    background: #7c9082;
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .mini-calendar__month-day.is-selected:not(.is-today) {
+    box-shadow: inset 0 0 0 1px #7c9082;
+  }
+
+  .mini-calendar__desktop-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+    margin-top: 13px;
+    color: #92928d;
+    font-size: 10px;
+  }
+
+  .mini-calendar__desktop-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .mini-calendar__desktop-legend i {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+}

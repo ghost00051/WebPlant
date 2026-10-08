@@ -1,0 +1,9 @@
+html[data-theme='dark'] .blocksOfToService {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .borderOther {
+    border-color: var(--theme-border);
+    background: var(--theme-surface);
+}

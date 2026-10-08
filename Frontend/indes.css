@@ -1,22 +1,47 @@
+:root {
+    --font-size-xs: 0.625rem;
+    --font-size-sm: 0.75rem;
+    --font-size-md: 0.875rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.125rem;
+    --font-size-xl: 1.25rem;
+    --font-size-2xl: 1.5rem;
+    --font-size-3xl: 2rem;
+    --font-size-hero: clamp(2.375rem, 5vw, 3.875rem);
+    font-family: 'Inter', sans-serif;
+    font-size: 100%;
+}
+
 html {
-    height: 100vh;
-    height: 100dvh;
+    min-height: 100%;
     margin: 0;
     padding: 0;
-    overflow: hidden;
-    overscroll-behavior: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    font-family: 'Inter', sans-serif;
 }
 
 body {
-    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
     margin: 0;
     padding: 0;
-    overflow: hidden;
-    overscroll-behavior: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    font-family: 'Inter', sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+    font: inherit;
 }
 
 #root {
-    height: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
     width: 100%;
-    overflow: hidden;
+    overflow: visible;
 }

@@ -1,11 +1,18 @@
 {
   "name": "webplant",
   "private": true,
-  "version": "1.1.4",
+  "version": "1.2.5",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node scripts/generate-seo-meta.mjs && vite build && node scripts/prerender.mjs",
+    "build:seo": "npm run build && npm run verify",
+    "check:seo-meta": "node scripts/generate-seo-meta.mjs --check",
+    "verify": "node scripts/verify-build.mjs && node scripts/verify-routing.mjs",
+    "verify:build": "node scripts/verify-build.mjs",
+    "verify:routing": "node scripts/verify-routing.mjs",
+    "indexnow": "node scripts/indexnow.mjs",
+    "indexnow:dry": "node scripts/indexnow.mjs --dry-run",
     "lint": "eslint .",
     "preview": "vite preview"
   },

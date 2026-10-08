@@ -14,7 +14,7 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Inter', sans-serif;
     z-index: 50;
 }
 
@@ -22,9 +22,9 @@ body.keyboard-open .chatWindow {
     padding-bottom: 0;
 }
 
-body.keyboard-open .chatInputArea {
+/* body.keyboard-open .chatInputArea {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-}
+} */
 
 .chatHeader {
     flex-shrink: 0;
@@ -77,14 +77,14 @@ body.keyboard-open .chatInputArea {
 }
 
 .chatHeaderTitle {
-    font-size: 14px;
+    font-size: var(--font-size-md);
     font-weight: 600;
     color: #2D2D2D;
     margin: 0 0 2px 0;
 }
 
 .chatHeaderSubtitle {
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: #8A8A8A;
     margin: 0;
@@ -106,7 +106,7 @@ body.keyboard-open .chatInputArea {
     display: flex;
     align-items: center;
     gap: 4px;
-    font-size: 11px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: #555;
     background-color: #EFECE8;
@@ -157,7 +157,7 @@ body.keyboard-open .chatInputArea {
     gap: 8px;
     word-break: break-word;
     animation: bubbleIn 0.25s ease-out;
-    font-size: 13px;
+    font-size: var(--font-size-md);
     line-height: 1.45;
 }
 
@@ -200,7 +200,7 @@ body.keyboard-open .chatInputArea {
 }
 
 .chatAiAdviceLabel {
-    font-size: 10px;
+    font-size: var(--font-size-xs);
     font-weight: 600;
     color: #8A8A8A;
     text-transform: uppercase;
@@ -210,7 +210,7 @@ body.keyboard-open .chatInputArea {
 }
 
 .chatAiAdviceText {
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     color: #2D2D2D;
     margin: 0;
     line-height: 1.4;
@@ -274,7 +274,7 @@ body.keyboard-open .chatInputArea {
 
 .chatSuggestion {
     font-family: 'Inter', sans-serif;
-    font-size: 12px;
+    font-size: var(--font-size-sm);
     font-weight: 500;
     color: #6B7E71;
     background-color: #EFECE8;
@@ -311,7 +311,7 @@ body.keyboard-open .chatInputArea {
 .chatInputField {
     flex: 1;
     font-family: 'Inter', sans-serif;
-    font-size: 16px;
+    font-size: var(--font-size-base);
     color: #2D2D2D;
     background: transparent;
     border: none;

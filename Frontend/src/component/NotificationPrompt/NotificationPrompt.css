@@ -50,16 +50,16 @@
 }
 
 .notification-prompt h2 {
-  font-family: 'Inter';
-  font-size: 16px;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-base);
   font-weight: 600;
   color: #2d2d2d;
 }
 
 .notification-prompt-text {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #5a5a5a;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 400;
 }
 
@@ -68,9 +68,9 @@
 }
 
 .whetToWater p {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #5a5a5a;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 400;
   padding-left: 4%;
 }
@@ -81,18 +81,18 @@
 }
 
 .driedOut p {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #5a5a5a;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 400;
   padding-left: 4%;
   text-align: left;
 }
 
 .notification-prompt-error {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #e74c3c;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   margin: 0 0 16px 0;
   padding: 8px;
   background: #fde8e8;
@@ -113,9 +113,9 @@
 }
 
 .notification-prompt-btn-primary {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #5a5a5a;
-  font-size: 15px;
+  font-size: var(--font-size-base);
   font-weight: 400;
   background: none;
   border: none;
@@ -124,9 +124,9 @@
 }
 
 .notification-prompt-btn-secondary {
-  font-family: 'Inter';
+  font-family: 'Inter', sans-serif;
   color: #5a6e60;
-  font-size: 15px;
+  font-size: var(--font-size-base);
   font-weight: 400;
   background: none;
   border: none;

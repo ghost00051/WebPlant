@@ -1,3 +1,5 @@
+import { stat } from 'node:fs/promises'
+import path from 'node:path'
 import Plant from '../models/Plant.js'
 import PlantPhoto from '../models/PlantPhoto.js'
 import WateringLog from '../models/WateringLog.js'
@@ -5,15 +7,19 @@ import sequelize from '../db.js'
 import jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
 import {
-    isUploadedPlantPhotoUrl,
+    getUploadedPlantPhotoPath,
     isValidReminderWeekdays,
     isValidWateringInterval
 } from '../utils/validation.js'
 import {
     suggestPlantSpecies,
-    suggestWateringAdvice
+    suggestWateringAdvice,
+    suggestWateringTimeAdvice
 } from '../services/aiService.js'
+import { generateWateringOccurrences } from '../utils/wateringSchedule.js'
 const TIME_OF_DAY_HOURS = { morning: 8, day: 14, evening: 19 }
+const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
+const SCHEDULE_DAYS_AHEAD = 90
 
 function computeHoursLate(scheduledFor, actionAt) {
     if (!scheduledFor) return null
@@ -112,6 +118,34 @@ class PlantController {
             return res.json(advice)
         } catch (error) {
             console.error('❌ Ошибка подсказки полива:', error)
+            return res.status(503).json({
+                message: error.message || 'Сервис рекомендаций временно недоступен'
+            })
+        }
+    }
+
+    async suggestWateringTime(req, res) {
+        const { name, species, intervalDays } = req.body || {}
+        if (typeof name !== 'string' || !name.trim() || name.trim().length > 255) {
+            return res.status(400).json({ message: 'Введите корректное название растения' })
+        }
+        if (species !== undefined &&
+            (typeof species !== 'string' || species.length > 255)) {
+            return res.status(400).json({ message: 'Некорректный вид растения' })
+        }
+        if (!isValidWateringInterval(intervalDays)) {
+            return res.status(400).json({ message: 'Некорректная частота полива' })
+        }
+
+        try {
+            const advice = await suggestWateringTimeAdvice({
+                plantName: name.trim(),
+                species: species?.trim(),
+                intervalDays
+            })
+            return res.json(advice)
+        } catch (error) {
+            console.error('❌ Ошибка подсказки времени полива:', error)
             return res.status(503).json({
                 message: error.message || 'Сервис рекомендаций временно недоступен'
             })
@@ -243,41 +277,52 @@ class PlantController {
             for (const p of plants) {
                 if (!p.next_watering_at) continue
 
-                const dt = new Date(p.next_watering_at)
-                const dateKey = dt.toISOString().slice(0, 10)
-
-                let bucket
-                if (dt < today) bucket = 'overdue'
-                else if (dt.toDateString() === now.toDateString()) bucket = 'today'
-                else bucket = 'later'
-
-                if (!groups[dateKey]) {
-                    groups[dateKey] = { date: dateKey, bucket, plants: [] }
-                }
-
                 const photos = p.photos || []
                 const mainPhoto =
                     photos.find(ph => ph.is_main)?.url ??
                     photos[0]?.url ??
                     null
 
-                groups[dateKey].plants.push({
-                    id: p.id,
-                    name: p.name,
-                    species: p.species,
-                    location: p.location,
-                    description: p.description,
-                    photo_url: mainPhoto,
-                    photos: photos.map(ph => ({
-                        id: ph.id,
-                        url: ph.url,
-                        is_main: ph.is_main,
-                        sort_order: ph.sort_order
-                    })),
-                    next_watering_at: p.next_watering_at,
-                    watering_interval_days: p.watering_interval_days,
-                    watering_time_of_day: p.watering_time_of_day
-                })
+                const intervalDays = Number.isInteger(p.watering_interval_days) &&
+                    p.watering_interval_days > 0
+                    ? p.watering_interval_days
+                    : 7
+                const occurrences = generateWateringOccurrences(
+                    p.next_watering_at,
+                    intervalDays,
+                    { now, daysAhead: SCHEDULE_DAYS_AHEAD }
+                )
+
+                for (const dt of occurrences) {
+                    const dateKey = dt.toISOString().slice(0, 10)
+
+                    let bucket
+                    if (dt < today) bucket = 'overdue'
+                    else if (dt.toDateString() === now.toDateString()) bucket = 'today'
+                    else bucket = 'later'
+
+                    if (!groups[dateKey]) {
+                        groups[dateKey] = { date: dateKey, bucket, plants: [] }
+                    }
+
+                    groups[dateKey].plants.push({
+                        id: p.id,
+                        name: p.name,
+                        species: p.species,
+                        location: p.location,
+                        description: p.description,
+                        photo_url: mainPhoto,
+                        photos: photos.map(ph => ({
+                            id: ph.id,
+                            url: ph.url,
+                            is_main: ph.is_main,
+                            sort_order: ph.sort_order
+                        })),
+                        next_watering_at: dt,
+                        watering_interval_days: intervalDays,
+                        watering_time_of_day: p.watering_time_of_day
+                    })
+                }
             }
 
             const items = Object.values(groups).sort(
@@ -321,23 +366,6 @@ class PlantController {
             console.error('❌ Ошибка:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
-    }
-
-    async getNeedWatering(req, res) {
-        const userId = getUserId(req)
-        if (!userId) return res.status(401).json({ message: 'Не авторизован' })
-
-        const now = new Date()
-        const plants = await Plant.findAll({
-            where: {
-                user_id: userId,
-                is_active: true,
-                next_watering_at: { [Op.lte]: now }
-            },
-            order: [['next_watering_at', 'ASC']]
-        })
-
-        return res.json(plants)
     }
 
     async create(req, res) {
@@ -403,12 +431,38 @@ class PlantController {
                 await t.rollback()
                 return res.status(400).json({ message: 'Некорректный список фотографий' })
             }
-            if (photos.some(photo => !isUploadedPlantPhotoUrl(
-                typeof photo === 'string' ? photo : photo.url,
-                { protocol: req.protocol, host: req.get('host') }
-            ))) {
-                await t.rollback()
-                return res.status(400).json({ message: 'Фотографии должны быть предварительно загружены на сервер' })
+            const normalizedPhotos = []
+            for (const photo of photos) {
+                const photoUrl = typeof photo === 'string' ? photo : photo.url
+                const photoPath = getUploadedPlantPhotoPath(photoUrl)
+                if (!photoPath) {
+                    await t.rollback()
+                    return res.status(400).json({ message: 'Некорректный список фотографий' })
+                }
+
+                try {
+                    const photoStats = await stat(
+                        path.join(PLANT_PHOTO_DIRECTORY, path.basename(photoPath))
+                    )
+                    if (!photoStats.isFile()) {
+                        await t.rollback()
+                        return res.status(400).json({
+                            message: 'Фотографии должны быть предварительно загружены на сервер'
+                        })
+                    }
+                } catch (error) {
+                    if (error.code === 'ENOENT') {
+                        await t.rollback()
+                        return res.status(400).json({
+                            message: 'Фотографии должны быть предварительно загружены на сервер'
+                        })
+                    }
+                    throw error
+                }
+
+                normalizedPhotos.push(typeof photo === 'string'
+                    ? `${req.protocol}://${req.get('host')}${photoPath}`
+                    : { ...photo, url: `${req.protocol}://${req.get('host')}${photoPath}` })
             }
             if (metadata !== undefined &&
                 (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))) {
@@ -436,7 +490,7 @@ class PlantController {
             }, { transaction: t })
 
             if (photos.length) {
-                const rows = photos.map((p, i) => {
+                const rows = normalizedPhotos.map((p, i) => {
                     const url = typeof p === 'string' ? p : p.url
                     return {
                         plant_id: plant.id,
@@ -526,7 +580,8 @@ class PlantController {
             const allowed = [
                 'name', 'species', 'location', 'description',
                 'photo_url', 'watering_interval_days',
-                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'is_active'
+                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'is_active',
+                'notify_morning', 'notify_day_before', 'reminder_weekdays'
             ]
 
             const updates = {}
@@ -539,6 +594,18 @@ class PlantController {
             if (updates.name !== undefined &&
                 (typeof updates.name !== 'string' || !updates.name.trim() || updates.name.length > 255)) {
                 return res.status(400).json({ message: 'Некорректное название растения' })
+            }
+            if (updates.name !== undefined) updates.name = updates.name.trim()
+            for (const key of ['species', 'location']) {
+                if (updates[key] !== undefined && updates[key] !== null &&
+                    (typeof updates[key] !== 'string' || updates[key].length > 255)) {
+                    return res.status(400).json({ message: 'Название или местоположение слишком длинное' })
+                }
+                if (typeof updates[key] === 'string') updates[key] = updates[key].trim()
+            }
+            if (updates.description !== undefined && updates.description !== null &&
+                (typeof updates.description !== 'string' || updates.description.length > 10000)) {
+                return res.status(400).json({ message: 'Описание должно содержать не более 10000 символов' })
             }
             if (updates.watering_interval_days !== undefined &&
                 !isValidWateringInterval(updates.watering_interval_days)) {
@@ -558,11 +625,45 @@ class PlantController {
             if (updates.is_active !== undefined && typeof updates.is_active !== 'boolean') {
                 return res.status(400).json({ message: 'Некорректный статус растения' })
             }
+            for (const key of ['notify_morning', 'notify_day_before']) {
+                if (updates[key] !== undefined && typeof updates[key] !== 'boolean') {
+                    return res.status(400).json({ message: 'Настройки напоминаний должны быть логическими значениями' })
+                }
+            }
+            if (updates.reminder_weekdays !== undefined &&
+                !isValidReminderWeekdays(updates.reminder_weekdays)) {
+                return res.status(400).json({ message: 'Некорректные дни напоминаний' })
+            }
 
             if (body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)) {
                 updates.metadata = { ...plant.metadata, ...body.metadata }
             } else if (body.metadata !== undefined) {
                 return res.status(400).json({ message: 'metadata должна быть объектом' })
+            }
+
+            const scheduleChanged = [
+                'next_watering_at',
+                'watering_interval_days',
+                'watering_time_of_day',
+                'last_watered_at'
+            ].some(key => updates[key] !== undefined)
+            if (scheduleChanged) {
+                if (
+                    updates.next_watering_at === undefined &&
+                    (updates.watering_interval_days !== undefined ||
+                        updates.watering_time_of_day !== undefined ||
+                        updates.last_watered_at !== undefined)
+                ) {
+                    updates.next_watering_at = computeNextWatering(
+                        updates.last_watered_at ?? plant.last_watered_at ?? new Date(),
+                        updates.watering_interval_days ?? plant.watering_interval_days ?? 7,
+                        updates.watering_time_of_day ?? plant.watering_time_of_day ?? 'morning'
+                    )
+                }
+                updates.metadata = {
+                    ...(updates.metadata ?? plant.metadata ?? {}),
+                    notifications: {}
+                }
             }
 
             await plant.update(updates)
@@ -702,6 +803,7 @@ class PlantController {
 
                 pushEvent(iso, {
                     kind: 'watered',
+                    id: log.id,
                     plant: {
                         id: plant.id,
                         name: plant.name,
@@ -797,6 +899,89 @@ class PlantController {
         } catch (error) {
             if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка полива:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async deleteWatering(req, res) {
+        let transaction
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            transaction = await sequelize.transaction()
+            const plant = await Plant.findOne({
+                where: {
+                    id: req.params.id,
+                    user_id: userId,
+                    is_active: true
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (!plant) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(404).json({ message: 'Растение не найдено' })
+            }
+
+            const log = await WateringLog.findOne({
+                where: {
+                    id: req.params.logId,
+                    plant_id: plant.id,
+                    user_id: userId,
+                    action: 'watered'
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (!log) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(404).json({ message: 'Запись о поливе не найдена' })
+            }
+
+            const latestAction = await WateringLog.findOne({
+                where: { plant_id: plant.id, user_id: userId },
+                order: [['action_at', 'DESC'], ['id', 'DESC']],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            const isLatestAction = latestAction?.id === log.id
+
+            await log.destroy({ transaction })
+
+            if (isLatestAction) {
+                const latestWatering = await WateringLog.findOne({
+                    where: {
+                        plant_id: plant.id,
+                        user_id: userId,
+                        action: 'watered'
+                    },
+                    order: [['action_at', 'DESC'], ['id', 'DESC']],
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                })
+
+                await plant.update({
+                    last_watered_at: latestWatering?.action_at ?? null,
+                    next_watering_at: log.scheduled_for ?? log.action_at
+                }, { transaction })
+            }
+
+            await transaction.commit()
+            transaction = null
+
+            return res.json({
+                message: 'Запись о поливе удалена',
+                scheduleRestored: isLatestAction,
+                next_watering_at: isLatestAction
+                    ? log.scheduled_for ?? log.action_at
+                    : plant.next_watering_at
+            })
+        } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
+            console.error('❌ Ошибка удаления записи о поливе:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
@@ -907,12 +1092,14 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
-            const now = new Date()
+            const tomorrow = new Date()
+            tomorrow.setHours(0, 0, 0, 0)
+            tomorrow.setDate(tomorrow.getDate() + 1)
             const plants = await Plant.findAll({
                 where: {
                     user_id: userId,
                     is_active: true,
-                    next_watering_at: { [Op.lte]: now }
+                    next_watering_at: { [Op.lt]: tomorrow }
                 },
                 order: [['next_watering_at', 'ASC']]
             })

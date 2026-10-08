@@ -14,13 +14,86 @@
   visibility: visible;
   pointer-events: auto;
   transition: opacity 0.28s ease, visibility 0s linear 0s;
-  height: 100vh;
+}
+
+.wateringDeleteDialog {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 24px;
+}
+
+.wateringDeleteDialog__card {
+  width: min(75%, 380px);
+  box-sizing: border-box;
+  padding: 24px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.2);
+  font-family: 'Inter', sans-serif;
+}
+
+.wateringDeleteDialog__icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 14px;
+}
+
+.wateringDeleteDialog__card h2 {
+  margin: 0;
+  color: #2d2d2d;
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  text-align: center;
+}
+
+.wateringDeleteDialog__card > p {
+  margin: 10px 0 20px;
+  color: #777;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.wateringDeleteDialog__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wateringDeleteDialog__actions button {
+  min-height: 42px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.wateringDeleteDialog__cancel {
+  background: #f2f2f0;
+  color: #4c4c48;
+}
+
+.wateringDeleteDialog__confirm {
+  background: #fbecec;
+  color: #a84444;
+}
+
+.wateringDeleteDialog__actions button:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .visiibleVareingPlant {
   position: fixed;
   left: 50%;
-  bottom: 0;
+  bottom: 8%;
   transform: translate(-50%, 24px) scale(0.96);
   width: 100%;
   max-width: 420px;
@@ -41,7 +114,7 @@
 
 .selectDayCheck {
   font-family: 'Inter', sans-serif;
-  font-size: 17px;
+  font-size: var(--font-size-base);
   font-weight: bolder;
   color: #2d2d2d;
   padding-top: 2%;
@@ -50,7 +123,7 @@
 
 .selectDayRelative {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 400;
   color: #8a8a8a;
 }
@@ -101,7 +174,7 @@
 
 .descriptionOfplantsPreview__name p {
   font-family: 'Inter', sans-serif;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: #8A8A8A;
   font-weight: 400;
   margin: 0;
@@ -111,7 +184,7 @@
 
 .selectDayPlants {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: #5c7163;
   margin: 0;
@@ -135,27 +208,97 @@
 
 .plantsPreview__item {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 8px;
   font-family: 'Inter', sans-serif;
-  font-size: 13px;
+  font-size: var(--font-size-md);
   color: #2d2d2d;
   background-color: #F7F5F2;
   padding: 2% 3%;
   border-radius: 14px;
   justify-content: space-between;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .plantsPreview__photoWrap {
   display: flex;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.plantsPreview__photoWrap>div:first-child {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #EFF3EC;
+}
+
+.plantsPreview__photoWrap>div:last-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+
+.plantsPreview__photoWrap img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.plantsPreview__name {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-md);
+  color: #2d2d2d;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.plantsPreview__item>div:last-child {
+  flex-shrink: 0;
+  margin-left: 8px;
+}
+
+.plantsPreview__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.plantsPreview__delete {
+  border: 0;
+  border-radius: 8px;
+  padding: 7px 9px;
+  background: #FBECEC;
+  color: #A84444;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.plantsPreview__delete:disabled {
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .classOfgetWateringTime {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: #7C9082;
   background-color: #EFF3EC;
+  margin: 0;
 }
 
 .plantsPreview__dot {
@@ -168,14 +311,14 @@
 
 .plantsPreview__name {
   font-family: 'Inter', sans-serif;
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: #2d2d2d;
   font-weight: 500;
 }
 
 .plantsPreview__location {
   margin-left: auto;
-  font-size: 11px;
+  font-size: var(--font-size-sm);
   color: #8a8a8a;
 }
 
@@ -191,7 +334,7 @@
 
 .headerselectDayEmpty {
   font-family: 'Inter', sans-serif;
-  font-size: 15px;
+  font-size: var(--font-size-base);
   font-weight: bolder;
   color: #2d2d2d;
   margin-bottom: 0;
@@ -199,7 +342,7 @@
 
 .selectDayEmpty p:nth-child(3) {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: #8a8a8a;
   text-align: center;
@@ -230,7 +373,7 @@
 
 .selectDayEmptyNext__label {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: #5a5a55;
   margin: 0;
@@ -239,14 +382,14 @@
 
 .selectDayEmptyNext__date {
   font-family: 'Inter', sans-serif;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   color: #5a5a55;
   margin: 0;
 }
 
 .selectDayEmptyNext__arrow {
-  font-size: 14px;
+  font-size: var(--font-size-md);
   color: #5c7163;
   line-height: 1;
 }
@@ -277,4 +420,17 @@
 
 .plantsPreview__dot--overdue {
   background: #e07a7a;
+}
+
+.plantsPreview__photoWrap img {
+  width: 40px;
+}
+
+.deletePlantWatered {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  color: #E85A4F;
+  background: none;
+  border: none;
+  height: min-content;
 }

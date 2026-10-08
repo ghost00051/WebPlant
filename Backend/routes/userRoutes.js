@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import UserController from "../controllers/userController.js"
 import { requireAdmin } from '../middleware/admin.js'
 import passkeyController from '../controllers/passkeyController.js'
+import notificationPreferenceController from '../controllers/notificationPreferenceController.js'
 import { requireAuth } from '../middleware/auth.js'
 
 const router = Router()
@@ -53,6 +54,16 @@ router.post("/logout", UserController.logout)
 
 router.get("/me", requireAuth, UserController.getCurrentUser)
 router.patch("/me", requireAuth, UserController.updateProfile)
+router.get(
+    '/me/notification-preferences',
+    requireAuth,
+    notificationPreferenceController.get
+)
+router.patch(
+    '/me/notification-preferences',
+    requireAuth,
+    notificationPreferenceController.update
+)
 router.get("/check-username", usernameCheckLimiter, UserController.checkUsername)
 
 router.get("/", requireAdmin, UserController.getAll)

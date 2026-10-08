@@ -1,0 +1,103 @@
+.pwaInstallHint {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 520px;
+    padding: 14px 44px 14px 14px;
+    position: relative;
+    border: 1px solid #E3E9E3;
+    border-radius: 16px;
+    background: #F2F6F1;
+    color: #2D2D2D;
+    font-family: 'Inter', sans-serif;
+}
+
+.pwaInstallHintIcon {
+    display: grid;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: 11px;
+    background: #DFE9E0;
+    color: #526A59;
+    font-size: var(--font-size-lg);
+    font-weight: 700;
+}
+
+.pwaInstallHintContent {
+    min-width: 0;
+}
+
+.pwaInstallHintTitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 650;
+    line-height: 1.4;
+}
+
+.pwaInstallHintDescription,
+.pwaInstallHintInstructions {
+    margin: 4px 0 0;
+    color: #656862;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.pwaInstallHintAction {
+    margin-top: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: #526A59;
+    font-family: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    text-align: left;
+    cursor: pointer;
+}
+
+.pwaInstallHintAction:focus-visible,
+.pwaInstallHintDismiss:focus-visible {
+    outline: 2px solid #526A59;
+    outline-offset: 3px;
+}
+
+.pwaInstallHintAction:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.pwaInstallHintDismiss {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #656862;
+    font-family: inherit;
+    font-size: var(--font-size-xl);
+    line-height: 1;
+    cursor: pointer;
+}
+
+@media (max-width: 480px) {
+    .pwaInstallHint {
+        gap: 10px;
+        padding: 12px 40px 12px 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pwaInstallHint {
+        scroll-behavior: auto;
+    }
+}

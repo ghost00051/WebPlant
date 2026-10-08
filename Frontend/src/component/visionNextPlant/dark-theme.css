@@ -1,0 +1,11 @@
+html[data-theme='dark'] .vision-overlay {
+    background: rgba(0, 0, 0, 0.58);
+}
+
+html[data-theme='dark'] .visiibleVareingPlant,
+html[data-theme='dark'] .plantsPreview__item,
+html[data-theme='dark'] .wateringDeleteDialog__card {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}

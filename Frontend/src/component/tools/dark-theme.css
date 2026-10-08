@@ -1,0 +1,9 @@
+html[data-theme='dark'] .toolsWrapper,
+html[data-theme='dark'] .tabbar {
+    background: var(--theme-page);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .tabbar li:not(.active) .tabbarButton img {
+    filter: brightness(0) invert(0.82);
+}

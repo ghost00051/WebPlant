@@ -7,17 +7,17 @@
     }
 
     .wateringPreset {
-        font-size: 13px;
+        font-size: var(--font-size-md);
         padding: 14px 10px;
     }
 
     .wateringWeekday {
-        font-size: 13px;
+        font-size: var(--font-size-md);
         padding: 0;
     }
 
     .headerOfBlockAddPlants {
-        font-size: 26px;
+        font-size: var(--font-size-2xl);
         margin-top: 40px;
         margin-bottom: 28px;
     }
@@ -34,7 +34,7 @@
     .numbersOfFirstStep,
     .numbersOfSecondStep,
     .numbersOfThirdStep {
-        font-size: 15px;
+        font-size: var(--font-size-base);
         padding: 6px 12px;
     }
 
@@ -47,25 +47,28 @@
     }
 
     .headerfirstStepCheck p:nth-child(1) {
-        font-size: 15px;
+        font-size: var(--font-size-base);
     }
 
     .headerfirstStepCheck p:nth-child(2) {
-        font-size: 13px;
+        font-size: var(--font-size-md);
     }
 }
 
 
 @media (min-width: 1024px) {
+    .addPlantPageHeader {
+        margin-top: 1%;
+    }
+
     .formForPlant {
         max-width: 600px;
         padding-bottom: 160px;
     }
 
     .headerOfBlockAddPlants {
-        font-size: 32px;
-        margin-top: 56px;
-        margin-bottom: 36px;
+        font-size: var(--font-size-3xl);
+        margin-top: 2%;
     }
 
     .firstStep,
@@ -81,17 +84,17 @@
     .numbersOfFirstStep,
     .numbersOfSecondStep,
     .numbersOfThirdStep {
-        font-size: 16px;
+        font-size: var(--font-size-base);
         padding: 6px 14px;
     }
 
     .headerfirstStepCheck p:nth-child(1) {
-        font-size: 16px;
+        font-size: var(--font-size-base);
         margin-bottom: 6px;
     }
 
     .headerfirstStepCheck p:nth-child(2) {
-        font-size: 14px;
+        font-size: var(--font-size-md);
         margin-bottom: 20px;
     }
 
@@ -101,38 +104,38 @@
     .presetPlantCheck,
     .blocksOfWeekDay {
         border-radius: 18px;
-        margin-bottom: 20px;
+        margin: 20px 0;
     }
 
     .addPhotoPlant p:nth-child(1),
     .headerOfaddNamePlant {
-        font-size: 16px;
+        font-size: var(--font-size-base);
     }
 
     .addPhotoPlant p:nth-child(2),
     .nameOfPlant p,
     .speciesName p {
-        font-size: 13px;
+        font-size: var(--font-size-md);
     }
 
     .addNamePlant input {
-        font-size: 14px;
+        font-size: var(--font-size-md);
         padding: 10px 14px;
     }
 
 
     .wateringPreset {
-        font-size: 13px;
+        font-size: var(--font-size-md);
         padding: 14px 10px;
     }
 
     .wateringWeekday {
-        font-size: 13px;
+        font-size: var(--font-size-md);
     }
 
     .nextSlidewatering,
     .backSlidewatering {
-        font-size: 15px;
+        font-size: var(--font-size-base);
         padding: 12px 0;
     }
 }
@@ -144,7 +147,7 @@
     }
 
     .headerOfBlockAddPlants {
-        font-size: 34px;
+        font-size: var(--font-size-3xl);
     }
 }
 
@@ -155,11 +158,11 @@
     }
 
     .toastTitle {
-        font-size: 16px;
+        font-size: var(--font-size-base);
     }
 
     .toastSubtitle {
-        font-size: 13px;
+        font-size: var(--font-size-md);
     }
 }
 

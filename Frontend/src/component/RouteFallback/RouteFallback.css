@@ -1,0 +1,49 @@
+.routeFallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-height: 100vh;
+    min-height: 100dvh;
+    background: #FAF8F5;
+    color: #526A59;
+    font-family: 'Inter', sans-serif;
+}
+
+.routeFallbackSpinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid #E4DED6;
+    border-top-color: #319197;
+    border-radius: 50%;
+    animation: routeFallbackSpin 0.8s linear infinite;
+}
+
+.routeFallbackText {
+    margin: 0;
+    font-size: var(--font-size-md, 0.875rem);
+    font-weight: 600;
+}
+
+@keyframes routeFallbackSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .routeFallbackSpinner {
+        animation-duration: 2.4s;
+    }
+}
+
+:root[data-theme='dark'] .routeFallback {
+    background: #1E1B1A;
+    color: #C9BFB6;
+}
+
+:root[data-theme='dark'] .routeFallbackSpinner {
+    border-color: #3A3431;
+    border-top-color: #E0A9BE;
+}

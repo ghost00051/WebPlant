@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddPlants from './addPlants.jsx'
 import BackBtn from '../../assets/BackBtn.svg'
+import { API_URL } from '../../utils/api.js'
 import './AddPlantPage.css'
+import './adaptiv.css'
+import './dark-theme.css'
 
-const API_URL = import.meta.env.VITE_API_URL ||
-    'https://server.checktheplants.ru/api'
 
 function AddPlantPage() {
     const navigate = useNavigate()
@@ -19,7 +20,7 @@ function AddPlantPage() {
             .then(response => {
                 if (!isMounted) return
                 if (response.status === 401 || response.status === 404) {
-                    navigate('/', { replace: true })
+                    navigate('/login', { replace: true })
                     return
                 }
                 if (!response.ok) {
@@ -32,23 +33,37 @@ function AddPlantPage() {
                 if (isMounted) setHasAuthError(true)
             })
 
-        return () => {
-            isMounted = false
-        }
+        return () => { isMounted = false }
     }, [navigate])
 
     if (hasAuthError) {
-        return <p className='addPlantPageStatus' role='alert'>Не удалось проверить вход. Обновите страницу и попробуйте ещё раз.</p>
+        return (
+            <main className='addPlantPage'>
+                <p className='addPlantPageStatus' role='alert'>
+                    Не удалось проверить вход. Обновите страницу и попробуйте ещё раз.
+                </p>
+            </main>
+        )
     }
 
     if (!isAuthorized) {
-        return <p className='addPlantPageStatus' role='status'>Проверка входа...</p>
+        return (
+            <main className='addPlantPage'>
+                <p className='addPlantPageStatus' role='status'>
+                    Проверка входа...
+                </p>
+            </main>
+        )
     }
 
     return (
         <main className='addPlantPage'>
             <header className='addPlantPageHeader'>
-                <button type='button' onClick={() => navigate('/home')} aria-label='Вернуться на главную'>
+                <button
+                    type='button'
+                    onClick={() => navigate('/home')}
+                    aria-label='Вернуться на главную'
+                >
                     <img src={BackBtn} alt='' />
                 </button>
                 <span>Добавить растение</span>

@@ -1,14 +1,14 @@
-const CACHE_NAME = 'ctp-v3'   // ⬆ поднял версию
+const CACHE_NAME = 'ctp-v4'
+
 
 const urlsToCache = [
     '/',
-    '/index.html',
-    '/manifest.json'
+    '/plants',
+    '/care',
+    '/manifest.json',
+    '/404.html'
 ]
 
-// =========================
-// INSTALL
-// =========================
 self.addEventListener('install', (event) => {
     console.log('🔧 SW: install')
     event.waitUntil(
@@ -25,9 +25,6 @@ self.addEventListener('install', (event) => {
     self.skipWaiting()
 })
 
-// =========================
-// ACTIVATE
-// =========================
 self.addEventListener('activate', (event) => {
     console.log('🔧 SW: activate')
     event.waitUntil(
@@ -42,18 +39,13 @@ self.addEventListener('activate', (event) => {
     self.clients.claim()
 })
 
-// =========================
-// FETCH (только GET, не API)
-// =========================
 self.addEventListener('fetch', (event) => {
     const req = event.request
 
-    // Не трогаем всё, кроме GET
     if (req.method !== 'GET') return
 
     const url = new URL(req.url)
 
-    // Не кешируем API, uploads и сторонние домены
     if (
         url.pathname.startsWith('/api/') ||
         url.pathname.startsWith('/uploads/') ||
@@ -67,38 +59,40 @@ self.addEventListener('fetch', (event) => {
             const cached = await caches.match(req)
             if (cached) return cached
 
-            // Фолбэк для навигации — отдаём SPA-оболочку
             if (req.mode === 'navigate') {
-                return caches.match('/index.html')
+                const fallback =
+                    (await caches.match(req, { ignoreSearch: true })) ||
+                    (await caches.match('/404.html'))
+                if (fallback) return fallback
+                return new Response('Нет подключения к сети', {
+                    status: 503,
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+                })
             }
             return new Response('', { status: 504, statusText: 'Offline' })
         })
     )
 })
 
-// =========================
-// PUSH
-// =========================
 self.addEventListener('push', (event) => {
     console.log('📬 SW: push received')
 
     let data = {
         title: 'CheckThePlants',
         body: 'Новое уведомление',
-        icon: '/icon-192.png',
-        badge: '/badge-72.png',
+        icon: '/icons/icon-192.png',
+        badge: '/icons/icon-192.png',
         data: {}
     }
 
     if (event.data) {
         try {
             data = { ...data, ...event.data.json() }
-        } catch (e) {
+        } catch {
             data.body = event.data.text()
         }
     }
 
-    // Уникальный tag на растение — иначе плашки схлопываются между растениями
     const tag = data.data?.tag
         ? `plant-${data.data.plantId ?? 'x'}-${data.data.tag}`
         : `plant-${data.data?.plantId ?? Date.now()}`
@@ -109,7 +103,7 @@ self.addEventListener('push', (event) => {
             icon: data.icon,
             badge: data.badge,
             tag,
-            renotify: true,              // перезаписывать существующую с тем же tag
+            renotify: true,
             vibrate: [200, 100, 200],
             data: data.data || {},
             requireInteraction: false,
@@ -120,23 +114,23 @@ self.addEventListener('push', (event) => {
     )
 })
 
-// =========================
-// NOTIFICATION CLICK
-// =========================
 self.addEventListener('notificationclick', (event) => {
     console.log('👆 SW: notification click', event.action)
     event.notification.close()
 
-    // Кнопка "Открыть" или клик по телу — ведём на url
-    const urlToOpen = event.notification.data?.url || '/'
+    const targetUrl = new URL(
+        event.notification.data?.url || '/home',
+        self.location.origin
+    )
+    const urlToOpen = targetUrl.origin === self.location.origin
+        ? targetUrl.href
+        : new URL('/home', self.location.origin).href
 
     event.waitUntil(
         self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-            // Если есть открытое окно — фокусируем и навигируем
             for (const client of clientList) {
                 if (client.url.startsWith(self.location.origin) && 'focus' in client) {
-                    client.navigate(urlToOpen)
-                    return client.focus()
+                    return client.navigate(urlToOpen).then(() => client.focus())
                 }
             }
             if (self.clients.openWindow) {
@@ -146,31 +140,36 @@ self.addEventListener('notificationclick', (event) => {
     )
 })
 
-// =========================
-// PUSH SUBSCRIPTION CHANGE
-// =========================
-// Браузер сам пересоздал подписку (например, после смены VAPID).
-// Нужно переподписаться и отправить новый endpoint на бэк.
 self.addEventListener('pushsubscriptionchange', (event) => {
     console.log('🔄 SW: pushsubscriptionchange')
 
     event.waitUntil((async () => {
         try {
-            // Пытаемся получить VAPID-ключ с бэка
-            const res = await fetch('/api/push/vapid-public-key', { credentials: 'include' })
+            const res = await fetch('/api/push/vapid-public-key', {
+                credentials: 'include'
+            })
+            if (!res.ok) {
+                throw new Error(`VAPID key request failed: HTTP ${res.status}`)
+            }
             const { publicKey } = await res.json()
+            if (typeof publicKey !== 'string' || !publicKey) {
+                throw new Error('Server did not return a VAPID public key')
+            }
 
             const sub = await self.registration.pushManager.subscribe({
                 userVisibleOnly: true,
                 applicationServerKey: urlBase64ToUint8Array(publicKey)
             })
 
-            await fetch('/api/push/subscribe', {
+            const saved = await fetch('/api/push/subscribe', {
                 method: 'POST',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ subscription: sub.toJSON() })
             })
+            if (!saved.ok) {
+                throw new Error(`Saving push subscription failed: HTTP ${saved.status}`)
+            }
             console.log('✅ SW: подписка пересоздана и сохранена')
         } catch (e) {
             console.error('❌ SW: pushsubscriptionchange error:', e)
@@ -178,7 +177,6 @@ self.addEventListener('pushsubscriptionchange', (event) => {
     })())
 })
 
-// Хелпер — дублирует функцию из pushClient.js, т.к. SW не имеет доступа к модулям
 function urlBase64ToUint8Array(base64String) {
     const padding = '='.repeat((4 - base64String.length % 4) % 4)
     const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')

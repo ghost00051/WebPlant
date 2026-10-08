@@ -1,0 +1,5 @@
+html[data-theme='dark'] .gofOfMain,
+html[data-theme='dark'] .screenTransition {
+    background: var(--theme-page);
+    color: var(--theme-text);
+}
