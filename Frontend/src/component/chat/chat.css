@@ -22,9 +22,9 @@ body.keyboard-open .chatWindow {
     padding-bottom: 0;
 }
 
-body.keyboard-open .chatInputArea {
+/* body.keyboard-open .chatInputArea {
     padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-}
+} */
 
 .chatHeader {
     flex-shrink: 0;

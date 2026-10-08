@@ -9,3 +9,23 @@ html[data-theme='dark'] .mini-calendar__day.is-selected {
     background: var(--theme-accent-soft);
     color: var(--theme-text);
 }
+
+@media (min-width: 1024px) {
+    html[data-theme='dark'] .mini-calendar__month-day {
+        color: var(--theme-text);
+    }
+
+    html[data-theme='dark'] .mini-calendar__month-day.is-outside {
+        color: var(--theme-muted);
+    }
+
+    html[data-theme='dark'] .mini-calendar__month-day.is-watering-day:not(.is-today) {
+        border-color: var(--theme-border);
+        background: var(--theme-accent-soft);
+        color: var(--theme-text);
+    }
+
+    html[data-theme='dark'] .mini-calendar__desktop-legend {
+        color: var(--theme-muted);
+    }
+}

@@ -3,6 +3,7 @@ import EmptyIcon from '../../assets/EmptyIcon.svg'
 import chevronRight from '../../assets/chevron-right.svg'
 import plantPlaceholder from '../../assets/PlantTile.svg'
 import './visionNextPlant.css'
+import './adaptiv.css'
 import './dark-theme.css'
 import IconCircle from '../../assets/IconCircle.svg'
 
@@ -189,8 +190,8 @@ function VisionNextPlant({
                 <>
                   <p>Цикл:</p>
                   <p>{formatWateringCycle(plant.watering_interval_days)}</p>
-                  <span />
-                  <p>{plant.species}</p>
+                  {/* <span />
+                  <p>{plant.species}</p> */}
                 </>
               )}
             </div>

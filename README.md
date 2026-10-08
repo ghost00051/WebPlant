@@ -360,6 +360,15 @@ psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
   -v ON_ERROR_STOP=1 -f Backend/migrations/20261006_create_notifications.sql
 ```
 
+В PowerShell (из каталога `Backend`) эту миграцию можно применить так:
+
+```powershell
+Get-Content .\migrations\20261006_create_notifications.sql -Raw | docker-compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
+```
+
+После успешной миграции перезапустите backend командой
+`docker-compose restart backend`.
+
 ### Cookie согласия
 
 #### GET /api/cookie-consents/
@@ -645,6 +654,28 @@ psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
 ```
 
 Планировщик отправляет сводку ежедневно в 09:00 по Москве пользователям, включившим её в профиле и имеющим активную push-подписку. В неё входят активные растения, запланированные к поливу до конца текущего московского дня. Миграция также создаёт аккаунтную настройку темы: светлая, тёмная или системная. Системный режим автоматически следует настройке ОС и синхронизируется между устройствами.
+
+Для уведомлений (таблица `notifications`) примените миграцию до запуска backend:
+
+```bash
+psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
+  -v ON_ERROR_STOP=1 -f Backend/migrations/20261006_create_notifications.sql
+```
+
+### Доступ к pgAdmin из локальной сети
+
+Compose публикует pgAdmin на `5050` всех интерфейсах по умолчанию. Чтобы
+ограничить доступ LAN-интерфейсом сервера (например, `192.168.0.103`), задайте
+`PGADMIN_BIND_ADDRESS=192.168.0.103` в `Backend/.env`, затем из каталога
+`Backend` выполните:
+
+```powershell
+docker-compose -f docker-compose.yml -f docker-compose.pgadmin.yml up -d pgadmin
+```
+
+После этого откройте `http://192.168.0.103:5050` с клиентских компьютеров.
+Если подключения нет, разрешите входящий TCP-порт `5050` в firewall сервера
+только для локальной сети. Не публикуйте HTTP-доступ к pgAdmin в интернет.
 
 После первого деплоя этой версии существующие remember-me JWT без идентификатора серверной сессии будут отклонены; пользователям потребуется войти один раз заново.
 

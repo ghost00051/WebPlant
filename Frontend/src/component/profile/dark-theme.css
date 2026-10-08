@@ -29,3 +29,13 @@ html[data-theme='dark'] .selectThemeColor button.is-active {
 html[data-theme='dark'] .themeModeDescription {
     color: var(--theme-muted);
 }
+
+html[data-theme='dark'] .descritpionOfProfile .adminProfileBadge {
+    background-color: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminPushLoading {
+    color: var(--theme-muted);
+}

@@ -313,3 +313,7 @@
 .dot--overdue {
   background: #e07a7a;
 }
+
+.mini-calendar__desktop-view {
+  display: none;
+}

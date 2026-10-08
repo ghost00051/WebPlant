@@ -8,6 +8,15 @@
   margin-bottom: 20px;
 }
 
+.desktopDashboardHeader {
+  display: none;
+}
+
+.desktopDashboardAssistant,
+.check-button span {
+  display: none;
+}
+
 .homePageDashboard {
   box-sizing: border-box;
   width: 100%;
@@ -457,7 +466,7 @@
 .veryChildOfchildOfmenuOfSoffSchedule {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0px;
 }
 
 .veryChildOfchildOfmenuOfSoffSchedule div {
@@ -513,34 +522,6 @@
   border-radius: 8px;
   flex-shrink: 0;
   object-fit: cover;
-}
-
-@media (min-width: 1024px) {
-  .homePageGrid {
-    grid-template-columns: minmax(360px, 0.9fr) minmax(0, 1.1fr);
-    grid-template-areas:
-      "calendar watering"
-      "off-schedule watering";
-    align-items: start;
-    gap: 24px;
-  }
-
-  .homePageGrid > .mini-calendar {
-    grid-area: calendar;
-  }
-
-  .homePageWatering {
-    grid-area: watering;
-    min-width: 0;
-  }
-
-  .homePageGrid > .offScheduleWatering {
-    grid-area: off-schedule;
-  }
-
-  .headerNotificiotinsOfHomePAge {
-    padding: 0 0 12px;
-  }
 }
 
 @media (max-width: 480px) {

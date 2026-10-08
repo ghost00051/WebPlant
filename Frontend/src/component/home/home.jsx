@@ -9,10 +9,14 @@ import {
 import Tools from '../tools/tools.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
+import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
+import LogoMark from '../../assets/LogoMark.svg'
+import Notification from '../../assets/NotifBtn.svg'
 import './home.css'
+import './home.desktop.css'
 import './dark-theme.css'
 
 function Home() {
@@ -91,11 +95,11 @@ function Home() {
     const renderScreen = () => {
         switch (activeTab) {
             case 'home':
-                return <HomePage />
+                return <HomePage user={user} onTabChange={setActiveTab} />
             case 'profile':
                 return <Profile />
             default:
-                return <HomePage />
+                return <HomePage user={user} onTabChange={setActiveTab} />
         }
     }
 
@@ -110,20 +114,66 @@ function Home() {
     if (activeTab === 'chat') {
         return (
             <>
-                <Chat />
-                <Tools onTabChange={handleTabChange} activeTab={activeTab} />
-                {showPrompt && (
-                    <NotificationPrompt
-                        userId={user.id}
-                        onClose={() => setShowPrompt(false)}
-                    />
-                )}
+                <div className='godOfBlocksChat'>
+                    <header className="desktopAppHeader">
+                        <div className="desktopBrand">
+                            <img src={LogoMark} alt="" />
+                            <span>Лейка</span>
+                        </div>
+                        <div className="desktopAccount">
+                            <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                            <button
+                                type="button"
+                                className="desktopProfileButton"
+                                onClick={() => setActiveTab('profile')}
+                            >
+                                <span className="desktopAvatar">
+                                    {(user.name || user.username || user.email || '?').charAt(0).toUpperCase()}
+                                </span>
+                                <span className="desktopProfileText">
+                                    <strong>{user.name || user.username || user.email}</strong>
+                                    <small>Садовод-любитель</small>
+                                </span>
+                            </button>
+                        </div>
+                    </header>
+                    <HistoryChat />
+                    <Chat />
+                    <Tools onTabChange={handleTabChange} activeTab={activeTab} />
+                    {showPrompt && (
+                        <NotificationPrompt
+                            userId={user.id}
+                            onClose={() => setShowPrompt(false)}
+                        />
+                    )}
+                </div>
             </>
         )
     }
-
     return (
         <div className="gofOfMain">
+            <header className="desktopAppHeader">
+                <div className="desktopBrand">
+                    <img src={LogoMark} alt="" />
+                    <span>Лейка</span>
+                </div>
+                <div className="desktopAccount">
+                    <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                    <button
+                        type="button"
+                        className="desktopProfileButton"
+                        onClick={() => setActiveTab('profile')}
+                    >
+                        <span className="desktopAvatar">
+                            {(user.name || user.username || user.email || '?').charAt(0).toUpperCase()}
+                        </span>
+                        <span className="desktopProfileText">
+                            <strong>{user.name || user.username || user.email}</strong>
+                            <small>Садовод-любитель</small>
+                        </span>
+                    </button>
+                </div>
+            </header>
             <div key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}

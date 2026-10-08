@@ -1,0 +1,565 @@
+.adminPushPanel {
+    box-sizing: border-box;
+    margin: 16px clamp(12px, 4vw, 24px) 0;
+    padding: clamp(16px, 4vw, 24px);
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    font-family: 'Inter', sans-serif;
+    color: #2D2D2D;
+}
+
+.adminPushPanel h2 {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: #2D2D2D;
+}
+
+.adminPushPanel *,
+.adminPushPanel *::before,
+.adminPushPanel *::after {
+    box-sizing: border-box;
+}
+
+.adminPushMessage {
+    margin: 12px 0 0;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+    color: #5A5A5A;
+}
+
+.adminPushError {
+    color: #B42318;
+}
+
+.adminPushSuccess {
+    color: #2F6B45;
+}
+
+.adminPushWarning {
+    padding: 12px 14px;
+    border: 1px solid #E7C7A0;
+    border-radius: 14px;
+    background-color: #FDF4E7;
+    color: #8A4B08;
+    font-weight: 500;
+}
+
+.adminPushStats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.adminPushStat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 8px;
+    background-color: #F5F3EF;
+    border-radius: 16px;
+    text-align: center;
+}
+
+.adminPushStatValue {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: bold;
+    color: #2D2D2D;
+}
+
+.adminPushStatLabel {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: #8A8A8A;
+    line-height: 1.35;
+}
+
+.adminPushForm {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.adminPushFieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.adminPushFieldset legend {
+    padding: 0;
+    margin-bottom: 8px;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminPushModeSwitch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.adminPushModeSwitch button {
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-md);
+    cursor: pointer;
+}
+
+.adminPushModeSwitch button.is-active {
+    border-color: #7C9082;
+    background: #E8F5E9;
+    color: #35463B;
+    font-weight: 600;
+}
+
+.adminPushCheckbox {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: var(--font-size-md);
+    color: #2D2D2D;
+    cursor: pointer;
+}
+
+.adminPushCheckbox input {
+    width: 18px;
+    height: 18px;
+    margin: 0;
+    accent-color: #7C9082;
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.adminPushRecipients {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background-color: #F5F3EF;
+    border-radius: 16px;
+}
+
+.adminPushRecipientsToolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.adminPushSelectedCount {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: #35463B;
+}
+
+.adminPushRecipientsActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.adminPushRecipientsList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.adminPushRecipient {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background-color: #FFFFFF;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.adminPushRecipientStatic {
+    cursor: default;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.adminPushRecipient input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    margin: 3px 0 0;
+    flex: 0 0 auto;
+    accent-color: #7C9082;
+    cursor: pointer;
+}
+
+.adminPushRecipientInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.adminPushRecipientName {
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminPushRecipientMeta {
+    font-size: var(--font-size-sm);
+    color: #8A8A8A;
+    overflow-wrap: anywhere;
+}
+
+.adminPushRecipientSubs {
+    font-size: var(--font-size-xs);
+    color: #7C9082;
+}
+
+.adminPushRecipientNoPush {
+    color: #B26A00;
+}
+
+.adminPushSelected {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px dashed #DDD8CE;
+}
+
+.adminPushSelectedTitle {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: #5A5A5A;
+}
+
+.adminPushRemoveButton {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid #E5E5E5;
+    border-radius: 10px;
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.adminPushFields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.adminPushField {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.adminPushFieldLabel {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminPushCounter {
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    color: #8A8A8A;
+}
+
+.adminPushField input[type='text'],
+.adminPushField input[type='search'],
+.adminPushField textarea,
+.adminPushScheduleRow input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background-color: #F5F3EF;
+    color: #2D2D2D;
+    font: inherit;
+    font-size: var(--font-size-md);
+}
+
+.adminPushField textarea {
+    resize: vertical;
+    min-height: 88px;
+    line-height: 1.45;
+}
+
+.adminPushField input:focus-visible,
+.adminPushField textarea:focus-visible,
+.adminPushScheduleRow input:focus-visible {
+    outline: 2px solid #7C9082;
+    outline-offset: 1px;
+}
+
+.adminPushHint {
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+}
+
+.adminPushScheduleRow {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.adminPushScheduleRow input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.adminPushSecondaryButton {
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.adminPushSecondaryButton:disabled,
+.adminPushRemoveButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.adminPushPreviewCard {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-top: 8px;
+    padding: 14px;
+    border: 1px solid #E5E5E5;
+    border-radius: 16px;
+    background-color: #FFFFFF;
+    box-shadow: 0 6px 18px rgba(45, 45, 45, 0.08);
+}
+
+.adminPushPreviewIcon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    flex: 0 0 auto;
+}
+
+.adminPushPreviewBody {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.adminPushPreviewHeading {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminPushPreviewTitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminPushPreviewText {
+    margin: 4px 0 0;
+    font-size: var(--font-size-sm);
+    color: #5A5A5A;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.adminPushPreviewUrl {
+    margin: 6px 0 0;
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+    overflow-wrap: anywhere;
+}
+
+.adminPushSubmitButton {
+    min-height: 48px;
+    width: 100%;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 14px;
+    background-color: #E8F5E9;
+    color: #2D2D2D;
+    font: inherit;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.adminPushSubmitButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.adminPushRecent {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #EFEBE4;
+}
+
+.adminPushRecentList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.adminPushRecentItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background-color: #F5F3EF;
+    border-radius: 12px;
+}
+
+.adminPushRecentMain {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.adminPushRecentTitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminPushRecentMeta,
+.adminPushRecentCounts {
+    margin: 4px 0 0;
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+}
+
+.adminPushStatusPending {
+    color: #8A4B08;
+    font-weight: 600;
+}
+
+.adminPushStatusSending {
+    color: #1B5FA8;
+    font-weight: 600;
+}
+
+.adminPushStatusSent {
+    color: #2F6B45;
+    font-weight: 600;
+}
+
+.adminPushStatusFailed {
+    color: #B42318;
+    font-weight: 600;
+}
+
+.adminPushStatusCanceled {
+    color: #8A8A8A;
+    font-weight: 600;
+}
+
+.adminPushCancelButton {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid #E7C7A0;
+    border-radius: 10px;
+    background-color: #FDF4E7;
+    color: #8A4B08;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.adminPushCancelButton:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+@media (max-width: 560px) {
+    .adminPushStats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .adminPushScheduleRow {
+        flex-direction: column;
+    }
+
+    .adminPushScheduleRow .adminPushSecondaryButton {
+        width: 100%;
+    }
+
+    .adminPushRecentItem {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .adminPushCancelButton {
+        width: 100%;
+    }
+}
+
+@media (max-width: 380px) {
+    .adminPushModeSwitch {
+        grid-template-columns: 1fr;
+    }
+
+    .adminPushRecipientsToolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .adminPushRecipientsActions {
+        flex-direction: column;
+    }
+
+    .adminPushRecipientsActions .adminPushSecondaryButton {
+        width: 100%;
+    }
+}

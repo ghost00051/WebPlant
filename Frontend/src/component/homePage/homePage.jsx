@@ -8,6 +8,7 @@ import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
+import CalendarIcon from '../../assets/CalendarIcon.svg'
 import { API_URL } from '../../utils/api.js'
 import {
   dayOfMonth,
@@ -21,11 +22,12 @@ import {
 } from '../../utils/date.js'
 
 import './homePage.css'
+import './homePage.desktop.css'
 import './dark-theme.css'
 
 const EXIT_MS = 420
 
-function HomePage() {
+function HomePage({ user, onTabChange }) {
   const navigate = useNavigate()
   const [plant, setPlant] = useState([])
   const [allPlants, setAllPlants] = useState([])
@@ -232,20 +234,21 @@ function HomePage() {
     }
   }
 
+  const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
   const hours = now.getHours()
   const greeting = hours >= 5 && hours < 12
     ? 'Доброе утро!'
     : hours >= 12 && hours < 18
       ? 'Добрый день!'
       : 'Добрый вечер!'
+  const dateLabel = `${capitalize(weekdayName(now))}, ${dayOfMonth(now)} ${monthGenitive(now)}`
+  const displayName = user?.name || user?.username || 'садовод'
 
   const allPlantsMap = useMemo(() => {
     const map = new Map()
     for (const p of allPlants) map.set(p.id, p)
     return map
   }, [allPlants])
-
-  const capitalize = s => s.charAt(0).toUpperCase() + s.slice(1)
 
   const buildDay = useCallback((date) => {
     const target = toDate(date)
@@ -335,6 +338,16 @@ function HomePage() {
           <img src={Notification} alt='уведомления' />
         </div>
       </div>
+      <div className='desktopDashboardHeader'>
+        <div>
+          <h1>Мои растения</h1>
+          <p>{greeting.replace('!', '')}, {displayName} · {dateLabel}</p>
+        </div>
+        <span className='desktopDateBadge'>
+          <img src={CalendarIcon} alt='' />
+          Сегодня, {dayOfMonth(now)} {monthGenitive(now)}
+        </span>
+      </div>
       <div className='homePageGrid'>
         <MiniCalendar
           ref={calendarRef}
@@ -417,6 +430,7 @@ function HomePage() {
                       aria-label={`Отметить, что «${item.name}» полит`}
                     >
                       <img src={check} alt='' />
+                      <span>Полить</span>
                     </button>
                   </div>
                 )
@@ -465,6 +479,18 @@ function HomePage() {
             )}
           </div>
         </section>
+        <button
+          type='button'
+          className='desktopDashboardAssistant'
+          onClick={() => onTabChange?.('chat')}
+        >
+          <img src={IconTile} alt='' />
+          <span>
+            <strong>Спросить ИИ-помощника</strong>
+            <small>Подскажет, когда и как поливать ваши растения</small>
+          </span>
+          <img className='desktopAssistantChevron' src={chevronleft} alt='' />
+        </button>
       </div>
       <VisionNextPlant
         active={!!selectedDay}

@@ -57,6 +57,10 @@
 
 
 @media (min-width: 1024px) {
+    .addPlantPageHeader {
+        margin-top: 1%;
+    }
+
     .formForPlant {
         max-width: 600px;
         padding-bottom: 160px;
@@ -64,8 +68,7 @@
 
     .headerOfBlockAddPlants {
         font-size: var(--font-size-3xl);
-        margin-top: 56px;
-        margin-bottom: 36px;
+        margin-top: 2%;
     }
 
     .firstStep,
@@ -101,7 +104,7 @@
     .presetPlantCheck,
     .blocksOfWeekDay {
         border-radius: 18px;
-        margin-bottom: 20px;
+        margin: 20px 0;
     }
 
     .addPhotoPlant p:nth-child(1),

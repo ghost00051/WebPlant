@@ -72,6 +72,27 @@
     overflow-wrap: anywhere;
 }
 
+/* Бейдж роли: виден только администратору. */
+.descritpionOfProfile .adminProfileBadge {
+    align-self: flex-start;
+    margin: 8px 0 0;
+    padding: 3px 10px;
+    border-radius: 999px;
+    background-color: #E8F5E9;
+    border: 1px solid #A5C9AB;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-xs, 12px);
+    font-weight: 600;
+    color: #4F7A57;
+}
+
+.adminPushLoading {
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    color: #8A8A8A;
+    margin: 16px 0;
+}
+
 .buttonOfEdProfile {
     display: flex;
     min-height: 44px;

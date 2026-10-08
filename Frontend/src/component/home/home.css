@@ -8,6 +8,10 @@
     box-sizing: border-box;
 }
 
+.desktopAppHeader {
+    display: none;
+}
+
 
 .screenTransition {
     padding-top: 30px;

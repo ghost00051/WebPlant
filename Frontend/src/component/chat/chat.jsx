@@ -154,7 +154,6 @@ function Chat() {
                     <img src={IconMenu} alt="" />
                 </button>
             </div>
-
             <div className='chatMessages' ref={listRef}>
                 {messages.map((m) => (
                     <div
@@ -184,7 +183,6 @@ function Chat() {
                 )}
                 <div ref={bottomRef} />
             </div>
-
 
             <div className='chatInputArea'>
                 <div className='chatInputWrapper'>

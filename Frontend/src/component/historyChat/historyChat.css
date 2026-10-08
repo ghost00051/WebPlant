@@ -1,0 +1,34 @@
+.HistoryChat {
+    padding: 16px 10px;
+    border-right: 1px solid #e9e5df;
+    background: #fff;
+}
+
+.headerOfHistoryChat {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: max-content;
+    gap: 50px;
+}
+
+.headerOfHistoryChat p {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    color: #2D2D2D;
+    margin: 0;
+}
+
+.headerOfHistoryChat img {
+    width: 25px;
+    height: 25px;
+}
+
+.mainOfHistoryChat {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 400;
+    color: #ffd000;
+    margin: 0;
+}

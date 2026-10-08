@@ -2,9 +2,11 @@ import Plus from '../../../img/plus-circle.svg'
 import Message from '../../../img/message-circle.svg'
 import Home from '../../../img/Home.svg'
 import Chat from '../../../img/user.svg'
+import IconTile from '../../assets/IconTile.svg'
 import '../tools/tools.css'
 import './dark-theme.css'
 import './adaptiv.css'
+import './tools.desktop.css'
 
 const TABS = [
     { id: 'home', icon: Home, label: 'Главная' },
@@ -43,6 +45,17 @@ function Tools({ onTabChange, activeTab }) {
                     ))}
                 </ul>
             </nav>
+            <button
+                type="button"
+                className="desktopAssistantLink"
+                onClick={() => onTabChange?.('chat')}
+            >
+                <img src={IconTile} alt="" />
+                <span>
+                    <strong>Спросить ИИ-помощника</strong>
+                    <small>Подскажет, когда и как поливать</small>
+                </span>
+            </button>
         </div>
     )
 }

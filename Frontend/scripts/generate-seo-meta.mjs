@@ -69,7 +69,7 @@ function serialize({ plantMeta, articleMeta, plantNav, articleNav }) {
     ''
   ].join('\n')
 
-  return header + body
+  return body
 }
 
 const vite = await createServer({

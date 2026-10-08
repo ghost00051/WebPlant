@@ -1,12 +1,14 @@
-body.keyboard-open .toolsWrapper {
-    display: none !important;
+@media (max-width: 1023px) {
+    body.keyboard-open .toolsWrapper {
+        display: none !important;
+    }
 }
 
-body.vision-open .toolsWrapper {
+/* body.vision-open .toolsWrapper {
     transform: translateY(110%);
     opacity: 0;
     pointer-events: none;
-}
+} */
 
 .toolsWrapper {
     position: fixed;
@@ -126,4 +128,8 @@ body.vision-open .toolsWrapper {
     white-space: nowrap;
     pointer-events: none;
     transition: color 0.25s ease;
+}
+
+.desktopAssistantLink {
+    display: none;
 }

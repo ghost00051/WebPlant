@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './profile.css'
 import Pencil from '../../assets/pencil.svg'
@@ -18,6 +18,10 @@ import {
 import { API_URL } from '../../utils/api.js'
 import { useTheme } from '../../context/useTheme.js'
 import './dark-theme.css'
+
+// Панель администратора подгружается отдельным чанком и только для роли ADMIN:
+// обычные пользователи не скачивают её код и не видят разметку.
+const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
 
 function Profile() {
     const { theme, themeMode, setThemePreference } = useTheme()
@@ -310,6 +314,7 @@ function Profile() {
     }
 
     const displayName = profile.name?.trim() || profile.username || profile.email || '?'
+    const isAdmin = profile.role === 'ADMIN'
 
     return (
         <div className='profilePage'>
@@ -324,6 +329,7 @@ function Profile() {
                     <div className='descritpionOfProfile'>
                         <p>{displayName}</p>
                         <p>{profile.email}</p>
+                        {isAdmin && <p className='adminProfileBadge'>Администратор</p>}
                     </div>
                 </div>
                 <Link to="/edit-profile" className='buttonOfEdProfile'>
@@ -375,6 +381,11 @@ function Profile() {
                     <p>Поливов вовремя</p>
                 </div>
             </div>
+            {isAdmin && (
+                <Suspense fallback={<p className='adminPushLoading' role='status'>Загружаем панель администратора…</p>}>
+                    <AdminPushPanel />
+                </Suspense>
+            )}
             <div>
                 <div className='gofOfHeaderOfAllPlants'>
                     <p className='HeaderOfAllPlants'>Мои растения</p>

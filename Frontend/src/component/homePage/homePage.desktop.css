@@ -1,0 +1,263 @@
+@media (min-width: 1024px) {
+  .homePageDashboard {
+    max-width: 1080px;
+    padding: 0 clamp(24px, 4vw, 56px);
+  }
+
+  .headerOfHOmePagw {
+    display: none;
+  }
+
+  .desktopDashboardHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    margin: 0 0 22px;
+  }
+
+  .desktopDashboardHeader h1 {
+    margin: 0;
+    color: #2d2d2d;
+    font-size: clamp(24px, 2vw, 30px);
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  .desktopDashboardHeader p {
+    margin: 4px 0 0;
+    color: #96928d;
+    font-size: 13px;
+  }
+
+  .desktopDateBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #eef2eb;
+    color: #718578;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  .desktopDateBadge img {
+    width: 14px;
+    height: 14px;
+  }
+
+  .homePageGrid {
+    grid-template-columns: minmax(350px, 0.92fr) minmax(0, 1.08fr);
+    grid-template-areas:
+      "calendar watering"
+      "calendar off-schedule"
+      "calendar assistant";
+    align-items: start;
+    gap: 16px;
+  }
+
+  .mini-calendar {
+    grid-area: calendar;
+    padding: 18px;
+    border: 1px solid #ebe8e3;
+    border-radius: 18px;
+    box-shadow: none;
+  }
+
+  .homePageWatering {
+    grid-area: watering;
+    min-width: 0;
+    padding: 14px 16px 6px;
+    border: 1px solid #ebe8e3;
+    border-radius: 18px;
+    background: #fff;
+  }
+
+  .headerNotificiotinsOfHomePAge {
+    padding: 0 0 10px;
+  }
+
+  .headerNotificiotinsOfHomePAge p {
+    margin: 0;
+  }
+
+  .plantRender {
+    min-height: 70px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    border: 0;
+    border-radius: 14px;
+    background: #f7f5f2;
+    box-shadow: none;
+  }
+
+  .description {
+    gap: 12px;
+  }
+
+  .description img,
+  .description .no-photo {
+    width: 42px;
+    height: 42px;
+    border-radius: 11px;
+  }
+
+  .plant-name {
+    font-size: 14px;
+  }
+
+  .plant-details,
+  .watering-badge {
+    font-size: 11px;
+  }
+
+  .watering-badge {
+    padding: 3px 8px;
+    margin-top: 2px;
+  }
+
+  .watering-badge img {
+    width: 12px;
+    height: 12px;
+  }
+
+  .check-button {
+    width: auto;
+    height: 34px;
+    min-width: 74px;
+    gap: 5px;
+    padding: 0 11px;
+    border-radius: 10px;
+    color: #fff;
+  }
+
+  .check-button img {
+    width: 14px;
+    height: 14px;
+  }
+
+  .check-button span {
+    display: inline;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .offScheduleWatering {
+    grid-area: off-schedule;
+    padding: 14px 16px;
+    border: 1px solid #ebe8e3;
+    border-radius: 18px;
+    box-shadow: none;
+  }
+
+  .descriptioOfoffScheduleWatering {
+    justify-content: flex-start;
+    gap: 10px;
+  }
+
+  .descriptioOfoffScheduleWatering > img:first-child {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+  }
+
+  .descriptioOfoffScheduleWatering div {
+    min-width: 0;
+    margin-left: 0;
+  }
+
+  .descriptioOfoffScheduleWatering p:nth-child(1) {
+    margin: 0 0 2px;
+    font-size: 14px;
+    font-weight: 600;
+  }
+
+  .descriptioOfoffScheduleWatering p:nth-child(2) {
+    font-size: 11px;
+  }
+
+  .descriptioOfoffScheduleWatering > img:last-child {
+    width: 16px;
+    height: 16px;
+    margin-left: auto;
+    transform: rotate(180deg);
+  }
+
+  .godOfplantSoffSchedule {
+    margin-top: 10px;
+    padding: 9px 10px;
+    border-radius: 12px;
+  }
+
+  .desktopDashboardAssistant {
+    grid-area: assistant;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 68px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 17px;
+    background: #eeece6;
+    color: #30332f;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .desktopDashboardAssistant > img:first-child {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+  }
+
+  .desktopDashboardAssistant span {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .desktopDashboardAssistant strong {
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  .desktopDashboardAssistant small {
+    color: #92918b;
+    font-size: 11px;
+  }
+
+  .desktopDashboardAssistant .desktopAssistantChevron {
+    width: 16px;
+    height: 16px;
+    transform: rotate(180deg);
+  }
+}
+
+@media (min-width: 1024px) {
+  html[data-theme='dark'] .desktopDashboardHeader h1,
+  html[data-theme='dark'] .headerNotificiotinsOfHomePAge p,
+  html[data-theme='dark'] .descriptioOfoffScheduleWatering p:nth-child(1),
+  html[data-theme='dark'] .desktopDashboardAssistant {
+    color: var(--theme-text);
+  }
+
+  html[data-theme='dark'] .desktopDateBadge,
+  html[data-theme='dark'] .desktopDashboardAssistant,
+  html[data-theme='dark'] .plantRender {
+    background: var(--theme-accent-soft);
+  }
+
+  html[data-theme='dark'] .homePageWatering,
+  html[data-theme='dark'] .mini-calendar {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+  }
+
+  html[data-theme='dark'] .mini-calendar__month-day:not(.is-today) {
+    color: var(--theme-text);
+  }
+}

@@ -1,4 +1,3 @@
-
 export const PLANT_META = {
   "monstera": {
     "title": "Монстера (Monstera deliciosa): полив и уход — Лейка",
