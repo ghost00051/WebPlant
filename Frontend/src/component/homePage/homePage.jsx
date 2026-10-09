@@ -16,6 +16,7 @@ import {
   monthGenitive,
   monthNominative,
   relativeDayLabel,
+  resolveDayKind,
   toDate,
   toISODate,
   weekdayName,
@@ -121,7 +122,7 @@ function HomePage({ user, onTabChange }) {
     if (!Array.isArray(data.items)) throw new Error('Сервер вернул некорректную историю полива')
     const normalized = data.items.map(item => {
       const events = Array.isArray(item.events) ? item.events : []
-      const hasOverdue = events.some(e => e.kind === 'overdue')
+      const hasOverdue = events.some(e => e.kind === 'overdue' || e.kind === 'skipped')
       const hasWatered = events.some(e => e.kind === 'watered')
       return {
         date: item.date,
@@ -258,17 +259,16 @@ function HomePage({ user, onTabChange }) {
     const pastItem = historyMap.get(iso) ?? null
     const pastEvents = pastItem?.events ?? []
 
-    let kind = 'empty'
-    let plants = []
-    let events = []
+    const isPastDay = diffInDays(target, new Date()) < 0
+    const kind = resolveDayKind({
+      isPastDay,
+      hasSchedule: futurePlants.length > 0,
+      hasEvents: pastEvents.length > 0,
+      hasMissed: pastEvents.some(e => e.kind === 'overdue' || e.kind === 'skipped'),
+    })
 
-    if (futurePlants.length) {
-      kind = 'future'
-      plants = futurePlants
-    } else if (pastEvents.length) {
-      kind = 'past'
-      events = pastEvents
-    }
+    const plants = kind === 'future' ? futurePlants : []
+    const events = kind === 'past' ? pastEvents : []
 
     return {
       date: target,

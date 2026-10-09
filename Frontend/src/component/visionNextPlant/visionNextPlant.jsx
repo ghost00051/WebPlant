@@ -56,6 +56,21 @@ function formatWateringCycle(days) {
   return `каждые ${days} ${pluralizeDays(days)}`
 }
 
+// Насколько полив просрочен: дни, потом часы, потом плановое время,
+// если просрочка меньше часа.
+function getMissedTimeLabel(event) {
+  if (Number.isFinite(event?.days_late) && event.days_late > 0) {
+    return `${event.days_late} ${pluralizeDays(event.days_late)}`
+  }
+  if (Number.isFinite(event?.hours_late) && event.hours_late > 0) {
+    return `${event.hours_late} ч`
+  }
+  if (event?.scheduled_for) {
+    return getPastTime(event.scheduled_for)
+  }
+  return '—'
+}
+
 function VisionNextPlant({
   active,
   day,
@@ -84,6 +99,7 @@ function VisionNextPlant({
   const localEvents = day?.events ?? []
   const wateredEvents = localEvents.filter(e => e.kind === 'watered')
   const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
+  const skippedEvents = localEvents.filter(e => e.kind === 'skipped')
 
   let counterLabel = ''
   if (isFuture) {
@@ -102,8 +118,15 @@ function VisionNextPlant({
     if (overdueEvents.length) {
       parts.push(
         overdueEvents.length === 1
+          ? '1 просрочено'
+          : `${overdueEvents.length} просрочено`
+      )
+    }
+    if (skippedEvents.length) {
+      parts.push(
+        skippedEvents.length === 1
           ? '1 пропущено'
-          : `${overdueEvents.length} пропущено`
+          : `${skippedEvents.length} пропущено`
       )
     }
     counterLabel = parts.join(' · ') || 'Событий нет'
@@ -153,8 +176,10 @@ function VisionNextPlant({
     wateringLogId
   }) => {
     const isOverdue = variant === 'overdue'
+    const isSkipped = variant === 'skipped'
     const isWatered = variant === 'watered'
     const isFutureRow = variant === 'future'
+    const isMissed = isOverdue || isSkipped
 
     return (
       <li key={key} className='plantsPreview__item' >
@@ -178,10 +203,10 @@ function VisionNextPlant({
                   {plant.species && <p>{plant.species}</p>}
                 </>
               )}
-              {isOverdue && (
+              {isMissed && (
                 <>
                   <p className='descriptionOfplantsPreview__name--overdue'>
-                    Пропущено
+                    {isSkipped ? 'Пропущено' : 'Просрочено'}
                   </p>
                   {plant.species && <p>{plant.species}</p>}
                 </>
@@ -202,7 +227,7 @@ function VisionNextPlant({
             className={[
               'classOfgetWateringTime',
               isWatered && 'classOfgetWateringTime--past',
-              isOverdue && 'classOfgetWateringTime--overdue',
+              isMissed && 'classOfgetWateringTime--overdue',
             ].filter(Boolean).join(' ')}
           >
             {timeLabel}
@@ -313,10 +338,13 @@ function VisionNextPlant({
               <ul className='plantsPreview'>
                 {overdueEvents.map((ev, i) => renderPlantRow(ev.plant, {
                   variant: 'overdue',
-                  timeLabel: ev.days_late > 0
-                    ? `${ev.days_late} ${pluralizeDays(ev.days_late)}`
-                    : '—',
+                  timeLabel: getMissedTimeLabel(ev),
                   key: `overdue-${ev.plant.id}-${i}`,
+                }))}
+                {skippedEvents.map((ev, i) => renderPlantRow(ev.plant, {
+                  variant: 'skipped',
+                  timeLabel: getMissedTimeLabel(ev),
+                  key: `skipped-${ev.plant.id}-${i}`,
                 }))}
                 {wateredEvents.map((ev, i) => renderPlantRow(ev.plant, {
                   variant: 'watered',

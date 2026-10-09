@@ -97,6 +97,17 @@ export function isBefore(a, b) {
   return toDate(a).getTime() < toDate(b).getTime()
 }
 
+// Что показывать в карточке дня: расписание ('future') или историю ('past').
+// Пропущенный или просроченный полив остаётся в расписании до автопропуска,
+// поэтому приоритет у истории — иначе по такой дате открывалась бы карточка
+// с плановым временем вместо отметки о просрочке. Это касается и сегодняшнего
+// дня: время полива уже прошло, и на дне горит красная точка.
+export function resolveDayKind({ isPastDay, hasSchedule, hasEvents, hasMissed }) {
+  if (hasEvents && (hasMissed || isPastDay)) return 'past'
+  if (hasSchedule) return 'future'
+  return hasEvents ? 'past' : 'empty'
+}
+
 export function dayOfMonth(value) {
   return toDate(value).getDate()
 }

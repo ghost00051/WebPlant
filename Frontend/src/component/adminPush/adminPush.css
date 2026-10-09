@@ -121,7 +121,7 @@
 }
 
 .adminPushModeSwitch button.is-active {
-    border-color: #7C9082;
+    border-color: #7FD1A0;
     background: #E8F5E9;
     color: #35463B;
     font-weight: 600;
@@ -140,7 +140,7 @@
     width: 18px;
     height: 18px;
     margin: 0;
-    accent-color: #7C9082;
+    accent-color: #7FD1A0;
     cursor: pointer;
     flex: 0 0 auto;
 }
@@ -208,7 +208,7 @@
     height: 18px;
     margin: 3px 0 0;
     flex: 0 0 auto;
-    accent-color: #7C9082;
+    accent-color: #7FD1A0;
     cursor: pointer;
 }
 
@@ -235,7 +235,7 @@
 
 .adminPushRecipientSubs {
     font-size: var(--font-size-xs);
-    color: #7C9082;
+    color: #7FD1A0;
 }
 
 .adminPushRecipientNoPush {
@@ -321,7 +321,7 @@
 .adminPushField input:focus-visible,
 .adminPushField textarea:focus-visible,
 .adminPushScheduleRow input:focus-visible {
-    outline: 2px solid #7C9082;
+    outline: 2px solid #7FD1A0;
     outline-offset: 1px;
 }
 

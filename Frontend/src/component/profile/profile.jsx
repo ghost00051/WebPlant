@@ -12,15 +12,16 @@ import {
     isPushSupported,
     isStandalone,
     requestPermission,
+    setPushDisabledOnThisDevice,
     subscribeToPush,
     unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
 import { API_URL } from '../../utils/api.js'
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
 import './dark-theme.css'
 
-// Панель администратора подгружается отдельным чанком и только для роли ADMIN:
-// обычные пользователи не скачивают её код и не видят разметку.
+
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
 
 function Profile() {
@@ -228,10 +229,12 @@ function Profile() {
                 }
 
                 await subscribeToPush()
+                setPushDisabledOnThisDevice(false)
                 setPushEnabled(true)
                 return
             }
 
+            setPushDisabledOnThisDevice(true)
             await unsubscribeFromPush()
             setPushEnabled(false)
         } catch (error) {
@@ -489,7 +492,12 @@ function Profile() {
                 </p>
             </div>
             <footer className='profileAppVersion'>
-                Версия приложения {import.meta.env.VITE_APP_VERSION}
+                <p>Версия приложения {import.meta.env.VITE_APP_VERSION}</p>
+                <p className='profileFeedback'>
+                    Нашли баг или хотите предложить что-то своё? Напишите на{' '}
+                    <a href={FEEDBACK_MAILTO}>{FEEDBACK_EMAIL}</a>
+                    <small>С уважением, разработчик Иван</small>
+                </p>
             </footer>
         </div>
     )

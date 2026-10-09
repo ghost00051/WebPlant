@@ -3,8 +3,11 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import NotificationPrompt from '../NotificationPrompt/NotificationPrompt.jsx'
 import {
     isPushSupported,
-    isIOS,
-    isStandalone
+    getActivePushSubscription,
+    markPushPromptShown,
+    restorePushSubscription,
+    shouldOfferPushPrompt,
+    syncPushSubscription
 } from '../../utils/pushNotifications.js'
 import Tools from '../tools/tools.jsx'
 import HomePage from '../homePage/homePage.jsx'
@@ -55,12 +58,14 @@ function Home() {
                 }
 
                 if (Notification.permission === 'granted') {
-                    const reg = await navigator.serviceWorker.ready
-                    const sub = await reg.pushManager.getSubscription()
-                    if (sub) {
-                        setLoading(false)
-                        return
+                    const subscription = await getActivePushSubscription()
+                    if (subscription) {
+                        void syncPushSubscription()
+                    } else {
+                        void restorePushSubscription()
                     }
+                    setLoading(false)
+                    return
                 }
 
                 if (Notification.permission === 'denied') {
@@ -68,16 +73,15 @@ function Home() {
                     return
                 }
 
-                const lastShown = localStorage.getItem('push_prompt_last_shown')
-                if (lastShown && !(isIOS() && isStandalone())) {
-                    const daysSince = (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24)
-                    if (daysSince < 7) {
-                        setLoading(false)
-                        return
-                    }
+                if (!shouldOfferPushPrompt()) {
+                    setLoading(false)
+                    return
                 }
 
-                setTimeout(() => setShowPrompt(true), 2000)
+                setTimeout(() => {
+                    markPushPromptShown()
+                    setShowPrompt(true)
+                }, 2000)
                 setLoading(false)
 
             } catch (error) {

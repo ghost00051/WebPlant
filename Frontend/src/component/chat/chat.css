@@ -73,7 +73,7 @@ body.keyboard-open .chatWindow {
 .chatAvatar svg {
     width: 20px;
     height: 20px;
-    color: #7C9082;
+    color: #7FD1A0;
 }
 
 .chatHeaderTitle {
@@ -174,7 +174,7 @@ body.keyboard-open .chatWindow {
 }
 
 .chatBubbleUser {
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     color: #FFFFFF;
     border-bottom-right-radius: 6px;
 }
@@ -230,7 +230,7 @@ body.keyboard-open .chatWindow {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     animation: typingBounce 1.2s infinite;
 }
 
@@ -342,7 +342,7 @@ body.keyboard-open .chatWindow {
     height: 40px;
     border-radius: 50%;
     border: none;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     display: flex;
     align-items: center;
     justify-content: center;

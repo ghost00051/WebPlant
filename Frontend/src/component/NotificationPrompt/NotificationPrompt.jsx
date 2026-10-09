@@ -2,7 +2,9 @@ import { useState } from 'react'
 import {
   isIOS,
   isStandalone,
+  markPushPromptAnswered,
   requestPermission,
+  setPushDisabledOnThisDevice,
   subscribeToPush
 } from '../../utils/pushNotifications.js'
 import './NotificationPrompt.css'
@@ -16,10 +18,6 @@ function NotificationPrompt({ onClose }) {
   const [error, setError] = useState('')
   const needsIOSInstall = isIOS() && !isStandalone()
 
-  const markShown = () => {
-    localStorage.setItem('push_prompt_last_shown', Date.now().toString())
-  }
-
   const handleAccept = async () => {
     if (needsIOSInstall) return
 
@@ -28,23 +26,25 @@ function NotificationPrompt({ onClose }) {
     try {
       if (Notification.permission === 'denied') {
         setError('Уведомления заблокированы в настройках браузера')
-        markShown()
+        markPushPromptAnswered('declined')
         return
       }
 
       const granted = await requestPermission()
       if (!granted) {
         setError('Разрешение не получено')
-        markShown()
+        markPushPromptAnswered('declined')
         setTimeout(onClose, 1500)
         return
       }
 
+      setPushDisabledOnThisDevice(false)
       await subscribeToPush()
+      markPushPromptAnswered('accepted')
       console.log('✅ Подписка сохранена на сервере')
-      markShown()
       onClose()
     } catch (err) {
+      markPushPromptAnswered('accepted')
       console.error('❌ Ошибка подписки:', err)
       setError(err.message || 'Не удалось включить уведомления')
     } finally {
@@ -53,7 +53,7 @@ function NotificationPrompt({ onClose }) {
   }
 
   const handleDecline = () => {
-    markShown()
+    markPushPromptAnswered('declined')
     onClose()
   }
 

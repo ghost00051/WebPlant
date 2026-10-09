@@ -114,7 +114,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
   const renderDots = ({ isFuture, isPast, isOverdue }) => (
     <div className='mini-calendar__dots'>
       {isFuture && <span className='dot dot--future' title='Будущий полив' />}
-      {isOverdue && <span className='dot dot--overdue' title='Пропущенный полив' />}
+      {isOverdue && <span className='dot dot--overdue' title='Просроченный или пропущенный полив' />}
       {isPast && !isOverdue && <span className='dot dot--past' title='Прошлый полив' />}
     </div>
   )
@@ -181,7 +181,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span className='dot dot--past' /> Прошлый полив
         </span>
         <span className='legend-item'>
-          <span className='dot dot--overdue' /> Пропущенный
+          <span className='dot dot--overdue' /> Пропущенный/просроченный
         </span>
         <span className='legend-item'>
           <span className='dot dot--today' /> Сегодня
@@ -241,7 +241,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         <div className='mini-calendar__desktop-legend'>
           <span><i className='dot dot--future' /> Будущий полив</span>
           <span><i className='dot dot--past' /> Прошлый полив</span>
-          <span><i className='dot dot--overdue' /> Пропущенный</span>
+          <span><i className='dot dot--overdue' /> Пропущенный/просроченный</span>
           <span><i className='dot dot--today' /> Сегодня</span>
         </div>
       </div>

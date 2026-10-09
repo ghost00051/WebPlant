@@ -119,14 +119,14 @@
   }
 
   .mini-calendar__month-day.is-today {
-    border-color: #7c9082;
-    background: #7c9082;
+    border-color: #7FD1A0;
+    background: #7FD1A0;
     color: #fff;
     font-weight: 600;
   }
 
   .mini-calendar__month-day.is-selected:not(.is-today) {
-    box-shadow: inset 0 0 0 1px #7c9082;
+    box-shadow: inset 0 0 0 1px #7FD1A0;
   }
 
   .mini-calendar__desktop-legend {

@@ -388,7 +388,7 @@ function Registration({ initialMode = 'login' }) {
                       name='name'
                       placeholder='Как вас зовут'
                       autoComplete='name'
-                      maxLength={100}
+                      maxLength={20}
                       required
                       value={name}
                       onChange={event => setName(event.target.value)}
@@ -475,46 +475,45 @@ function Registration({ initialMode = 'login' }) {
                     <span className='strength-hint'>8+ символов, буквы и цифры</span>
                   </div>
                 </div>
-
-                <label className='consentOption'>
-                  <input
-                    type='checkbox'
-                    checked={privacyPolicyAccepted}
-                    onChange={event =>
-                      setPrivacyPolicyAccepted(event.target.checked)
-                    }
-                    required
-                  />
-                  <span>
-                    Даю отдельное согласие на обработку{' '}
-                    <a href={personalDataDocument} target='_blank' rel='noreferrer'>
-                      персональных данных
+                <div className='godOFcosentOption'>
+                  <label className='consentOption'>
+                    <input
+                      type='checkbox'
+                      checked={privacyPolicyAccepted}
+                      onChange={event =>
+                        setPrivacyPolicyAccepted(event.target.checked)
+                      }
+                      required
+                    />
+                    <span>
+                      Даю отдельное согласие на обработку{' '}
+                      <a href={personalDataDocument} target='_blank' rel='noreferrer'>
+                        персональных данных
+                      </a>
+                    </span>
+                  </label>
+                  <p className='consentPolicyNotice'>
+                    До регистрации ознакомьтесь с{' '}
+                    <a href={privacyPolicyDocument} target='_blank' rel='noreferrer'>
+                      Политикой обработки персональных данных
                     </a>
-                  </span>
-                </label>
-                <p className='consentPolicyNotice'>
-                  До регистрации ознакомьтесь с{' '}
-                  <a href={privacyPolicyDocument} target='_blank' rel='noreferrer'>
-                    Политикой обработки персональных данных
-                  </a>
-                  .
-                </p>
-
-                <label className='consentOption'>
-                  <input
-                    type='checkbox'
-                    checked={termsAccepted}
-                    onChange={event => setTermsAccepted(event.target.checked)}
-                    required
-                  />
-                  <span>
-                    Принимаю{' '}
-                    <a href={termsDocument} target='_blank' rel='noreferrer'>
-                      пользовательское соглашение
-                    </a>
-                  </span>
-                </label>
-
+                    .
+                  </p>
+                  <label className='consentOption'>
+                    <input
+                      type='checkbox'
+                      checked={termsAccepted}
+                      onChange={event => setTermsAccepted(event.target.checked)}
+                      required
+                    />
+                    <span>
+                      Принимаю{' '}
+                      <a href={termsDocument} target='_blank' rel='noreferrer'>
+                        пользовательское соглашение
+                      </a>
+                    </span>
+                  </label>
+                </div>
                 {formError && (
                   <p className='formError' role='alert'>
                     {formError}

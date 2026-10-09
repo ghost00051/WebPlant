@@ -48,7 +48,7 @@
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-xl);
     font-weight: bold;
-    color: #7C9082;
+    color: #7FD1A0;
     margin: 0;
     line-height: 1;
 }
@@ -192,7 +192,7 @@
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-lg);
     font-weight: bold;
-    color: #7C9082;
+    color: #7FD1A0;
     margin: 0;
 }
 
@@ -241,7 +241,7 @@
     font-family: 'Inter', sans-serif;
     font-size: 13px;
     font-weight: 300;
-    color: #7C9082;
+    color: #7FD1A0;
     text-decoration: none;
 }
 
@@ -261,6 +261,25 @@
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-xs);
     text-align: center;
+}
+
+.profileAppVersion p {
+    margin: 0;
+}
+
+.profileAppVersion .profileFeedback {
+    margin-top: 10px;
+    line-height: 1.5;
+}
+
+.profileFeedback a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.profileFeedback small {
+    display: block;
+    margin-top: 4px;
 }
 
 .headerOfsettingsNotification {
@@ -395,7 +414,7 @@
 }
 
 .selectThemeColor button.is-active {
-    border-color: #7C9082;
+    border-color: #7FD1A0;
     background: #E8F5E9;
     color: #35463B;
     font-weight: 600;

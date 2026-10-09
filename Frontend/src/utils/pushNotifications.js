@@ -124,6 +124,155 @@ export async function unsubscribeFromPush() {
     return true
 }
 
+const PUSH_PROMPT_SHOWN_KEY = 'push_prompt_last_shown'
+const PUSH_PROMPT_DECISION_KEY = 'push_prompt_decision'
+const PUSH_DEVICE_OPT_OUT_KEY = 'push_device_opt_out'
+const PUSH_SYNC_KEY = 'push_subscription_synced_at'
+
+export const PUSH_PROMPT_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000
+export const PUSH_SYNC_INTERVAL_MS = 24 * 60 * 60 * 1000
+const PUSH_REGISTRATION_TIMEOUT_MS = 5000
+
+function readLocalStorage(key) {
+    try {
+        return window.localStorage.getItem(key)
+    } catch (error) {
+        console.warn(`Не удалось прочитать ${key} из localStorage:`, error)
+        return null
+    }
+}
+
+function writeLocalStorage(key, value) {
+    try {
+        window.localStorage.setItem(key, value)
+    } catch (error) {
+        console.warn(`Не удалось сохранить ${key} в localStorage:`, error)
+    }
+}
+
+function removeLocalStorage(key) {
+    try {
+        window.localStorage.removeItem(key)
+    } catch (error) {
+        console.warn(`Не удалось удалить ${key} из localStorage:`, error)
+    }
+}
+
+export function getPushPromptAnswer() {
+    const answeredAt = Number(readLocalStorage(PUSH_PROMPT_SHOWN_KEY)) || 0
+    const storedDecision = readLocalStorage(PUSH_PROMPT_DECISION_KEY)
+    const decision = storedDecision === 'accepted' || storedDecision === 'declined'
+        ? storedDecision
+        : null
+    return { answeredAt, decision }
+}
+
+export function markPushPromptAnswered(decision) {
+    writeLocalStorage(PUSH_PROMPT_SHOWN_KEY, Date.now().toString())
+    writeLocalStorage(
+        PUSH_PROMPT_DECISION_KEY,
+        decision === 'accepted' ? 'accepted' : 'declined'
+    )
+}
+
+export function markPushPromptShown() {
+    writeLocalStorage(PUSH_PROMPT_SHOWN_KEY, Date.now().toString())
+}
+
+export function wasPushPromptAnsweredRecently(now = Date.now()) {
+    const { answeredAt } = getPushPromptAnswer()
+    return answeredAt > 0 && now - answeredAt < PUSH_PROMPT_COOLDOWN_MS
+}
+
+export function isPushDisabledOnThisDevice() {
+    return readLocalStorage(PUSH_DEVICE_OPT_OUT_KEY) === 'true'
+}
+
+export function setPushDisabledOnThisDevice(disabled) {
+    if (disabled) {
+        writeLocalStorage(PUSH_DEVICE_OPT_OUT_KEY, 'true')
+    } else {
+        removeLocalStorage(PUSH_DEVICE_OPT_OUT_KEY)
+    }
+}
+
+function canUsePushApi() {
+    return typeof window !== 'undefined' &&
+        typeof navigator !== 'undefined' &&
+        isPushSupported()
+}
+
+function waitForRegistration(timeoutMs = PUSH_REGISTRATION_TIMEOUT_MS) {
+    if (!navigator.serviceWorker || !navigator.serviceWorker.ready) {
+        return Promise.resolve(null)
+    }
+
+    return new Promise(resolve => {
+        const timer = setTimeout(() => resolve(null), timeoutMs)
+        navigator.serviceWorker.ready.then(
+            registration => {
+                clearTimeout(timer)
+                resolve(registration)
+            },
+            () => {
+                clearTimeout(timer)
+                resolve(null)
+            }
+        )
+    })
+}
+
+export async function getActivePushSubscription() {
+    if (!canUsePushApi()) return null
+    try {
+        const registration = await waitForRegistration()
+        if (!registration) return null
+        return await registration.pushManager.getSubscription()
+    } catch (error) {
+        console.warn('Не удалось проверить push-подписку:', error)
+        return null
+    }
+}
+
+export async function restorePushSubscription() {
+    if (!canUsePushApi() || Notification.permission !== 'granted') return null
+    if (isPushDisabledOnThisDevice()) return null
+
+    try {
+        const subscription = await subscribeToPush()
+        writeLocalStorage(PUSH_SYNC_KEY, String(Date.now()))
+        return subscription
+    } catch (error) {
+        console.warn('Не удалось восстановить push-подписку:', error)
+        return null
+    }
+}
+
+export async function syncPushSubscription(now = Date.now()) {
+    if (!canUsePushApi() || Notification.permission !== 'granted') return null
+    if (isPushDisabledOnThisDevice()) return null
+
+    const lastSyncAt = Number(readLocalStorage(PUSH_SYNC_KEY)) || 0
+    if (lastSyncAt > 0 && now - lastSyncAt < PUSH_SYNC_INTERVAL_MS) return null
+
+    try {
+        const subscription = await subscribeToPush()
+        writeLocalStorage(PUSH_SYNC_KEY, String(now))
+        return subscription
+    } catch (error) {
+        console.warn('Не удалось синхронизировать push-подписку с сервером:', error)
+        return null
+    }
+}
+
+export function shouldOfferPushPrompt(now = Date.now()) {
+    if (!canUsePushApi()) return false
+    if (Notification.permission !== 'default') return false
+    if (getPushPromptAnswer().decision === 'accepted') return false
+    if (isPushDisabledOnThisDevice()) return false
+    return !wasPushPromptAnsweredRecently(now)
+}
+
 export function isIOS() {
     if (typeof navigator === 'undefined' || typeof window === 'undefined') return false
     const userAgent = navigator.userAgent

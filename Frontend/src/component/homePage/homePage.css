@@ -90,7 +90,7 @@
   font-size: var(--font-size-md);
   font-weight: 500;
   font-style: normal;
-  color: #7c9082;
+  color: #7FD1A0;
   margin: 2% 0;
   background: none;
   border: none;
@@ -213,7 +213,7 @@
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background-color: #7c9082;
+  background-color: #7FD1A0;
   border: none;
   cursor: pointer;
   flex-shrink: 0;
@@ -257,7 +257,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  background: #7c9082;
+  background: #7FD1A0;
   z-index: 0;
   pointer-events: none;
   animation: check-ripple 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -269,7 +269,7 @@
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 2px solid #7c9082;
+  border: 2px solid #7FD1A0;
   z-index: 1;
   pointer-events: none;
   animation: check-ring 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -326,7 +326,7 @@
   padding: 10px 14px;
   border: 0;
   border-radius: 12px;
-  background: #7C9082;
+  background: #7FD1A0;
   color: #FFFFFF;
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
@@ -507,7 +507,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
   font-weight: 400;
-  color: #7C9082;
+  color: #7FD1A0;
   background-color: #EFF3EC;
   border: none;
   border-radius: 12px;

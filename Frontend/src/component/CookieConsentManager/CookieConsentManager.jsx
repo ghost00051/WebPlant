@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'react-router-dom'
 import { API_URL } from '../../utils/api.js'
+import {
+    buildLocalConsent,
+    readLocalConsent,
+    saveLocalConsent,
+    summarizeConsents
+} from '../../utils/cookieConsent.js'
 import './CookieConsentManager.css'
 import './dark-theme.css'
 
-const CONSENT_TYPES = ['technical', 'analytics', 'marketing', 'personalization']
 const METRIKA_ID = 113420950
 
 async function getErrorMessage(response, fallback) {
@@ -49,6 +54,45 @@ function initializeMetrika() {
     window.__webPlantMetrikaInitialized = true
 }
 
+async function saveConsentToServer(acceptOptionalCookies) {
+    const response = await fetch(`${API_URL}/cookie-consents/all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+            consents: [
+                { consentType: 'technical', isAccepted: true },
+                { consentType: 'analytics', isAccepted: acceptOptionalCookies },
+                { consentType: 'marketing', isAccepted: false },
+                { consentType: 'personalization', isAccepted: false }
+            ]
+        })
+    })
+    if (!response.ok) {
+        throw new Error(
+            await getErrorMessage(response, 'Не удалось сохранить выбор.')
+        )
+    }
+    return response
+}
+
+async function fetchAccountScope(signal) {
+    try {
+        const response = await fetch(`${API_URL}/users/me`, {
+            method: 'GET',
+            credentials: 'include',
+            signal
+        })
+        if (response.ok) return 'user'
+        if (response.status === 401 || response.status === 404) return 'guest'
+        return 'unknown'
+    } catch (error) {
+        if (error.name === 'AbortError') throw error
+        console.warn('Не удалось определить состояние аккаунта:', error)
+        return 'unknown'
+    }
+}
+
 function CookieConsentManager() {
     const location = useLocation()
     const isHomePage = location.pathname === '/home'
@@ -78,28 +122,73 @@ function CookieConsentManager() {
         return consents
     }, [])
 
-    const applyConsents = useCallback(consents => {
-        const latestByType = new Map()
-        for (const consent of consents) {
-            if (!latestByType.has(consent.consent_type)) {
-                latestByType.set(consent.consent_type, consent)
-            }
-        }
-
-        setConsentKnown(CONSENT_TYPES.every(type => latestByType.has(type)))
-        setAnalyticsAccepted(latestByType.get('analytics')?.is_accepted === true)
+    const applyLocalConsent = useCallback((local, allowAnalytics) => {
+        setConsentKnown(true)
+        setAnalyticsAccepted(Boolean(allowAnalytics) && local.analyticsAccepted === true)
         setError('')
     }, [])
+
+    const resetConsent = useCallback(() => {
+        setConsentKnown(false)
+        setAnalyticsAccepted(false)
+        setError('')
+    }, [])
+
+    // Сервер не знает выбора: согласие привязано к личности (user_id или
+    // guest_token). Локальный выбор применяем только гостю — у гостя личность
+    // совпадает с устройством. Для аккаунта это может быть чужой выбор,
+    // сделанный на том же устройстве, поэтому там решает сервер.
+    // Запись на сервере здесь заново не создаём: она привязалась бы к текущему
+    // guest_token, а при следующем входе её унаследовал бы другой аккаунт.
+    const applyStoredConsent = useCallback(async signal => {
+        const local = readLocalConsent()
+        if (!local) {
+            resetConsent()
+            return false
+        }
+
+        const scope = await fetchAccountScope(signal)
+        if (scope === 'user') {
+            resetConsent()
+            return false
+        }
+
+        applyLocalConsent(local, scope === 'guest')
+        return true
+    }, [applyLocalConsent, resetConsent])
+
+    const applyConsents = useCallback(async (consents, signal) => {
+        const { known, analyticsAccepted: serverAnalytics } = summarizeConsents(consents)
+        if (known) {
+            setConsentKnown(true)
+            setAnalyticsAccepted(serverAnalytics)
+            setError('')
+            return
+        }
+
+        await applyStoredConsent(signal)
+    }, [applyStoredConsent])
 
     useEffect(() => {
         const controller = new AbortController()
         loadConsents(controller.signal)
             .then(consents => {
-                if (!controller.signal.aborted) applyConsents(consents)
+                if (controller.signal.aborted) return
+                return applyConsents(consents, controller.signal)
             })
-            .catch(loadError => {
+            .catch(async loadError => {
                 if (loadError.name === 'AbortError') return
                 console.error('Ошибка загрузки согласия cookie:', loadError)
+                // Если выбор уже сохранён на устройстве, недоступность API
+                // не повод показывать окно заново.
+                let applied = false
+                try {
+                    applied = await applyStoredConsent(controller.signal)
+                } catch (fallbackError) {
+                    if (fallbackError.name === 'AbortError') return
+                    console.warn('Не удалось применить сохранённый выбор cookie:', fallbackError)
+                }
+                if (applied || controller.signal.aborted) return
                 setError(loadError.message || 'Не удалось загрузить настройки cookie.')
                 setIsOpen(true)
             })
@@ -108,7 +197,9 @@ function CookieConsentManager() {
             })
 
         return () => controller.abort()
-    }, [applyConsents, loadConsents])
+        // location.pathname: после входа в аккаунт согласие может быть
+        // уже сохранено за пользователем, поэтому состояние перечитываем.
+    }, [applyConsents, applyStoredConsent, loadConsents, location.pathname])
 
     useEffect(() => {
         const currentPath = `${location.pathname}${location.search}${location.hash}`
@@ -147,25 +238,11 @@ function CookieConsentManager() {
 
         setIsSaving(true)
         setError('')
+        // Выбор запоминаем на устройстве до запроса: даже если сервер
+        // недоступен, окно не вернётся при следующем входе.
+        saveLocalConsent(buildLocalConsent(acceptOptionalCookies))
         try {
-            const response = await fetch(`${API_URL}/cookie-consents/all`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    consents: [
-                        { consentType: 'technical', isAccepted: true },
-                        { consentType: 'analytics', isAccepted: acceptOptionalCookies },
-                        { consentType: 'marketing', isAccepted: false },
-                        { consentType: 'personalization', isAccepted: false }
-                    ]
-                })
-            })
-            if (!response.ok) {
-                throw new Error(
-                    await getErrorMessage(response, 'Не удалось сохранить выбор.')
-                )
-            }
+            await saveConsentToServer(acceptOptionalCookies)
 
             const wasAnalyticsAccepted = analyticsAccepted
             setAnalyticsAccepted(acceptOptionalCookies)

@@ -1,7 +1,7 @@
 {
   "name": "webplant",
   "private": true,
-  "version": "1.2.5",
+  "version": "1.2.6",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "indexnow": "node scripts/indexnow.mjs",
     "indexnow:dry": "node scripts/indexnow.mjs --dry-run",
     "lint": "eslint .",
+    "test": "node --test \"src/**/*.test.js\"",
     "preview": "vite preview"
   },
   "dependencies": {

@@ -50,3 +50,18 @@
     display: block;
     margin-top: 4px;
 }
+
+.siteFooterFeedback {
+    max-width: 60ch;
+    margin: 16px 0 0;
+    line-height: 1.5;
+}
+
+.siteFooterFeedback a {
+    color: inherit;
+    text-decoration: underline;
+}
+
+.siteFooterFeedback a:hover {
+    color: var(--theme-text, #2D2D2D);
+}

@@ -93,7 +93,7 @@
     line-height: 1.7;
 }
 
-.contentSection li + li {
+.contentCard{
     margin-top: 8px;
 }
 

@@ -122,8 +122,8 @@
   position: relative;
 }
 
-.slider-panel.right ~ .blocks-wrapper .blocksRegistration,
-.slider-panel.left ~ .blocks-wrapper .blocksOfEntrance {
+.slider-panel.right~.blocks-wrapper .blocksRegistration,
+.slider-panel.left~.blocks-wrapper .blocksOfEntrance {
   visibility: hidden;
 }
 
@@ -159,7 +159,7 @@
   box-shadow: 0 0 0 3px rgba(90, 110, 96, 0.14);
 }
 
-.inputShell > img {
+.inputShell>img {
   flex: 0 0 18px;
   width: 18px;
   height: 18px;
@@ -307,6 +307,11 @@
   background: #f8faf8;
 }
 
+.buttonPasskeyLogin:hover:not(:disabled) span {
+  color: #101612;
+  transition: all 0.2s ease;
+}
+
 .buttonPasskeyLogin img {
   width: 20px;
   height: 20px;
@@ -381,11 +386,22 @@
 
 .consentOption {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   color: var(--auth-muted);
   font-size: var(--font-size-sm);
   line-height: 1.5;
+}
+
+.consentPolicyNotice {
+  font-size: var(--font-size-sm);
+  margin: 0;
+}
+
+.godOFcosentOption {
+  display: flex;
+  gap: 10px;
+  flex-direction: column;
 }
 
 .consentOption input {
@@ -503,6 +519,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
   .blocksOfToService *,
   .blocksOfToService *::before,
   .blocksOfToService *::after {

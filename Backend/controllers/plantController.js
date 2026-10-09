@@ -757,7 +757,7 @@ class PlantController {
             const logs = await WateringLog.findAll({
                 where: {
                     user_id: userId,
-                    action: 'watered',
+                    action: { [Op.in]: ['watered', 'skipped'] },
                     plant_id: { [Op.in]: [...plantsById.keys()] }
                 },
                 order: [['action_at', 'DESC']],
@@ -799,18 +799,39 @@ class PlantController {
                 const plant = plantsById.get(log.plant_id)
                 if (!plant) continue
 
-                const iso = new Date(log.action_at).toISOString().slice(0, 10)
+                const eventPlant = {
+                    id: plant.id,
+                    name: plant.name,
+                    species: plant.species,
+                    location: plant.location,
+                    photo_url: plant.photo_url
+                }
 
-                pushEvent(iso, {
+                if (log.action === 'skipped') {
+                    const missedAt = new Date(log.scheduled_for ?? log.action_at)
+                    if (!Number.isFinite(missedAt.getTime())) continue
+
+                    const hoursLate = Number.isInteger(log.hours_late)
+                        ? log.hours_late
+                        : Math.max(0, computeHoursLate(missedAt, log.action_at) ?? 0)
+
+                    pushEvent(missedAt.toISOString().slice(0, 10), {
+                        kind: 'skipped',
+                        id: log.id,
+                        plant: eventPlant,
+                        scheduled_for: log.scheduled_for,
+                        skipped_at: log.action_at,
+                        hours_late: hoursLate,
+                        days_late: Math.floor(hoursLate / 24),
+                        note: log.note
+                    })
+                    continue
+                }
+
+                pushEvent(new Date(log.action_at).toISOString().slice(0, 10), {
                     kind: 'watered',
                     id: log.id,
-                    plant: {
-                        id: plant.id,
-                        name: plant.name,
-                        species: plant.species,
-                        location: plant.location,
-                        photo_url: plant.photo_url
-                    },
+                    plant: eventPlant,
                     watered_at: log.action_at,
                     scheduled_for: log.scheduled_for,
                     hours_late: log.hours_late,
@@ -818,7 +839,7 @@ class PlantController {
                 })
             }
 
-            const kindOrder = { overdue: 0, watered: 1 }
+            const kindOrder = { overdue: 0, skipped: 1, watered: 2 }
 
             const items = [...groups.values()]
                 .map(g => {
