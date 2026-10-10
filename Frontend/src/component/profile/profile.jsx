@@ -389,16 +389,6 @@ function Profile() {
                     <AdminPushPanel />
                 </Suspense>
             )}
-            <div>
-                <div className='gofOfHeaderOfAllPlants'>
-                    <p className='HeaderOfAllPlants'>Мои растения</p>
-                    <Link to="/my-plants" className='buttonOfPlant'>
-                        <p>Все</p>
-                    </Link>
-                </div>
-                <div>
-                </div>
-            </div>
             <div className='settingsNotification'>
                 <p className='headerOfsettingsNotification'>Настройки напоминаний</p>
                 <div className='pushSettings'>

@@ -16,7 +16,11 @@ import {
     suggestWateringAdvice,
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
-import { generateWateringOccurrences } from '../utils/wateringSchedule.js'
+import {
+    generateWateringOccurrences,
+    findFirstWateringAfter,
+    resolveMissedLateness
+} from '../utils/wateringSchedule.js'
 const TIME_OF_DAY_HOURS = { morning: 8, day: 14, evening: 19 }
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
@@ -760,7 +764,10 @@ class PlantController {
                     action: { [Op.in]: ['watered', 'skipped'] },
                     plant_id: { [Op.in]: [...plantsById.keys()] }
                 },
-                order: [['action_at', 'DESC']],
+                // Второй ключ сортировки: при одинаковом action_at окно «500
+                // последних» должно отдавать более новую запись, иначе закрывающий
+                // пропуск полив может выпасть из выборки, а сам пропуск остаться.
+                order: [['action_at', 'DESC'], ['id', 'DESC']],
                 limit: 500,
                 raw: true
             })
@@ -772,13 +779,32 @@ class PlantController {
                 groups.get(iso).events.push(event)
             }
 
+            // Просрочку закрывает первый полив после слота. Логи выбраны окном
+            // «последние 500 действий», а полив всегда новее пропуска, поэтому
+            // закрывающий полив попадает в выборку вместе с закрываемым пропуском.
+            const wateringTimesByPlant = new Map()
+            for (const log of logs) {
+                if (log.action !== 'watered') continue
+                const at = new Date(log.action_at).getTime()
+                if (!Number.isFinite(at)) continue
+                const times = wateringTimesByPlant.get(log.plant_id)
+                if (times) times.push(at)
+                else wateringTimesByPlant.set(log.plant_id, [at])
+            }
+
+            const missResolution = (plantId, scheduledFor) =>
+                findFirstWateringAfter(wateringTimesByPlant.get(plantId), scheduledFor)
+
             for (const plant of plantsById.values()) {
                 if (!plant.next_watering_at) continue
                 const scheduled = new Date(plant.next_watering_at)
                 if (scheduled >= now) continue
 
                 const iso = scheduled.toISOString().slice(0, 10)
-                const hoursLate = Math.round((now - scheduled) / (60 * 60 * 1000))
+                const lateness = resolveMissedLateness(plant.next_watering_at, {
+                    now,
+                    wateredAt: missResolution(plant.id, plant.next_watering_at)
+                }) ?? { hoursLate: 0, daysLate: 0 }
 
                 pushEvent(iso, {
                     kind: 'overdue',
@@ -790,8 +816,8 @@ class PlantController {
                         photo_url: plant.photo_url
                     },
                     scheduled_for: plant.next_watering_at,
-                    hours_late: hoursLate,
-                    days_late: Math.floor(hoursLate / 24)
+                    hours_late: lateness.hoursLate,
+                    days_late: lateness.daysLate
                 })
             }
 
@@ -811,9 +837,20 @@ class PlantController {
                     const missedAt = new Date(log.scheduled_for ?? log.action_at)
                     if (!Number.isFinite(missedAt.getTime())) continue
 
-                    const hoursLate = Number.isInteger(log.hours_late)
-                        ? log.hours_late
-                        : Math.max(0, computeHoursLate(missedAt, log.action_at) ?? 0)
+                    // Просрочка считается до первого полива после слота, а если
+                    // растения так и не полили — до текущего момента: сохранённый
+                    // hours_late фиксирует только момент автопропуска (≈24 часа).
+                    const lateness = log.scheduled_for
+                        ? resolveMissedLateness(log.scheduled_for, {
+                            now,
+                            wateredAt: missResolution(plant.id, log.scheduled_for)
+                        })
+                        : null
+                    const hoursLate = lateness
+                        ? lateness.hoursLate
+                        : Number.isInteger(log.hours_late)
+                            ? log.hours_late
+                            : Math.max(0, computeHoursLate(missedAt, log.action_at) ?? 0)
 
                     pushEvent(missedAt.toISOString().slice(0, 10), {
                         kind: 'skipped',
@@ -822,7 +859,7 @@ class PlantController {
                         scheduled_for: log.scheduled_for,
                         skipped_at: log.action_at,
                         hours_late: hoursLate,
-                        days_late: Math.floor(hoursLate / 24),
+                        days_late: lateness ? lateness.daysLate : Math.floor(hoursLate / 24),
                         note: log.note
                     })
                     continue

@@ -15,6 +15,7 @@ import {
   diffInDays,
   monthGenitive,
   monthNominative,
+  partitionScheduleDates,
   relativeDayLabel,
   resolveDayKind,
   toDate,
@@ -63,13 +64,20 @@ function HomePage({ user, onTabChange }) {
     [historyMap]
   )
 
+  // Расписание отдаёт и уже прошедшие позиции (они остаются там до автопропуска),
+  // поэтому день плана и день пропуска считаются по каждой позиции отдельно.
+  const { planned: plannedDates, missed: missedScheduleDates } = useMemo(
+    () => partitionScheduleDates(schedule, now),
+    [schedule, now]
+  )
+
   const overdueDatesSet = useMemo(() => {
-    const set = new Set()
+    const set = new Set(missedScheduleDates)
     for (const item of history) {
       if (item.hasOverdue) set.add(item.date)
     }
     return set
-  }, [history])
+  }, [history, missedScheduleDates])
 
   const getWateringPlant = useCallback(async () => {
     const response = await fetch(
@@ -301,8 +309,10 @@ function HomePage({ user, onTabChange }) {
     if (!selectedDay) return null
     const fromIso = selectedDay.iso
 
+    // Ближайший полив — только ещё не наступившая позиция: просроченную дату
+    // показывать как «ближайший полив» нельзя.
     const upcoming = schedule
-      .filter(item => item.date > fromIso && item.plants?.length)
+      .filter(item => item.date > fromIso && item.plants?.length && plannedDates.has(item.date))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     if (!upcoming.length) return null
@@ -312,7 +322,7 @@ function HomePage({ user, onTabChange }) {
       iso: upcoming[0].date,
       label: `${dayOfMonth(nextDate)} ${monthGenitive(nextDate)}`,
     }
-  }, [schedule, selectedDay])
+  }, [schedule, selectedDay, plannedDates])
 
   const handleGoToDate = useCallback((iso) => {
     calendarRef.current?.scrollTo(iso)
@@ -321,10 +331,14 @@ function HomePage({ user, onTabChange }) {
 
 
   const onePlant = useMemo(() => {
-    const firstDay = schedule.find(d => d.plants?.length > 0)
+    const withPlants = schedule.filter(d => d.plants?.length > 0)
+    // Просроченная позиция расписания — уже прошедшая дата: как «план» она
+    // показывает вчерашний день. Берём ближайшую дату с ещё не наступившим
+    // поливом, а если таких нет — остаётся текущая просроченная.
+    const firstDay = withPlants.find(d => plannedDates.has(d.date)) ?? withPlants[0]
     if (!firstDay) return null
     return { ...firstDay.plants[0], nextDate: firstDay.date }
-  }, [schedule])
+  }, [schedule, plannedDates])
 
   return (
     <div className='homePageDashboard'>
@@ -352,7 +366,7 @@ function HomePage({ user, onTabChange }) {
         <MiniCalendar
           ref={calendarRef}
           onSelectDay={handleSelectDay}
-          scheduleMap={scheduleMap}
+          futureDates={plannedDates}
           pastDates={pastDatesSet}
           overdueDates={overdueDatesSet}
           externalIso={selectedDay?.iso}

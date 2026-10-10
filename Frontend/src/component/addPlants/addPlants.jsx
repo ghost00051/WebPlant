@@ -8,6 +8,7 @@ import sparkles from '../../assets/sparkles.svg'
 import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
 import { API_URL } from '../../utils/api.js'
+import { reminderWeekdaysForInterval } from '../../utils/date.js'
 
 const MAX_PHOTOS = 2
 
@@ -34,17 +35,8 @@ const WEEKDAY = [
     { id: 0, label: 'Вс' },
 ]
 
-const getReminderWeekdays = (intervalDays, startDate = new Date()) => {
-    const weekdays = new Set()
-    let weekday = startDate.getDay()
-
-    while (!weekdays.has(weekday)) {
-        weekdays.add(weekday)
-        weekday = (weekday + intervalDays) % 7
-    }
-
-    return [...weekdays]
-}
+const getReminderWeekdays = (intervalDays, startDate = new Date()) =>
+    reminderWeekdaysForInterval(intervalDays, startDate)
 
 function AddPlants() {
     const navigate = useNavigate()
@@ -732,7 +724,9 @@ function AddPlants() {
                                 </label>
                             </div>
                             <p className='commentOfPreset'>
-                                Дни выбраны по частоте полива. При необходимости измените их вручную.
+                                {selectedDays.length === 0
+                                    ? 'Полив попадает на разные дни недели, поэтому напоминание придёт в каждый день полива. Дни можно ограничить вручную.'
+                                    : 'Дни выбраны по частоте полива. При необходимости измените их вручную.'}
                             </p>
                             <div className='buttonHoldWeekday'>
                                 {WEEKDAY.map(w => (

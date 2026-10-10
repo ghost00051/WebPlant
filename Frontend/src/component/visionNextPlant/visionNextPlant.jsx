@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import EmptyIcon from '../../assets/EmptyIcon.svg'
 import chevronRight from '../../assets/chevron-right.svg'
 import plantPlaceholder from '../../assets/PlantTile.svg'
@@ -251,7 +252,10 @@ function VisionNextPlant({
     )
   }
 
-  return (
+  // Портал в body: оверлей должен перекрывать нижнее меню (tools) и не зависеть
+  // от контейнеров с transform/will-change, которые ломали position: fixed
+  // (BUG-018).
+  return createPortal(
     <div
       className={`vision-overlay ${active ? 'is-active' : ''}`}
       onClick={handleOverlayClick}
@@ -392,7 +396,8 @@ function VisionNextPlant({
           </section>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
 

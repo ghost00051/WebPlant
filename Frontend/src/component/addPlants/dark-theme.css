@@ -12,3 +12,47 @@ html[data-theme='dark'] .formForPlant .wateringRecommendation {
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
+
+/* Шаг 2 «Частота полива»: карточка была белой даже в тёмной теме (BUG-001),
+   как и диалог ИИ-подсказки (BUG-008). */
+html[data-theme='dark'] .formForPlant .wateringFrequency,
+html[data-theme='dark'] .formForPlant .wateringAdviceDialog {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .wateringPreset,
+html[data-theme='dark'] .formForPlant .customSchedule,
+html[data-theme='dark'] .formForPlant .askAI,
+html[data-theme='dark'] .formForPlant .wateringWeekday {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .wateringPreset.active,
+html[data-theme='dark'] .formForPlant .customSchedule.active,
+html[data-theme='dark'] .formForPlant .wateringWeekday.active {
+    background-color: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .formForPlant .wateringAdviceHeader {
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .formForPlant .wateringAdviceHeader h2 {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .wateringAdviceHeader p,
+html[data-theme='dark'] .formForPlant .wateringAdvicePlant {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .wateringAdviceClose {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}

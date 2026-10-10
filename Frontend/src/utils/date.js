@@ -108,6 +108,62 @@ export function resolveDayKind({ isPastDay, hasSchedule, hasEvents, hasMissed })
   return hasEvents ? 'past' : 'empty'
 }
 
+// Позиции расписания делятся на ещё не наступившие (план) и уже прошедшие
+// (просрочка). Сервер отдаёт прошедшую позицию в том же списке — она остаётся
+// там до автопропуска, и раньше по ней рисовалась точка «будущий полив».
+// Проверяется каждая позиция растения, а не день целиком: на одну дату могут
+// приходиться план одного растения и пропуск другого.
+export function partitionScheduleDates(schedule, now = new Date()) {
+  const planned = new Set()
+  const missed = new Set()
+  const nowTime = new Date(now).getTime()
+  if (!Number.isFinite(nowTime)) return { planned, missed }
+
+  for (const item of Array.isArray(schedule) ? schedule : []) {
+    const date = item?.date
+    const plants = Array.isArray(item?.plants) ? item.plants : []
+    if (!date || plants.length === 0) continue
+
+    for (const plant of plants) {
+      const at = new Date(plant?.next_watering_at ?? '').getTime()
+      // Без времени начала считаем позицию плановой, чтобы не показать
+      // пропуск там, где его нет.
+      if (Number.isFinite(at) && at < nowTime) missed.add(date)
+      else planned.add(date)
+    }
+  }
+
+  return { planned, missed }
+}
+
+// Отметки дня в календаре: плановая — только для ещё не наступившего полива,
+// пропущенная — для просроченного или пропущенного. У разных растений на одном
+// дне могут быть и план, и пропуск, поэтому отметки не взаимоисключающие; а вот
+// завершённый полив не показывается, если в этот день есть пропуск.
+export function resolveWateringMarkers({ isPlanned, hasHistory, hasMissed }) {
+  return {
+    isFuture: Boolean(isPlanned),
+    isPast: Boolean(hasHistory) && !hasMissed,
+    isOverdue: Boolean(hasMissed),
+  }
+}
+
+// Дни недели для напоминаний подбираются по частоте полива. Ограничение по дню
+// недели осмысленно, только если полив попадает на одни и те же дни, то есть
+// интервал кратен неделе. Для «каждый день» отмечаем все дни. При смещающемся
+// графике (например, раз в 3 дня) ограничение не накладываем: иначе
+// подсвечивались бы все семь дней и выбор терял смысл (BUG-019).
+export function reminderWeekdaysForInterval(intervalDays, startDate = new Date()) {
+  if (typeof intervalDays !== 'number' || !Number.isInteger(intervalDays) || intervalDays < 1) {
+    return []
+  }
+  if (intervalDays === 1) return [0, 1, 2, 3, 4, 5, 6]
+  if (intervalDays % 7 !== 0) return []
+
+  const firstWatering = addDays(toDate(startDate), intervalDays)
+  return [firstWatering.getDay()]
+}
+
 export function dayOfMonth(value) {
   return toDate(value).getDate()
 }

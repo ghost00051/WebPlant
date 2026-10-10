@@ -12,6 +12,11 @@ import './dark-theme.css'
 
 const METRIKA_ID = 113420950
 
+// Экраны входа и регистрации: согласия вынесены в саму форму, поэтому плавающая
+// плашка «Настройки cookie» там дублирует их и выглядит как не исчезнувшее
+// уведомление после согласия (BUG-005). На /home плашку перекрывает нижнее меню.
+const PATHS_WITHOUT_SETTINGS_TRIGGER = new Set(['/home', '/login', '/register'])
+
 async function getErrorMessage(response, fallback) {
     try {
         const body = await response.json()
@@ -95,7 +100,7 @@ async function fetchAccountScope(signal) {
 
 function CookieConsentManager() {
     const location = useLocation()
-    const isHomePage = location.pathname === '/home'
+    const showSettingsTrigger = !PATHS_WITHOUT_SETTINGS_TRIGGER.has(location.pathname)
     const [consentLoaded, setConsentLoaded] = useState(false)
     const [consentKnown, setConsentKnown] = useState(false)
     const [analyticsAccepted, setAnalyticsAccepted] = useState(false)
@@ -264,7 +269,7 @@ function CookieConsentManager() {
 
     return (
         <>
-            {consentLoaded && consentKnown && !isOpen && !isHomePage && (
+            {consentLoaded && consentKnown && !isOpen && showSettingsTrigger && (
                 <button
                     className='cookieSettingsTrigger'
                     type='button'
