@@ -39,13 +39,6 @@ export function generateWateringOccurrences(
     return occurrences
 }
 
-/**
- * Первый полив после слота расписания — он закрывает просрочку.
- *
- * Последний полив растения для этого не годится: он сдвигает просрочку
- * исторических пропусков вперёд при каждом новом поливе. Полив раньше слота
- * (вне графика) пропуск не закрывает.
- */
 export function findFirstWateringAfter(wateringTimes, scheduledFor) {
     const scheduled = new Date(scheduledFor).getTime()
     if (!Number.isFinite(scheduled) || !Array.isArray(wateringTimes)) {
@@ -62,15 +55,6 @@ export function findFirstWateringAfter(wateringTimes, scheduledFor) {
     return first
 }
 
-/**
- * Насколько просрочен пропущенный полив.
- *
- * Пока растение не полили снова, просрочка растёт вместе с текущим временем:
- * автопропуск срабатывает сразу после 24 часов и фиксирует в записи «1 день»,
- * поэтому сохранённое hours_late нельзя показывать как текущую просрочку —
- * растение может стоять сухим намного дольше. Если полив всё-таки был, отсчёт
- * останавливается на первом поливе после слота (см. findFirstWateringAfter).
- */
 export function resolveMissedLateness(
     scheduledFor,
     { now = new Date(), wateredAt = null } = {}
@@ -92,6 +76,118 @@ export function resolveMissedLateness(
     )
 
     return { hoursLate, daysLate: Math.floor(hoursLate / 24) }
+}
+
+export function parseWateringSlot(value, timeOfDayHours = 8) {
+    if (typeof value !== 'string') return null
+
+    const trimmed = value.trim()
+    const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
+
+    if (dateOnly) {
+        const year = Number(dateOnly[1])
+        const month = Number(dateOnly[2]) - 1
+        const day = Number(dateOnly[3])
+        const hour = Number.isInteger(timeOfDayHours) ? timeOfDayHours : 8
+        const slot = new Date(year, month, day, hour, 0, 0, 0)
+
+        if (
+            slot.getFullYear() !== year ||
+            slot.getMonth() !== month ||
+            slot.getDate() !== day
+        ) {
+            return null
+        }
+
+        return slot
+    }
+
+    const parsed = new Date(trimmed)
+    return Number.isFinite(parsed.getTime()) ? parsed : null
+}
+
+export function resolvePastWatering(scheduledFor, {
+    now = new Date(),
+    lastWateredAt = null,
+    nextWateringAt = null,
+    intervalDays = 7,
+    timeOfDayHours = 8
+} = {}) {
+    const slot = toValidDate(scheduledFor)
+    const current = toValidDate(now)
+    if (!slot || !current) return null
+    if (slot.getTime() > current.getTime()) return null
+
+    const interval = Number.isInteger(intervalDays) && intervalDays > 0 ? intervalDays : 7
+    const hour = Number.isInteger(timeOfDayHours) ? timeOfDayHours : 8
+
+    const plannedNext = new Date(slot.getTime())
+    plannedNext.setDate(plannedNext.getDate() + interval)
+    plannedNext.setHours(hour, 0, 0, 0)
+
+    const previousNext = toValidDate(nextWateringAt)
+    const next = previousNext && previousNext > plannedNext ? previousNext : plannedNext
+
+    const previousLast = toValidDate(lastWateredAt)
+    const last = previousLast && previousLast > slot ? previousLast : slot
+
+    return {
+        actionAt: slot,
+        scheduledFor: slot,
+        hoursLate: 0,
+        lastWateredAt: last,
+        nextWateringAt: next,
+        scheduleChanged: !previousNext || previousNext.getTime() !== next.getTime()
+    }
+}
+
+function toValidDate(value) {
+    if (value === undefined || value === null) return null
+    const date = value instanceof Date ? new Date(value.getTime()) : new Date(value)
+    return Number.isFinite(date.getTime()) ? date : null
+}
+
+export function utcDayRange(date) {
+    const start = toValidDate(date)
+    if (!start) return null
+
+    start.setUTCHours(0, 0, 0, 0)
+    return { from: start, to: new Date(start.getTime() + DAY_IN_MILLISECONDS - 1) }
+}
+
+export function pickWateringLogForSlot(logs, action, slot) {
+    const slotAt = toValidDate(slot)
+    const range = utcDayRange(slotAt)
+    if (!slotAt || !range || !Array.isArray(logs)) return null
+
+    const inDay = value => {
+        const at = toValidDate(value)
+        return at !== null && at.getTime() >= range.from.getTime() && at.getTime() <= range.to.getTime()
+    }
+
+    const candidates = logs.filter(log => log && log.action === action)
+    const bySlot = candidates.filter(log => inDay(log.scheduled_for))
+    const pool = bySlot.length
+        ? bySlot
+        : candidates.filter(log => !toValidDate(log.scheduled_for) && inDay(log.action_at))
+    if (!pool.length) return null
+
+    const exact = pool.find(
+        log => toValidDate(log.scheduled_for)?.getTime() === slotAt.getTime()
+    )
+    if (exact) return exact
+
+    const distanceTo = log => {
+        const at = toValidDate(log.scheduled_for)
+        return at === null ? Number.MAX_SAFE_INTEGER : Math.abs(at.getTime() - slotAt.getTime())
+    }
+
+    return pool.reduce((best, log) => (distanceTo(log) < distanceTo(best) ? log : best))
+}
+
+export function weekdayRestrictionApplies(intervalDays) {
+    return Number.isInteger(intervalDays) && intervalDays > 0 &&
+        (intervalDays === 1 || intervalDays % 7 === 0)
 }
 
 export function isReminderWeekday(weekdays, date) {

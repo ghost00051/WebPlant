@@ -2,6 +2,7 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import plantController from '../controllers/plantController.js'
 import { requireAuth } from '../middleware/auth.js'
+import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
@@ -13,7 +14,8 @@ const speciesSuggestionLimiter = rateLimit({
     keyGenerator: req => String(req.user.id),
     message: { message: 'Слишком много запросов к подсказкам. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('plant-species')
 })
 
 const wateringAdviceLimiter = rateLimit({
@@ -22,7 +24,8 @@ const wateringAdviceLimiter = rateLimit({
     keyGenerator: req => String(req.user.id),
     message: { message: 'Слишком много запросов советов по поливу. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('plant-watering-advice')
 })
 
 router.post('/suggest-species', speciesSuggestionLimiter, plantController.suggestSpecies)

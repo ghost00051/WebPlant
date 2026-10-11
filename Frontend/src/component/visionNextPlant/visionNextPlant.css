@@ -51,7 +51,7 @@
   text-align: center;
 }
 
-.wateringDeleteDialog__card > p {
+.wateringDeleteDialog__card>p {
   margin: 10px 0 20px;
   color: #777;
   font-size: var(--font-size-sm);
@@ -93,13 +93,13 @@
 .visiibleVareingPlant {
   position: fixed;
   left: 50%;
-  bottom: 8%;
+  bottom: 0;
   transform: translate(-50%, 24px) scale(0.96);
   width: 100%;
   max-width: 420px;
   background: #fff;
   border-radius: 24px 24px 0 0;
-  padding: 20px 4% 28px;
+  padding: 20px 4% calc(28px + env(safe-area-inset-bottom, 0px));
   box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.12);
   opacity: 0;
   transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1),
@@ -274,7 +274,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 6px;
 }
 
 .plantsPreview__delete {
@@ -416,6 +416,84 @@
 .classOfgetWateringTime--overdue {
   color: #e07a7a;
   background-color: #fbecec;
+  border-radius: 8px;
+  padding: 3px 8px;
+}
+
+.plantsPreview__water {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 0px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: #2f855a;
+  color: #fff;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease, box-shadow 0.2s ease, transform 0.12s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.plantsPreview__water:hover:not(:disabled) {
+  background: #276749;
+  box-shadow: 0 4px 12px rgba(47, 133, 90, 0.28);
+}
+
+.plantsPreview__water:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.plantsPreview__water:focus-visible {
+  outline: 2px solid #2f855a;
+  outline-offset: 2px;
+}
+
+.plantsPreview__water:disabled {
+  cursor: wait;
+  opacity: 0.72;
+  box-shadow: none;
+}
+
+.plantsPreview__waterSpinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255, 255, 255, 0.45);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: wateringSpinner 0.7s linear infinite;
+}
+
+@keyframes wateringSpinner {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plantsPreview__waterSpinner {
+    animation-duration: 1.8s;
+  }
+}
+
+.wateringNote {
+  margin: 10px 0 0;
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+.wateringNote--error {
+  background: #fbecec;
+  color: #a84444;
 }
 
 .plantsPreview__dot--overdue {

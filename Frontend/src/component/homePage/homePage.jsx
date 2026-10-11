@@ -36,7 +36,8 @@ function HomePage({ user, onTabChange }) {
   const [wateringId, setWateringId] = useState(null)
   const [deletingWateringId, setDeletingWateringId] = useState(null)
   const [removingId, setRemovingId] = useState(null)
-  const [selectedDay, setSelectedDay] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [missedWateringId, setMissedWateringId] = useState(null)
   const [schedule, setSchedule] = useState([])
   const [history, setHistory] = useState([])
   const [now, setNow] = useState(new Date())
@@ -64,8 +65,6 @@ function HomePage({ user, onTabChange }) {
     [historyMap]
   )
 
-  // Расписание отдаёт и уже прошедшие позиции (они остаются там до автопропуска),
-  // поэтому день плана и день пропуска считаются по каждой позиции отдельно.
   const { planned: plannedDates, missed: missedScheduleDates } = useMemo(
     () => partitionScheduleDates(schedule, now),
     [schedule, now]
@@ -176,11 +175,6 @@ function HomePage({ user, onTabChange }) {
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => {
-    document.body.style.overflow = selectedDay ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [selectedDay])
-
   const waterPlant = async plantId => {
     if (!plantId || wateringId) return
     setWateringId(plantId)
@@ -231,7 +225,7 @@ function HomePage({ user, onTabChange }) {
         throw new Error(errorData.message || `Не удалось удалить запись: HTTP ${response.status}`)
       }
 
-      setSelectedDay(null)
+      setSelectedDate(null)
       await loadHomeData()
       return true
     } catch (error) {
@@ -240,6 +234,44 @@ function HomePage({ user, onTabChange }) {
       return false
     } finally {
       setDeletingWateringId(null)
+    }
+  }
+
+  const waterMissedPlant = async (plantId, scheduledFor) => {
+    if (!plantId || missedWateringId) {
+      return { ok: false, message: '' }
+    }
+
+    setMissedWateringId(plantId)
+    let alreadyWatered = false
+    try {
+      const response = await fetch(
+        `${API_URL}/plants/${plantId}/water`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduled_for: scheduledFor }),
+          credentials: 'include'
+        }
+      )
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        alreadyWatered = response.status === 409
+        throw new Error(data.message || `Не удалось отметить полив: HTTP ${response.status}`)
+      }
+
+      await loadHomeData()
+      return { ok: true, convertedSkip: Boolean(data.converted_skip) }
+    } catch (error) {
+      console.error('Ошибка отметки просроченного полива:', error)
+      if (alreadyWatered) await loadHomeData()
+      return {
+        ok: false,
+        message: error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
+      }
+    } finally {
+      setMissedWateringId(null)
     }
   }
 
@@ -298,19 +330,22 @@ function HomePage({ user, onTabChange }) {
     }
   }, [scheduleMap, historyMap])
 
+  const selectedDay = useMemo(
+    () => (selectedDate ? buildDay(selectedDate) : null),
+    [selectedDate, buildDay]
+  )
+
   const handleSelectDay = useCallback((date) => {
-    setSelectedDay(prev => {
-      if (prev && prev.date.getTime() === date.getTime()) return null
-      return buildDay(date)
-    })
-  }, [buildDay])
+    const target = toDate(date)
+    setSelectedDate(prev =>
+      prev && prev.getTime() === target.getTime() ? null : target
+    )
+  }, [])
 
   const nextWatering = useMemo(() => {
     if (!selectedDay) return null
     const fromIso = selectedDay.iso
 
-    // Ближайший полив — только ещё не наступившая позиция: просроченную дату
-    // показывать как «ближайший полив» нельзя.
     const upcoming = schedule
       .filter(item => item.date > fromIso && item.plants?.length && plannedDates.has(item.date))
       .sort((a, b) => a.date.localeCompare(b.date))
@@ -326,15 +361,12 @@ function HomePage({ user, onTabChange }) {
 
   const handleGoToDate = useCallback((iso) => {
     calendarRef.current?.scrollTo(iso)
-    setSelectedDay(buildDay(toDate(iso)))
-  }, [buildDay])
+    setSelectedDate(toDate(iso))
+  }, [])
 
 
   const onePlant = useMemo(() => {
     const withPlants = schedule.filter(d => d.plants?.length > 0)
-    // Просроченная позиция расписания — уже прошедшая дата: как «план» она
-    // показывает вчерашний день. Берём ближайшую дату с ещё не наступившим
-    // поливом, а если таких нет — остаётся текущая просроченная.
     const firstDay = withPlants.find(d => plannedDates.has(d.date)) ?? withPlants[0]
     if (!firstDay) return null
     return { ...firstDay.plants[0], nextDate: firstDay.date }
@@ -511,9 +543,11 @@ function HomePage({ user, onTabChange }) {
         day={selectedDay}
         nextWatering={nextWatering}
         onGoToDate={handleGoToDate}
+        onWater={waterMissedPlant}
         onDeleteWatering={deleteWatering}
+        wateringPlantId={missedWateringId}
         deletingWateringId={deletingWateringId}
-        onClose={() => setSelectedDay(null)}
+        onClose={() => setSelectedDate(null)}
       />
     </div>
   )

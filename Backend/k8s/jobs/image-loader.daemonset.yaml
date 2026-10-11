@@ -1,0 +1,105 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: image-loader
+  namespace: webplant
+  labels:
+    app: image-loader
+spec:
+  selector:
+    matchLabels:
+      app: image-loader
+  template:
+    metadata:
+      labels:
+        app: image-loader
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: loader
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: IMAGE_REF
+              value: "__IMAGE_REF__"
+            - name: IMAGE_TAR
+              value: "__IMAGE_TAR__"
+            - name: KEEP_IMAGE
+              value: "__KEEP_IMAGE__"
+            - name: IMAGE_SERVER_PORT
+              value: "8099"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              CTR=/host/usr/local/bin/ctr
+              SOCK=/host/run/containerd/containerd.sock
+              IMAGE="docker.io/library/${IMAGE_REF}"
+
+              ensure_image() {
+                if ${CTR} --address ${SOCK} --namespace k8s.io images ls -q | grep -qx "${IMAGE}"; then
+                  echo "образ ${IMAGE} уже есть на ноде $(hostname)"
+                  return 0
+                fi
+
+                # Разброс по времени: шесть нод качают 90-мегабайтный архив одновременно,
+                # и Docker Desktop рвёт часть соединений.
+                sleep $(( (RANDOM % 20) + 1 ))
+
+                for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
+                  ATTEMPT=1
+                  while [ "${ATTEMPT}" -le 4 ]; do
+                    echo "скачиваю ${IMAGE_TAR} с ${HOST} (попытка ${ATTEMPT})..."
+                    rm -f /tmp/image.tar
+                    if wget -q -T 60 -O /tmp/image.tar "http://${HOST}:${IMAGE_SERVER_PORT}/${IMAGE_TAR}"; then
+                      echo "импортирую ${IMAGE} в containerd ноды $(hostname)..."
+                      if ${CTR} --address ${SOCK} --namespace k8s.io images import /tmp/image.tar; then
+                        rm -f /tmp/image.tar
+                        return 0
+                      fi
+                    fi
+                    ATTEMPT=$((ATTEMPT + 1))
+                    sleep 5
+                  done
+                done
+
+                return 1
+              }
+
+              # Оставляем только текущий образ и один предыдущий (для kubectl rollout undo),
+              # чтобы 90-мегабайтные слои не копились на каждой ноде.
+              prune_images() {
+                for REF in $(${CTR} --address ${SOCK} --namespace k8s.io images ls -q |
+                  grep '^docker.io/library/webplant-backend:' || true); do
+                  if [ "${REF}" != "${IMAGE}" ] && [ "${REF}" != "${KEEP_IMAGE}" ]; then
+                    echo "удаляю устаревший образ ${REF}"
+                    ${CTR} --address ${SOCK} --namespace k8s.io images rm "${REF}" || true
+                  fi
+                done
+              }
+
+              ensure_image || { echo "не удалось доставить ${IMAGE_TAR}" >&2; exit 1; }
+              prune_images
+
+              echo "image-loader ready"
+              sleep infinity
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory

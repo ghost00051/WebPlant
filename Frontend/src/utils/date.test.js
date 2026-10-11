@@ -1,11 +1,14 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { partitionScheduleDates, reminderWeekdaysForInterval, resolveWateringMarkers } from './date.js'
+import {
+  partitionScheduleDates,
+  reminderWeekdaysForInterval,
+  resolveWateringMarkers,
+  upcomingWateringDays,
+  weekdayRestrictionApplies
+} from './date.js'
 
 test('просроченная позиция расписания не показывается будущим поливом', () => {
-  // Сценарий из жалобы: полив был назначен на 9 октября 19:00 MSK, не сделан,
-  // и эта же позиция осталась в расписании как прошедшая. Плюс по дате есть
-  // событие «просрочено» из истории.
   const now = new Date('2026-10-10T13:05:00.000Z')
   const schedule = [{
     date: '2026-10-09',
@@ -93,7 +96,6 @@ test('позиция без времени начала и пустой спис
 })
 
 test('дни недели напоминаний подбираются по частоте полива', () => {
-  // 7 октября 2026 — среда (getDay() === 3).
   const start = new Date(2026, 9, 7)
 
   assert.deepEqual(reminderWeekdaysForInterval(7, start), [3])
@@ -104,7 +106,6 @@ test('дни недели напоминаний подбираются по ч�
 test('смещающийся график не подсвечивает все дни недели', () => {
   const start = new Date(2026, 9, 7)
 
-  // Раз в 3 дня полив попадает на разные дни недели — ограничение не накладываем.
   assert.deepEqual(reminderWeekdaysForInterval(3, start), [])
   assert.deepEqual(reminderWeekdaysForInterval(4, start), [])
   assert.deepEqual(reminderWeekdaysForInterval(10, start), [])
@@ -116,4 +117,42 @@ test('некорректный интервал не даёт выбранных
   assert.deepEqual(reminderWeekdaysForInterval(2.5), [])
   assert.deepEqual(reminderWeekdaysForInterval('7'), [])
   assert.deepEqual(reminderWeekdaysForInterval(undefined), [])
+})
+
+test('ограничение по дням недели применимо только к «каждый день» и кратным неделе', () => {
+  assert.equal(weekdayRestrictionApplies(1), true)
+  assert.equal(weekdayRestrictionApplies(7), true)
+  assert.equal(weekdayRestrictionApplies(14), true)
+  assert.equal(weekdayRestrictionApplies(21), true)
+
+  assert.equal(weekdayRestrictionApplies(4), false)
+  assert.equal(weekdayRestrictionApplies(5), false)
+  assert.equal(weekdayRestrictionApplies(6), false)
+  assert.equal(weekdayRestrictionApplies(10), false)
+
+  assert.equal(weekdayRestrictionApplies(0), false)
+  assert.equal(weekdayRestrictionApplies(2.5), false)
+  assert.equal(weekdayRestrictionApplies('7'), false)
+  assert.equal(weekdayRestrictionApplies(undefined), false)
+})
+
+test('предпросмотр показывает, на какие дни недели попадут ближайшие поливы', () => {
+  const start = new Date(2026, 9, 11)
+
+  assert.deepEqual(
+    upcomingWateringDays(4, start, 4).map(item => [
+      item.date.getDate(),
+      item.date.getMonth() + 1,
+      item.weekday
+    ]),
+    [[15, 10, 4], [19, 10, 1], [23, 10, 5], [27, 10, 2]]
+  )
+
+  assert.deepEqual(
+    upcomingWateringDays(7, start, 3).map(item => item.weekday),
+    [0, 0, 0]
+  )
+
+  assert.deepEqual(upcomingWateringDays(0, start, 3), [])
+  assert.deepEqual(upcomingWateringDays(4, start, 0), [])
 })

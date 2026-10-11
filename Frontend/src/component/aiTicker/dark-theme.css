@@ -1,0 +1,5 @@
+html[data-theme='dark'] .aiTicker {
+    border-bottom-color: #B99617;
+    background: linear-gradient(90deg, #E8C33F 0%, #FFD54A 12%, #FFD54A 88%, #E8C33F 100%);
+    color: #2E2200;
+}

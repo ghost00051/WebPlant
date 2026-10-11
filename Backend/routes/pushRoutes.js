@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import pushController from '../controllers/pushController.js'
 import { requireAdmin } from '../middleware/admin.js'
 import { optionalAuth, requireAuth } from '../middleware/auth.js'
+import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
@@ -11,7 +12,8 @@ const subscriptionLimiter = rateLimit({
     limit: 20,
     message: { message: 'Слишком много попыток обновить push-подписку. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('push-subscription')
 })
 
 router.get('/vapid-public-key', pushController.getVapidPublicKey)

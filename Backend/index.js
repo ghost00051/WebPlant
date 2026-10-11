@@ -8,6 +8,8 @@ import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
+import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
+import { getAiCacheStats } from './utils/aiCache.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -41,6 +43,7 @@ import chatRouter from './routes/chatRoutes.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
+const BACKGROUND_JOBS_ENABLED = process.env.BACKGROUND_JOBS_ENABLED !== 'false'
 const MIGRATION_FILES_BY_TABLE = {
     auth_sessions: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     passkeys: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
@@ -156,7 +159,14 @@ app.use('/api/chat', getGuestToken, chatRouter)
 app.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate()
-        return res.json({ status: 'ok', timestamp: new Date().toISOString() })
+        return res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            deployTarget: process.env.DEPLOY_TARGET || null,
+            redis: describeRedisStatus(),
+            backgroundJobs: BACKGROUND_JOBS_ENABLED,
+            aiCache: getAiCacheStats()
+        })
     } catch (error) {
         console.error('❌ Проверка готовности не пройдена:', error)
         return res.status(503).json({ status: 'unavailable' })
@@ -203,6 +213,13 @@ async function startServer() {
         await sequelize.authenticate()
         console.log("✅ База данных подключена успешно!")
 
+        if (isRedisConfigured()) {
+            const redisReady = await pingRedis()
+            console.log(redisReady
+                ? "✅ Redis подключён: кэш ИИ, распределённые локи и общий rate-limit активны"
+                : "⚠️ Redis недоступен: работаем без кэша ИИ, локов и общего rate-limit")
+        }
+
         if (process.env.NODE_ENV === 'production') {
             const queryInterface = sequelize.getQueryInterface()
             const tables = await queryInterface.showAllTables()
@@ -233,11 +250,15 @@ async function startServer() {
             console.log("✅ Таблицы созданы/обновлены успешно!")
         }
 
-        startCleanupJob()
-        console.log("⏰ Запущена очистка истекших согласий и auth-данных")
-        reminderService.start()
-        startPushBroadcastJob()
-        console.log("📣 Планировщик отложенных рассылок запущен")
+        if (BACKGROUND_JOBS_ENABLED) {
+            startCleanupJob()
+            console.log("⏰ Запущена очистка истекших согласий и auth-данных")
+            reminderService.start()
+            startPushBroadcastJob()
+            console.log("📣 Планировщик отложенных рассылок запущен")
+        } else {
+            console.log("⏸ Фоновые задачи отключены (BACKGROUND_JOBS_ENABLED=false)")
+        }
 
         app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)

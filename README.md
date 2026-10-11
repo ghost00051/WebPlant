@@ -27,6 +27,7 @@ WebPlant («Лейка») — full-stack приложение для ухода 
 - Публичный стартовый экран с описанием приложения и переходами ко входу/регистрации
 - Коллекция растений, интервалы и время полива, календарь и история
 - Удаление ошибочной записи о поливе из календаря с восстановлением предыдущей даты полива
+- Отметка полива задним числом: просроченный или пропущенный слот становится поливом с датой этого слота, расписание продолжается от него
 - Web Push-напоминания и чат с ИИ, включая советы по уходу
 - Загрузка фотографий растений
 - Работа через PostgreSQL и Sequelize ORM
@@ -55,13 +56,16 @@ WebPlant («Лейка») — full-stack приложение для ухода 
 - Express 5
 - PostgreSQL
 - Sequelize ORM
+- Redis (общий rate-limit, распределённые локи cron-задач, кэш ответов ИИ)
 - JWT
 - bcrypt
 - cookie-parser
 - CORS
 - Helmet
+- express-rate-limit
 - dotenv
 - nodemon
+- Kubernetes (манифесты в `Backend/k8s`)
 
 ## Архитектура проекта
 
@@ -439,7 +443,10 @@ DB_USER=webplant_user
 DB_PASSWORD=your_password
 SECRET_KEY=replace_with_a_random_secret_of_at_least_32_bytes
 FRONTEND_URL=http://localhost:5173
+REDIS_URL=redis://localhost:6379/0
 ```
+
+Redis не обязателен: без `REDIS_URL` backend работает как раньше — лимиты запросов считаются в памяти процесса, cron-задачи выполняются без распределённых локов, кэш ответов ИИ отключён. Если Redis задан, он используется для общего rate-limit, распределённых локов cron-задач (напоминания, push-рассылки, очистка) и кэша ответов Yandex Cloud AI. При недоступности Redis backend продолжает работать в прежнем режиме, а `GET /health` показывает `"redis": "unavailable"`.
 
 Для production также задайте `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY` для web push, укажите HTTPS-origin в `FRONTEND_URL`, установите `NODE_ENV=production` и используйте отдельные защищённые credentials PostgreSQL. Для passkey-аутентификации задайте `RP_ID` (домен сайта без схемы, например `checktheplants.ru`) и `FRONTEND_ORIGIN` (разрешённые HTTPS-origin через запятую; каждый должен быть в `FRONTEND_URL` и покрываться `RP_ID`). `YANDEX_CLOUD_FOLDER` и `YANDEX_CLOUD_API_KEY` используются чатом, подсказкой вида и диалогом рекомендаций полива.
 
@@ -512,6 +519,35 @@ http://localhost:5173
 В dev-режиме запросы `/api` по умолчанию проксируются на `http://localhost:5000`. Для удалённого backend задайте `VITE_API_PROXY_TARGET` и, если требуется, `VITE_API_PROXY_ORIGIN` в `Frontend/.env.local`; production API подключайте только осознанно, учитывая доступ к реальным данным. `VITE_API_URL` задаёт полный API URL для frontend.
 
 Корневой адрес `/` показывает публичный экран знакомства с приложением. Вход и регистрация доступны по адресам `/login` и `/register`.
+
+## Развёртывание
+
+### Docker Compose
+
+Боевая схема — `Backend/docker-compose.yml`: PostgreSQL, Redis, backend, nginx с TLS (Let's Encrypt через certbot), резервное копирование и прокси docker-сокета. Запуск и обновление:
+
+```bash
+cd Backend
+docker compose up -d --build
+docker compose ps
+docker compose logs -f backend
+```
+
+Redis в compose (`ctp_redis`) хранит общий rate-limit, распределённые локи cron-задач и кэш ответов ИИ; пароль задаётся переменной `REDIS_PASSWORD` в `Backend/.env`, данные лежат в томе `redis_data`.
+
+### Kubernetes
+
+Стек также разворачивается в Kubernetes (PostgreSQL, Redis, две реплики backend, перенос боевых данных и шлюз наружу). Манифесты, скрипты и описание переезда — в [Backend/k8s/README.md](Backend/k8s/README.md):
+
+```powershell
+# первый запуск: сборка образа, доставка на ноды, перенос данных из compose
+powershell -File Backend/k8s/scripts/deploy.ps1 -RestoreData
+
+# состояние стека, Redis и базы
+powershell -File Backend/k8s/scripts/status.ps1
+```
+
+В кластере фоновые задачи по умолчанию выключены (`BACKGROUND_JOBS_ENABLED=false`), чтобы не дублировать push-уведомления рядом с работающим compose-стеком; включаются флагом `-EnableBackgroundJobs` после переключения трафика.
 
 ## Основные сценарии использования
 

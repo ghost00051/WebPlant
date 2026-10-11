@@ -12,9 +12,6 @@ import './dark-theme.css'
 
 const METRIKA_ID = 113420950
 
-// Экраны входа и регистрации: согласия вынесены в саму форму, поэтому плавающая
-// плашка «Настройки cookie» там дублирует их и выглядит как не исчезнувшее
-// уведомление после согласия (BUG-005). На /home плашку перекрывает нижнее меню.
 const PATHS_WITHOUT_SETTINGS_TRIGGER = new Set(['/home', '/login', '/register'])
 
 async function getErrorMessage(response, fallback) {
@@ -139,12 +136,6 @@ function CookieConsentManager() {
         setError('')
     }, [])
 
-    // Сервер не знает выбора: согласие привязано к личности (user_id или
-    // guest_token). Локальный выбор применяем только гостю — у гостя личность
-    // совпадает с устройством. Для аккаунта это может быть чужой выбор,
-    // сделанный на том же устройстве, поэтому там решает сервер.
-    // Запись на сервере здесь заново не создаём: она привязалась бы к текущему
-    // guest_token, а при следующем входе её унаследовал бы другой аккаунт.
     const applyStoredConsent = useCallback(async signal => {
         const local = readLocalConsent()
         if (!local) {
@@ -184,8 +175,6 @@ function CookieConsentManager() {
             .catch(async loadError => {
                 if (loadError.name === 'AbortError') return
                 console.error('Ошибка загрузки согласия cookie:', loadError)
-                // Если выбор уже сохранён на устройстве, недоступность API
-                // не повод показывать окно заново.
                 let applied = false
                 try {
                     applied = await applyStoredConsent(controller.signal)
@@ -202,8 +191,6 @@ function CookieConsentManager() {
             })
 
         return () => controller.abort()
-        // location.pathname: после входа в аккаунт согласие может быть
-        // уже сохранено за пользователем, поэтому состояние перечитываем.
     }, [applyConsents, applyStoredConsent, loadConsents, location.pathname])
 
     useEffect(() => {
@@ -243,8 +230,6 @@ function CookieConsentManager() {
 
         setIsSaving(true)
         setError('')
-        // Выбор запоминаем на устройстве до запроса: даже если сервер
-        // недоступен, окно не вернётся при следующем входе.
         saveLocalConsent(buildLocalConsent(acceptOptionalCookies))
         try {
             await saveConsentToServer(acceptOptionalCookies)

@@ -5,10 +5,16 @@ import { requireAdmin } from '../middleware/admin.js'
 
 const router = express.Router()
 
-const docker = new Docker({
-  host: process.env.DOCKER_HOST?.replace('tcp://', '').split(':')[0] || 'docker-socket-proxy',
-  port: Number(process.env.DOCKER_HOST?.split(':').pop()) || 2375,
-})
+const dockerHost = process.env.DOCKER_HOST?.trim()
+const dockerEnabled = process.env.DOCKER_STATS_ENABLED !== 'false' && Boolean(dockerHost)
+
+const docker = dockerEnabled ? new Docker({
+  host: dockerHost.replace('tcp://', '').split(':')[0],
+  port: Number(dockerHost.split(':').pop()) || 2375,
+}) : null
+
+const isDockerUnavailable = error =>
+  ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'ECONNRESET', 'EPIPE'].includes(error?.code)
 
 function calcCpuPercent(stats) {
   const cpuDelta =
@@ -40,6 +46,12 @@ const CACHE_TTL = 3000
 
 router.get('/docker-stats', requireAdmin, async (req, res) => {
   try {
+    if (!docker) {
+      return res.status(503).json({
+        error: 'Docker stats недоступны: DOCKER_HOST не задан для этого окружения'
+      })
+    }
+
     if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
       return res.json(cache.data)
     }
@@ -147,6 +159,11 @@ router.get('/docker-stats', requireAdmin, async (req, res) => {
 
     res.json(payload)
   } catch (err) {
+    if (isDockerUnavailable(err)) {
+      console.warn('⚠️ Docker stats недоступны:', err.code)
+      return res.status(503).json({ error: 'Docker недоступен в этом окружении' })
+    }
+
     console.error('Docker stats error:', err)
     res.status(500).json({ error: 'Failed to get docker stats' })
   }

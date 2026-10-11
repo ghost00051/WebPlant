@@ -13,8 +13,6 @@ html[data-theme='dark'] .formForPlant .wateringRecommendation {
     color: var(--theme-text);
 }
 
-/* Шаг 2 «Частота полива»: карточка была белой даже в тёмной теме (BUG-001),
-   как и диалог ИИ-подсказки (BUG-008). */
 html[data-theme='dark'] .formForPlant .wateringFrequency,
 html[data-theme='dark'] .formForPlant .wateringAdviceDialog {
     background: var(--theme-surface);
@@ -37,6 +35,20 @@ html[data-theme='dark'] .formForPlant .wateringWeekday.active {
     background-color: var(--theme-accent);
     border-color: var(--theme-accent);
     color: #101612;
+}
+
+html[data-theme='dark'] .formForPlant .wateringWeekday.preview {
+    background-color: rgba(127, 209, 160, 0.14);
+    border-color: rgba(127, 209, 160, 0.4);
+    color: #9FD8B8;
+}
+
+html[data-theme='dark'] .formForPlant .wateringWeekdayPreview {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .wateringWeekdayPreview b {
+    color: #9FD8B8;
 }
 
 html[data-theme='dark'] .formForPlant .wateringAdviceHeader {

@@ -72,7 +72,6 @@
     overflow-wrap: anywhere;
 }
 
-/* Бейдж роли: виден только администратору. */
 .descritpionOfProfile .adminProfileBadge {
     align-self: flex-start;
     margin: 8px 0 0;

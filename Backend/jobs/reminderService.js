@@ -5,10 +5,14 @@ import pushService from '../services/pushService.js'
 import WateringLog from '../models/WateringLog.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import { storeNotification } from '../services/notificationService.js'
-import { isReminderWeekday } from '../utils/wateringSchedule.js'
+import { isReminderWeekday, weekdayRestrictionApplies } from '../utils/wateringSchedule.js'
+import { withDistributedLock } from '../utils/distributedLock.js'
 
 const HOUR = 60 * 60 * 1000
 const SUMMARY_TIMEZONE = 'Europe/Moscow'
+const TICK_LOCK = 'job:reminder-tick'
+const TICK_LOCK_TTL_MS = 9 * 60 * 1000
+const SUMMARY_LOCK_TTL_MS = 30 * 60 * 1000
 
 function getDateParts(date, timeZone) {
     return Object.fromEntries(
@@ -59,16 +63,34 @@ function getMoscowDayBounds(now) {
 
 class ReminderService {
     start() {
-        cron.schedule('*/10 * * * *', () => this.tick(), {
+        cron.schedule('*/10 * * * *', () => this.runTick(), {
             timezone: 'UTC'
         })
-        cron.schedule('*/10 9 * * *', () => this.sendMorningSummary().catch(error => {
+        cron.schedule('*/10 9 * * *', () => this.runMorningSummary().catch(error => {
             console.error('❌ Ошибка планировщика утренней сводки:', error)
         }), {
             timezone: SUMMARY_TIMEZONE
         })
-        console.log('⏰ ReminderService запущен (каждые 10 минут)')
+        console.log('⏰ ReminderService запущен (каждые 10 минут, распределённый лок Redis)')
         console.log('🌅 Утренняя сводка запланирована ежедневно на 09:00 Europe/Moscow')
+    }
+
+    async runTick() {
+        await withDistributedLock(
+            TICK_LOCK,
+            { ttlMs: TICK_LOCK_TTL_MS },
+            () => this.tick()
+        )
+    }
+
+    async runMorningSummary(now = new Date()) {
+        const { date } = getMoscowDayBounds(now)
+
+        await withDistributedLock(
+            `job:morning-summary:${date}`,
+            { ttlMs: SUMMARY_LOCK_TTL_MS },
+            () => this.sendMorningSummary(now)
+        )
     }
 
     async autoSkipOverdue(now) {
@@ -271,6 +293,9 @@ class ReminderService {
     }
 
     matchesWeekday(plant) {
+
+        if (!weekdayRestrictionApplies(plant.watering_interval_days)) return true
+
         return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at)
     }
 

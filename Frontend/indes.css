@@ -8,6 +8,7 @@
     --font-size-2xl: 1.5rem;
     --font-size-3xl: 2rem;
     --font-size-hero: clamp(2.375rem, 5vw, 3.875rem);
+    --mobile-nav-height: calc(60px + env(safe-area-inset-top, 0px));
     font-family: 'Inter', sans-serif;
     font-size: 100%;
 }

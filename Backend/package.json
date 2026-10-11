@@ -29,6 +29,8 @@
         "openai": "^7.23.0",
         "pg": "^8.23.0",
         "pg-hstore": "^2.3.4",
+        "rate-limit-redis": "^6.0.1",
+        "redis": "^6.3.0",
         "sequelize": "^6.37.8",
         "uuid": "^14.0.2",
         "web-push": "^3.6.7"

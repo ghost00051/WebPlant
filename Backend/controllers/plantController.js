@@ -19,7 +19,11 @@ import {
 import {
     generateWateringOccurrences,
     findFirstWateringAfter,
-    resolveMissedLateness
+    parseWateringSlot,
+    pickWateringLogForSlot,
+    resolveMissedLateness,
+    resolvePastWatering,
+    utcDayRange
 } from '../utils/wateringSchedule.js'
 const TIME_OF_DAY_HOURS = { morning: 8, day: 14, evening: 19 }
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
@@ -764,9 +768,6 @@ class PlantController {
                     action: { [Op.in]: ['watered', 'skipped'] },
                     plant_id: { [Op.in]: [...plantsById.keys()] }
                 },
-                // Второй ключ сортировки: при одинаковом action_at окно «500
-                // последних» должно отдавать более новую запись, иначе закрывающий
-                // пропуск полив может выпасть из выборки, а сам пропуск остаться.
                 order: [['action_at', 'DESC'], ['id', 'DESC']],
                 limit: 500,
                 raw: true
@@ -779,9 +780,6 @@ class PlantController {
                 groups.get(iso).events.push(event)
             }
 
-            // Просрочку закрывает первый полив после слота. Логи выбраны окном
-            // «последние 500 действий», а полив всегда новее пропуска, поэтому
-            // закрывающий полив попадает в выборку вместе с закрываемым пропуском.
             const wateringTimesByPlant = new Map()
             for (const log of logs) {
                 if (log.action !== 'watered') continue
@@ -837,9 +835,6 @@ class PlantController {
                     const missedAt = new Date(log.scheduled_for ?? log.action_at)
                     if (!Number.isFinite(missedAt.getTime())) continue
 
-                    // Просрочка считается до первого полива после слота, а если
-                    // растения так и не полили — до текущего момента: сохранённый
-                    // hours_late фиксирует только момент автопропуска (≈24 часа).
                     const lateness = log.scheduled_for
                         ? resolveMissedLateness(log.scheduled_for, {
                             now,
@@ -911,6 +906,12 @@ class PlantController {
                 return res.status(400).json({ message: 'Примечание должно быть строкой до 2000 символов' })
             }
 
+  
+            const slotInput = req.body?.scheduled_for
+            if (slotInput !== undefined && slotInput !== null && typeof slotInput !== 'string') {
+                return res.status(400).json({ message: 'Некорректная дата полива' })
+            }
+
             transaction = await sequelize.transaction()
             const plant = await Plant.findOne({
                 where: { id: req.params.id, user_id: userId },
@@ -924,6 +925,97 @@ class PlantController {
             }
 
             const now = new Date()
+            const timeOfDayHour =
+                TIME_OF_DAY_HOURS[plant.watering_time_of_day] ?? TIME_OF_DAY_HOURS.morning
+
+            if (slotInput !== undefined && slotInput !== null) {
+                const slot = parseWateringSlot(slotInput, timeOfDayHour)
+                if (!slot) {
+                    await transaction.rollback()
+                    transaction = null
+                    return res.status(400).json({ message: 'Некорректная дата полива' })
+                }
+                if (slot.getTime() > now.getTime()) {
+                    await transaction.rollback()
+                    transaction = null
+                    return res.status(400).json({ message: 'Нельзя отметить полив будущей датой' })
+                }
+
+                const plan = resolvePastWatering(slot, {
+                    now,
+                    lastWateredAt: plant.last_watered_at,
+                    nextWateringAt: plant.next_watering_at,
+                    intervalDays: plant.watering_interval_days || 7,
+                    timeOfDayHours: timeOfDayHour
+                })
+
+                const slotDay = utcDayRange(slot)
+                const slotLogs = await WateringLog.findAll({
+                    where: {
+                        plant_id: plant.id,
+                        user_id: userId,
+                        [Op.or]: [
+                            { scheduled_for: { [Op.between]: [slotDay.from, slotDay.to] } },
+                            { action_at: { [Op.between]: [slotDay.from, slotDay.to] } }
+                        ]
+                    },
+                    transaction,
+                    lock: transaction.LOCK.UPDATE
+                })
+
+                if (pickWateringLogForSlot(slotLogs, 'watered', slot)) {
+                    await transaction.rollback()
+                    transaction = null
+                    return res.status(409).json({ message: 'Полив за эту дату уже отмечен' })
+                }
+
+                const skippedLog = pickWateringLogForSlot(slotLogs, 'skipped', slot)
+
+                if (skippedLog) {
+
+                    await skippedLog.update({
+                        action: 'watered',
+                        action_at: plan.actionAt,
+                        scheduled_for: plan.scheduledFor,
+                        hours_late: plan.hoursLate,
+                        note: note || null
+                    }, { transaction })
+                } else {
+                    await WateringLog.create({
+                        plant_id: plant.id,
+                        user_id: userId,
+                        action: 'watered',
+                        action_at: plan.actionAt,
+                        scheduled_for: plan.scheduledFor,
+                        hours_late: plan.hoursLate,
+                        note: note || null
+                    }, { transaction })
+                }
+
+                const plantUpdates = {
+                    last_watered_at: plan.lastWateredAt,
+                    next_watering_at: plan.nextWateringAt
+                }
+
+                if (plan.scheduleChanged) {
+                    plantUpdates.metadata = {
+                        ...(plant.metadata || {}),
+                        notifications: {}
+                    }
+                }
+
+                await plant.update(plantUpdates, { transaction })
+                await transaction.commit()
+                transaction = null
+
+                return res.json({
+                    ...plant.toJSON(),
+                    backfilled: true,
+                    scheduled_for: plan.scheduledFor,
+                    converted_skip: Boolean(skippedLog)
+                })
+            }
+
             const scheduledFor = plant.next_watering_at
             const nextWatering = computeNextWatering(
                 now,

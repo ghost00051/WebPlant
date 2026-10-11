@@ -1,10 +1,24 @@
+html.app-shell,
+body.app-shell {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+}
+
+html.app-shell #root,
+body.app-shell #root {
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .gofOfMain {
     position: fixed;
     inset: 0;
     display: flex;
     flex-direction: column;
     background-color: #FAF8F5;
-    padding-top: env(safe-area-inset-top, 0px);
     box-sizing: border-box;
 }
 
@@ -14,25 +28,20 @@
 
 
 .screenTransition {
-    padding-top: 30px;
-    padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+    padding-top: 16px;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
     box-sizing: border-box;
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
+    overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
     animation: screenFadeIn 280ms cubic-bezier(0.22, 1, 0.36, 1);
-    /* Только opacity: will-change с transform делает этот контейнер containing
-       block для position: fixed, из-за чего модалка дня позиционировалась от
-       него и уезжала при скролле, а нижнее меню (tools) не затемнялось
-       (BUG-018). */
     will-change: opacity;
 }
 
-/* Пока открыта модалка дня, фон не прокручивается: блокируем собственный скролл
-   контейнера, потому что body.style.overflow на него не действует (BUG-018). */
 body.vision-open .screenTransition {
     overflow: hidden;
 }
@@ -44,11 +53,6 @@ body.vision-open .screenTransition {
     margin-bottom: 12px;
 }
 
-/* Телефон в альбомной ориентации: держим мобильную колонку узкой и по центру,
-   иначе календарь с квадратными днями растягивается на всю ширину, не влезает
-   по высоте и «едет» при возврате в портретную ориентацию (BUG-017).
-   Полный запрет поворота доступен только установленному PWA
-   (manifest: orientation = portrait-primary), iOS его игнорирует. */
 @media (orientation: landscape) and (max-height: 560px) {
     .screenTransition {
         align-items: center;

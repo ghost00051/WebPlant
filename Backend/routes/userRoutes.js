@@ -5,6 +5,7 @@ import { requireAdmin } from '../middleware/admin.js'
 import passkeyController from '../controllers/passkeyController.js'
 import notificationPreferenceController from '../controllers/notificationPreferenceController.js'
 import { requireAuth } from '../middleware/auth.js'
+import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
@@ -13,7 +14,8 @@ const registrationLimiter = rateLimit({
     limit: 5,
     message: { message: 'Слишком много попыток регистрации. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-registration')
 })
 
 const loginLimiter = rateLimit({
@@ -21,7 +23,8 @@ const loginLimiter = rateLimit({
     limit: 10,
     message: { message: 'Слишком много попыток входа. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-login')
 })
 
 const usernameCheckLimiter = rateLimit({
@@ -29,7 +32,8 @@ const usernameCheckLimiter = rateLimit({
     limit: 30,
     message: { message: 'Слишком много запросов' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-username-check')
 })
 
 const passkeyLimiter = rateLimit({
@@ -37,7 +41,8 @@ const passkeyLimiter = rateLimit({
     limit: 10,
     message: { message: 'Слишком много попыток входа по ключу. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-passkey')
 })
 
 const passkeyRegistrationLimiter = rateLimit({
@@ -45,7 +50,8 @@ const passkeyRegistrationLimiter = rateLimit({
     limit: 10,
     message: { message: 'Слишком много попыток регистрации ключа. Попробуйте позже.' },
     standardHeaders: true,
-    legacyHeaders: false
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-passkey-registration')
 })
 
 router.post("/registration", registrationLimiter, UserController.registration)

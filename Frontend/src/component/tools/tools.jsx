@@ -1,19 +1,9 @@
-import Plus from '../../../img/plus-circle.svg'
-import Message from '../../../img/message-circle.svg'
-import Home from '../../../img/Home.svg'
-import Chat from '../../../img/user.svg'
 import IconTile from '../../assets/IconTile.svg'
+import { TABS } from './tabs.js'
 import '../tools/tools.css'
 import './dark-theme.css'
 import './adaptiv.css'
 import './tools.desktop.css'
-
-const TABS = [
-    { id: 'home', icon: Home, label: 'Главная' },
-    { id: 'add', icon: Plus, label: 'Добавить' },
-    { id: 'chat', icon: Message, label: 'Чат с ИИ' },
-    { id: 'profile', icon: Chat, label: 'Профиль' },
-]
 
 function Tools({ onTabChange, activeTab }) {
     const selectedTab = activeTab || TABS[0].id

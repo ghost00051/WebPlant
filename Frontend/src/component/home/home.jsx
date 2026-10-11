@@ -10,8 +10,10 @@ import {
     syncPushSubscription
 } from '../../utils/pushNotifications.js'
 import Tools from '../tools/tools.jsx'
+import MobileNav from '../tools/MobileNav.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
+import AiTicker from '../aiTicker/aiTicker.jsx'
 import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
@@ -93,6 +95,17 @@ function Home() {
         checkAuth()
     }, [navigate])
 
+    useEffect(() => {
+        document.documentElement.classList.add('app-shell')
+        document.body.classList.add('app-shell')
+
+        return () => {
+            document.documentElement.classList.remove('app-shell')
+            document.body.classList.remove('app-shell')
+            document.body.classList.remove('vision-open')
+        }
+    }, [])
+
     if (loading) return <div>Загрузка...</div>
     if (!user) return null
 
@@ -143,6 +156,7 @@ function Home() {
                     </header>
                     <HistoryChat />
                     <Chat />
+                    <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
                     <Tools onTabChange={handleTabChange} activeTab={activeTab} />
                     {showPrompt && (
                         <NotificationPrompt
@@ -178,6 +192,8 @@ function Home() {
                     </button>
                 </div>
             </header>
+            <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
+            {activeTab === 'home' && <AiTicker />}
             <div key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}

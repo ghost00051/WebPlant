@@ -1,6 +1,6 @@
 @media (min-width: 640px) {
     .tabbar {
-        height: 80px;
+        --tabbar-height: 80px;
     }
 
     .tabbar li {

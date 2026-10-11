@@ -97,22 +97,12 @@ export function isBefore(a, b) {
   return toDate(a).getTime() < toDate(b).getTime()
 }
 
-// Что показывать в карточке дня: расписание ('future') или историю ('past').
-// Пропущенный или просроченный полив остаётся в расписании до автопропуска,
-// поэтому приоритет у истории — иначе по такой дате открывалась бы карточка
-// с плановым временем вместо отметки о просрочке. Это касается и сегодняшнего
-// дня: время полива уже прошло, и на дне горит красная точка.
 export function resolveDayKind({ isPastDay, hasSchedule, hasEvents, hasMissed }) {
   if (hasEvents && (hasMissed || isPastDay)) return 'past'
   if (hasSchedule) return 'future'
   return hasEvents ? 'past' : 'empty'
 }
 
-// Позиции расписания делятся на ещё не наступившие (план) и уже прошедшие
-// (просрочка). Сервер отдаёт прошедшую позицию в том же списке — она остаётся
-// там до автопропуска, и раньше по ней рисовалась точка «будущий полив».
-// Проверяется каждая позиция растения, а не день целиком: на одну дату могут
-// приходиться план одного растения и пропуск другого.
 export function partitionScheduleDates(schedule, now = new Date()) {
   const planned = new Set()
   const missed = new Set()
@@ -126,8 +116,6 @@ export function partitionScheduleDates(schedule, now = new Date()) {
 
     for (const plant of plants) {
       const at = new Date(plant?.next_watering_at ?? '').getTime()
-      // Без времени начала считаем позицию плановой, чтобы не показать
-      // пропуск там, где его нет.
       if (Number.isFinite(at) && at < nowTime) missed.add(date)
       else planned.add(date)
     }
@@ -136,10 +124,6 @@ export function partitionScheduleDates(schedule, now = new Date()) {
   return { planned, missed }
 }
 
-// Отметки дня в календаре: плановая — только для ещё не наступившего полива,
-// пропущенная — для просроченного или пропущенного. У разных растений на одном
-// дне могут быть и план, и пропуск, поэтому отметки не взаимоисключающие; а вот
-// завершённый полив не показывается, если в этот день есть пропуск.
 export function resolveWateringMarkers({ isPlanned, hasHistory, hasMissed }) {
   return {
     isFuture: Boolean(isPlanned),
@@ -148,11 +132,6 @@ export function resolveWateringMarkers({ isPlanned, hasHistory, hasMissed }) {
   }
 }
 
-// Дни недели для напоминаний подбираются по частоте полива. Ограничение по дню
-// недели осмысленно, только если полив попадает на одни и те же дни, то есть
-// интервал кратен неделе. Для «каждый день» отмечаем все дни. При смещающемся
-// графике (например, раз в 3 дня) ограничение не накладываем: иначе
-// подсвечивались бы все семь дней и выбор терял смысл (BUG-019).
 export function reminderWeekdaysForInterval(intervalDays, startDate = new Date()) {
   if (typeof intervalDays !== 'number' || !Number.isInteger(intervalDays) || intervalDays < 1) {
     return []
@@ -162,6 +141,26 @@ export function reminderWeekdaysForInterval(intervalDays, startDate = new Date()
 
   const firstWatering = addDays(toDate(startDate), intervalDays)
   return [firstWatering.getDay()]
+}
+
+export function weekdayRestrictionApplies(intervalDays) {
+  if (typeof intervalDays !== 'number' || !Number.isInteger(intervalDays) || intervalDays < 1) {
+    return false
+  }
+  return intervalDays === 1 || intervalDays % 7 === 0
+}
+
+export function upcomingWateringDays(intervalDays, startDate = new Date(), count = 4) {
+  if (typeof intervalDays !== 'number' || !Number.isInteger(intervalDays) || intervalDays < 1) {
+    return []
+  }
+  if (!Number.isInteger(count) || count < 1) return []
+
+  const start = toDate(startDate)
+  return Array.from({ length: count }, (_, index) => {
+    const date = addDays(start, intervalDays * (index + 1))
+    return { date, weekday: date.getDay() }
+  })
 }
 
 export function dayOfMonth(value) {

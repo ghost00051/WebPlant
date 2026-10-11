@@ -1,0 +1,74 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-restore-__RUN_ID__
+  namespace: webplant
+  labels:
+    app: db-restore
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: db-restore
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restore
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PGHOST
+              value: postgres
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: webplant-env
+                  key: DB_NAME
+            - name: PGUSER
+              valueFrom:
+                configMapKeyRef:
+                  name: webplant-env
+                  key: DB_USER
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: webplant-secrets
+                  key: DB_PASSWORD
+            - name: DUMP_FILE
+              value: "__DUMP_FILE__"
+            - name: IMAGE_SERVER_PORT
+              value: "8099"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              echo "жду PostgreSQL ${PGHOST}:${PGPORT}..."
+              for i in $(seq 1 60); do
+                pg_isready -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" && break
+                sleep 2
+              done
+
+              DOWNLOADED=0
+              for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
+                if wget -q -O /tmp/db.dump "http://${HOST}:${IMAGE_SERVER_PORT}/${DUMP_FILE}"; then
+                  DOWNLOADED=1
+                  break
+                fi
+              done
+              [ "${DOWNLOADED}" = "1" ] || { echo "не удалось скачать ${DUMP_FILE}" >&2; exit 1; }
+
+              echo "пересоздаю базу ${PGDATABASE}..."
+              dropdb --if-exists -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" --force "${PGDATABASE}"
+              createdb -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" "${PGDATABASE}"
+
+              echo "восстанавливаю дамп $(ls -lh /tmp/db.dump | awk '{print $5}')..."
+              pg_restore --no-owner --no-privileges --exit-on-error \
+                -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" /tmp/db.dump
+
+              echo "готово: $(psql -h "${PGHOST}" -p "${PGPORT}" -U "${PGUSER}" -d "${PGDATABASE}" -tAc "select count(*) from information_schema.tables where table_schema='public'") таблиц"
