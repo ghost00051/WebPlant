@@ -21,7 +21,7 @@
 		</clipPath>
 	</defs>
 	<g id="AppIcon" filter="url(#filter_0)" customFrame="url(#clipPath_0)">
-		<rect id="AppIcon" width="64.000000" height="64.000000" x="20.000000" y="14.000000" rx="18.000000" fill="rgb(124,144,130)" fill-opacity="0.141176477" />
+		<rect id="AppIcon" width="64.000000" height="64.000000" x="20.000000" y="14.000000" rx="18.000000" fill="rgb(124,144,130)" fill-opacity="var(--wp-plate-green-alpha, 0.141176477)" />
 		<g id="Mark" customFrame="url(#clipPath_1)">
 			<rect id="Mark" width="36.000000" height="36.000000" x="34.000000" y="28.000000" />
 			<path id="Вектор 290" d="M42.25 32.5L42.25 59.5" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.250000" />

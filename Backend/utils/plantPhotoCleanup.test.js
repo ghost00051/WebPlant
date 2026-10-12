@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, readdir, rm, utimes, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { cleanOrphanedPlantPhotoFiles } from './plantPhotoCleanup.js'
+import { cleanOrphanedPlantPhotoFiles, plantPhotoFileName, removePlantPhotoFiles } from './plantPhotoCleanup.js'
 
 test('plant photo cleanup removes only old unreferenced upload files', async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), 'webplant-photos-'))
@@ -44,4 +44,41 @@ test('plant photo cleanup requires a successful reference lookup', async () => {
         cleanOrphanedPlantPhotoFiles({ referencedUrls: null }),
         /referencedUrls must be an array/
     )
+})
+
+test('plantPhotoFileName принимает только загруженные файлы растений', () => {
+    const name = `${'d'.repeat(32)}.jpg`
+    assert.equal(plantPhotoFileName(`/uploads/plants/${name}`), name)
+    assert.equal(plantPhotoFileName(`/uploads/plants/${name}?v=2`), name)
+    assert.equal(plantPhotoFileName(`https://server.checktheplants.ru/uploads/plants/${name}`), name)
+    assert.equal(plantPhotoFileName('/uploads/plants/../../etc/passwd'), null)
+    assert.equal(plantPhotoFileName('/uploads/plants/notes.txt'), null)
+    assert.equal(plantPhotoFileName(''), null)
+    assert.equal(plantPhotoFileName(undefined), null)
+})
+
+test('removePlantPhotoFiles удаляет существующие файлы и терпит отсутствующие', async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), 'webplant-photos-remove-'))
+    const first = `${'e'.repeat(32)}.jpg`
+    const second = `${'f'.repeat(32)}.png`
+
+    try {
+        await writeFile(path.join(directory, first), 'one')
+
+        const removed = await removePlantPhotoFiles(
+            [`/uploads/plants/${first}`, `/uploads/plants/${second}`],
+            { directory }
+        )
+
+        assert.equal(removed, 1)
+        assert.deepEqual(await readdir(directory), [])
+
+        const outsideAttempts = await removePlantPhotoFiles(
+            ['/uploads/plants/../../secret.txt', 'not-a-photo'],
+            { directory }
+        )
+        assert.equal(outsideAttempts, 0)
+    } finally {
+        await rm(directory, { recursive: true, force: true })
+    }
 })

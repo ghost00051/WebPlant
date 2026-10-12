@@ -1,32 +1,4 @@
 #!/usr/bin/env node
-/**
- * Синхронизация реестра багов WebPlant: Google Sheets → файлы в репозитории.
- *
- * Что делает:
- *   1. Забирает лист «Реестр багов» из Google Sheets как CSV (выгрузка стабильна
- *      побайтово, поэтому годится для сравнения версий).
- *   2. Если содержимое изменилось — скачивает всю книгу как XLSX и заменяет
- *      Bug-Tracker-WebPlant.xlsx (вместе с формулами, проверками данных и
- *      остальными листами: «Дашборд», «Справочники», «Инструкция»).
- *   3. Обновляет CSV-зеркало Bug-Tracker-WebPlant.csv — по нему видно, что
- *      именно изменилось (xlsx — бинарный файл, его дифф в git нечитаем).
- *
- * Использование:
- *   node scripts/sync-bug-tracker.mjs                # обновить файлы
- *   node scripts/sync-bug-tracker.mjs --check        # только проверить (код 1, если есть изменения)
- *   node scripts/sync-bug-tracker.mjs --force        # перезаписать xlsx, даже если CSV не изменился
- *   node scripts/sync-bug-tracker.mjs --print        # показать список багов в консоли
- *   node scripts/sync-bug-tracker.mjs --help
- *
- * Переменные окружения (все необязательные):
- *   BUG_TRACKER_SHEET_ID  идентификатор таблицы (по умолчанию — таблица WebPlant)
- *   BUG_TRACKER_GID       gid листа реестра
- *   BUG_TRACKER_XLSX      путь к xlsx (по умолчанию Bug-Tracker-WebPlant.xlsx в корне)
- *   BUG_TRACKER_CSV       путь к CSV-зеркалу (по умолчанию рядом с xlsx)
- *
- * Требуется доступ к таблице «Все, у кого есть ссылка → Читатель»: скрипт ходит
- * анонимно, без токенов и сервисных аккаунтов.
- */
 
 import { existsSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
@@ -35,10 +7,10 @@ import { fileURLToPath } from 'node:url'
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 
 const DEFAULT_SHEET_ID = '1L7tFQ7F6zib4b-BS46vwNCk0VWiWdXrMIIXREyvNgPw'
-const DEFAULT_GID = '2001850722' // лист «Реестр багов»
+const DEFAULT_GID = '2001850722'
 
 const CSV_HEADER = 'ID бага'
-const XLSX_MAGIC = [0x50, 0x4b] // «PK» — zip-контейнер
+const XLSX_MAGIC = [0x50, 0x4b]
 
 const COLUMNS = {
   id: 0,
@@ -136,7 +108,6 @@ async function fetchExport(url, label) {
   return Buffer.from(await response.arrayBuffer())
 }
 
-/** Разбор CSV по RFC 4180: кавычки, экранированные кавычки, переводы строк внутри полей. */
 function parseCsv(text) {
   const rows = []
   let row = []
@@ -228,7 +199,7 @@ function writeFileAtomic(path, data) {
     try {
       unlinkSync(tmp)
     } catch {
-      // временный файл уже мог быть удалён — не мешаем основной ошибке
+      ;
     }
     if (error.code === 'EBUSY' || error.code === 'EPERM') {
       throw new SyncError(`не удалось заменить ${path}: файл занят (закройте его в Excel и повторите)`)

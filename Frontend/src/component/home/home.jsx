@@ -20,6 +20,7 @@ import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
 import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './home.css'
 import './home.desktop.css'
 import './dark-theme.css'
@@ -138,7 +139,7 @@ function Home() {
                             <span>Лейка</span>
                         </div>
                         <div className="desktopAccount">
-                            <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                            <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
                             <button
                                 type="button"
                                 className="desktopProfileButton"
@@ -176,7 +177,7 @@ function Home() {
                     <span>Лейка</span>
                 </div>
                 <div className="desktopAccount">
-                    <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                    <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
                     <button
                         type="button"
                         className="desktopProfileButton"

@@ -1,49 +1,4 @@
 ﻿#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Развёртывание WebPlant (backend + PostgreSQL + Redis) в Kubernetes.
-
-.DESCRIPTION
-    Собирает образ backend, доставляет его на ноды кластера, создаёт объекты
-    в namespace webplant и (при необходимости) переносит боевые данные из
-    работающего docker-compose стека: дамп PostgreSQL и каталог uploads.
-
-    Compose-стек при этом не изменяется: из него только читаются данные
-    (pg_dump + tar uploads), контейнеры не перезапускаются.
-
-.PARAMETER Tag
-    Тег образа. По умолчанию — версия из package.json и короткий хеш git.
-
-.PARAMETER SkipBuild
-    Не пересобирать образ (использовать уже собранный с этим тегом).
-
-.PARAMETER SkipImageLoad
-    Не доставлять образ на ноды (например, если он там уже есть).
-
-.PARAMETER RestoreData
-    Принудительно перенести дамп БД и uploads из compose-стека. Без флага
-    перенос выполняется автоматически, если база в кластере ещё пустая.
-
-.PARAMETER EnableBackgroundJobs
-    Включить фоновые задачи (напоминания, рассылки, очистка) в кластере.
-
-.PARAMETER DisableBackgroundJobs
-    Выключить фоновые задачи в кластере (например, если они временно
-    выполняются compose-стеком).
-
-    Без обоих флагов сохраняется текущее значение из кластера, поэтому обычное
-    обновление кода не меняет режим фоновых задач. На новом кластере они
-    выключаются по умолчанию, чтобы не дублировать push-уведомления.
-
-.PARAMETER Replicas
-    Количество реплик backend (по умолчанию 2).
-
-.PARAMETER SkipGateway
-    Не поднимать gateway-контейнер ctp_k8s_gateway (внешний доступ на localhost:8090).
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/deploy.ps1 -RestoreData
-#>
 [CmdletBinding()]
 param(
     [string]$Tag,
@@ -53,6 +8,7 @@ param(
     [switch]$EnableBackgroundJobs,
     [switch]$DisableBackgroundJobs,
     [int]$Replicas = 2,
+    [int]$ImageLoadTimeoutMinutes = 30,
     [switch]$SkipGateway
 )
 
@@ -87,9 +43,6 @@ function Write-Lines($Lines) {
     foreach ($line in @($Lines)) { Write-Host $line }
 }
 
-# Запускает нативную команду (docker/kubectl) не давая stderr прервать скрипт:
-# в Windows PowerShell 5.1 запись в stderr при $ErrorActionPreference = 'Stop'
-# превращается в прерывающую ошибку, поэтому внутри хелпера режим временно мягкий.
 function Invoke-Native {
     param(
         [Parameter(Mandatory)][scriptblock]$Action,
@@ -203,7 +156,6 @@ function Test-DockerContainer([string]$Name) {
     return [bool]($found | Where-Object { $_ -eq $Name })
 }
 
-# --- 1. Проверки окружения ---------------------------------------------------
 
 Write-Step 'Проверяю окружение'
 
@@ -234,14 +186,27 @@ if (-not $Tag) {
         $Tag = "$packageVersion-$(Get-Date -Format 'yyyyMMddHHmmss')"
     }
 
-    # Незакоммиченные правки в Backend/ обязаны менять тег: иначе image-loader
-    # сочтёт образ уже доставленным и на нодах останется старый код.
     $dirty = Get-NativeText -AllowFailure { git -C $RepoRoot status --porcelain -- Backend }
     if ($dirty) {
         $diff = Get-NativeText -AllowFailure { git -C $RepoRoot diff HEAD -- Backend }
+
+        $untrackedFiles = Get-NativeLines -AllowFailure {
+            git -C $RepoRoot ls-files --others --exclude-standard -- Backend
+        }
+        $untrackedDigest = ($untrackedFiles | ForEach-Object {
+            $relative = $_
+            if ($relative -notmatch '\.(js|mjs|cjs|json|sql|md|ps1|sh|ya?ml|txt)$') { return '' }
+            $untrackedPath = Join-Path $RepoRoot $relative
+            try {
+                (Get-FileHash -LiteralPath $untrackedPath -Algorithm SHA256).Hash
+            } catch {
+                ''
+            }
+        }) -join ''
+
         $md5 = [System.Security.Cryptography.MD5]::Create()
         try {
-            $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$dirty$diff"))
+            $hashBytes = $md5.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$dirty$diff$untrackedDigest"))
         } finally {
             $md5.Dispose()
         }
@@ -253,18 +218,19 @@ if (-not $Tag) {
 $image = "webplant-backend:$Tag"
 Write-Ok "Тег образа: $Tag"
 
-# --- 2. Ключи окружения: ConfigMap и Secret ---------------------------------
 
 Write-Step 'Обновляю webplant-env и webplant-secrets'
 
-# Эти ключи задаёт сам кластер (10-configmap.yaml и секрет), из .env они не переносятся
 $overriddenKeys = @(
     'DB_HOST', 'DB_PORT', 'NODE_ENV', 'PORT', 'SERVER_PORT', 'DOMAIN',
     'DOCKER_HOST', 'DOCKER_STATS_ENABLED', 'BACKGROUND_JOBS_ENABLED', 'DEPLOY_TARGET',
     'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_KEY_PREFIX',
     'AI_CACHE_ENABLED', 'AI_CACHE_TTL_SECONDS', 'AI_CHAT_CACHE_TTL_SECONDS'
 )
-$secretKeys = @('DB_PASSWORD', 'SECRET_KEY', 'YANDEX_CLOUD_API_KEY', 'VAPID_PRIVATE_KEY')
+$secretKeys = @(
+    'DB_PASSWORD', 'SECRET_KEY', 'YANDEX_CLOUD_API_KEY', 'VAPID_PRIVATE_KEY',
+    'SMTP_PASSWORD'
+)
 
 $namespaceCreated = Invoke-Native -Action { kubectl create namespace $Namespace --dry-run=client -o yaml | kubectl apply -f - } -Capture
 if ($namespaceCreated.ExitCode -ne 0) {
@@ -315,8 +281,6 @@ Invoke-Checked 'Не удалось применить webplant-secrets' { kubec
 Remove-Item -LiteralPath $secretEnvFile -Force
 Write-Ok 'Переменные окружения загружены в кластер'
 
-# Текущий режим фоновых задач читаем ДО применения 10-configmap.yaml: в манифесте
-# стоит безопасное значение по умолчанию (false), и оно перезаписало бы состояние
 $currentJobsValue = Get-NativeText -AllowFailure {
     kubectl get configmap webplant-config -n $Namespace -o jsonpath='{.data.BACKGROUND_JOBS_ENABLED}'
 }
@@ -336,7 +300,6 @@ if ($EnableBackgroundJobs) {
     $jobsNote = 'новый кластер: по умолчанию выключены, чтобы не дублировать push'
 }
 
-# JSON передаётся файлом: Windows PowerShell 5.1 съедает кавычки в аргументах нативных команд
 $jobsPatchFile = Join-Path $StagingDir 'background-jobs.patch.json'
 Write-Utf8NoBom $jobsPatchFile "{`"data`":{`"BACKGROUND_JOBS_ENABLED`":`"$jobsValue`"}}"
 Invoke-Checked 'Не удалось выставить BACKGROUND_JOBS_ENABLED' {
@@ -344,7 +307,6 @@ Invoke-Checked 'Не удалось выставить BACKGROUND_JOBS_ENABLED' 
 } | Out-Null
 Write-Ok "Фоновые задачи в кластере: $jobsNote"
 
-# --- 3. Хранилища, PostgreSQL, Redis ----------------------------------------
 
 Write-Step 'Разворачиваю хранилища, PostgreSQL и Redis'
 
@@ -361,7 +323,6 @@ Invoke-Checked 'Redis не вышел в Ready за 3 минуты' {
 } | Out-Null
 Write-Ok 'Redis готов'
 
-# --- 4. Сборка и доставка образа -------------------------------------------
 
 if (-not $SkipImageLoad) {
     if (-not $SkipBuild) {
@@ -395,7 +356,6 @@ if (-not $SkipImageLoad) {
 
     Write-Step 'Доставляю образ на ноды кластера'
 
-    # Предыдущий образ оставляем на нодах как цель для kubectl rollout undo
     $currentImage = Get-NativeText -AllowFailure {
         kubectl get deployment backend -n $Namespace -o jsonpath='{.spec.template.spec.containers[0].image}'
     }
@@ -405,22 +365,35 @@ if (-not $SkipImageLoad) {
         Write-Ok "Предыдущий образ сохраняю для отката: $currentImage"
     }
 
+    $tarSize = (Get-Item (Join-Path $StagingDir $imageTar)).Length
     $loaderManifest = (Read-Utf8 (Join-Path $K8sDir 'jobs/image-loader.daemonset.yaml')).
-        Replace('__IMAGE_REF__', $image).Replace('__IMAGE_TAR__', $imageTar).Replace('__KEEP_IMAGE__', $keepImage)
+        Replace('__IMAGE_REF__', $image).Replace('__IMAGE_TAR__', $imageTar).
+        Replace('__IMAGE_TAR_SIZE__', "$tarSize").Replace('__KEEP_IMAGE__', $keepImage)
     $loaderPath = Join-Path $StagingDir 'image-loader.generated.yaml'
     Write-Utf8NoBom $loaderPath $loaderManifest
     Invoke-Checked 'Не удалось применить image-loader' { kubectl apply -f $loaderPath } | Out-Null
 
     $nodeCount = (Get-NativeLines { kubectl get nodes --no-headers }).Count
-    $deadline = (Get-Date).AddMinutes(15)
+    $deadline = (Get-Date).AddMinutes($ImageLoadTimeoutMinutes)
+    $lastProgress = Get-Date
+    $pending = @()
     while ($true) {
         $readyNodes = 0
+        $pending = @()
         foreach ($podLine in (Get-NativeLines -AllowFailure { kubectl get pods -n $Namespace -l app=image-loader --no-headers })) {
             $fields = $podLine -split '\s+'
             if ($fields.Count -lt 3) { continue }
-            if ($fields[2] -notin @('Running', 'Completed')) { continue }
+            if ($fields[2] -notin @('Running', 'Completed')) {
+                $pending += "$($fields[0]): $($fields[2])"
+                continue
+            }
             $podLog = Get-NativeText -AllowFailure { kubectl logs $fields[0] -n $Namespace }
-            if ($podLog -match 'image-loader ready') { $readyNodes++ }
+            if ($podLog -match 'image-loader ready') {
+                $readyNodes++
+            } else {
+                $lastLine = ($podLog -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1)
+                $pending += "$($fields[0]): $lastLine"
+            }
         }
 
         if ($readyNodes -ge $nodeCount) {
@@ -429,8 +402,14 @@ if (-not $SkipImageLoad) {
         }
         if ((Get-Date) -gt $deadline) {
             Write-Lines (Invoke-Native -Action { kubectl get pods -n $Namespace -l app=image-loader } -Capture).Output
-            Write-Lines (Invoke-Native -Action { kubectl logs -n $Namespace -l app=image-loader --tail=20 } -Capture).Output
-            throw "За 15 минут образ доставлен только на $readyNodes из $nodeCount нод"
+            Write-Lines $pending
+            throw ("За $ImageLoadTimeoutMinutes минут образ доставлен только на $readyNodes из $nodeCount нод. " +
+                'DaemonSet image-loader оставлен в кластере и продолжает докачивать образ: подождите 5–10 минут и повторите ' +
+                'deploy.ps1 -SkipBuild -SkipImageLoad, либо увеличьте -ImageLoadTimeoutMinutes.')
+        }
+        if (((Get-Date) - $lastProgress).TotalSeconds -ge 30) {
+            Write-Host ("  ...образ на {0} из {1} нод" -f $readyNodes, $nodeCount)
+            $lastProgress = Get-Date
         }
         Start-Sleep -Seconds 5
     }
@@ -440,7 +419,6 @@ if (-not $SkipImageLoad) {
     } | Out-Null
 }
 
-# --- 5. Перенос данных из compose-стека ------------------------------------
 
 Write-Step 'Проверяю данные в базе кластера'
 $tableCountRaw = Get-NativeText -AllowFailure {
@@ -472,8 +450,6 @@ if ($RestoreData -or $tableCount -eq 0) {
     $uploadsDir = Join-Path $BackendDir 'uploads'
     $uploadsArchive = 'webplant-uploads.tar.gz'
     if (Test-Path -LiteralPath $uploadsDir) {
-        # Windows tar (bsdtar): tar в контейнере падает с "read error: Out of memory"
-        # на bind-mount из папки, которую синхронизирует облако (Yandex.Disk)
         $archivePath = Join-Path $StagingDir $uploadsArchive
         Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
         $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
@@ -492,7 +468,6 @@ if ($RestoreData -or $tableCount -eq 0) {
         Write-WarnStep 'Каталог Backend/uploads не найден — фото не переносятся'
     }
 
-    # Останавливаю реплики backend, чтобы pg_restore мог пересоздать базу
     $backendProbe = Invoke-Native -Action { kubectl get deployment backend -n $Namespace --no-headers } -Capture
     if ($backendProbe.ExitCode -eq 0) {
         Invoke-Checked 'Не удалось остановить backend перед восстановлением' {
@@ -542,7 +517,19 @@ if ($RestoreData -or $tableCount -eq 0) {
     Write-Ok 'Данные в базе уже есть — перенос не требуется (для принудительного переноса: -RestoreData)'
 }
 
-# --- 6. Backend --------------------------------------------------------------
+
+Write-Step 'Применяю миграции базы'
+
+$migrationsScript = Join-Path $RepoRoot 'Backend\scripts\apply-migrations.ps1'
+if (-not (Test-Path -LiteralPath $migrationsScript)) {
+    throw "Не найден скрипт миграций: $migrationsScript"
+}
+try {
+    & $migrationsScript -Target k8s -Namespace $Namespace
+} catch {
+    throw "Не удалось применить миграции базы: $($_.Exception.Message)"
+}
+
 
 Write-Step "Разворачиваю backend ($image, реплик: $Replicas)"
 
@@ -553,17 +540,33 @@ Invoke-Checked 'Не удалось применить backend' { kubectl apply 
 Invoke-Checked 'Не удалось выставить количество реплик' {
     kubectl scale deployment backend -n $Namespace --replicas=$Replicas
 } | Out-Null
-Invoke-Checked 'Backend не вышел в Ready за 5 минут' {
+$rollout = Invoke-Native -Action {
     kubectl rollout status deployment/backend -n $Namespace --timeout=300s
-} | Out-Null
+} -Capture
+
+if ($rollout.ExitCode -ne 0) {
+    Write-Lines $rollout.Output
+    Write-WarnStep 'Backend не вышел в Ready — показываю состояние подов и логи'
+    Write-Lines (Invoke-Native -Action {
+        kubectl get pods -n $Namespace -l app=webplant-backend -o wide
+    } -Capture).Output
+    Write-Lines (Invoke-Native -Action {
+        kubectl get events -n $Namespace --sort-by=.lastTimestamp
+    } -Capture).Output
+    Write-Lines (Invoke-Native -Action {
+        kubectl logs -n $Namespace deployment/backend --tail=60 --all-containers=true
+    } -Capture).Output
+    Write-Lines (Invoke-Native -Action {
+        kubectl logs -n $Namespace deployment/backend --tail=60 --all-containers=true --previous
+    } -Capture).Output
+    throw "Backend не вышел в Ready за 5 минут (код $($rollout.ExitCode)). Если в логах «Database schema is missing required tables» — примените миграции: powershell -File `"$migrationsScript`""
+}
 Write-Ok 'Backend готов'
 
-# --- 7. Gateway наружу -------------------------------------------------------
 
 if (-not $SkipGateway) {
     Write-Step "Поднимаю gateway (localhost:$GatewayPort → backend в кластере)"
 
-    # Именами нод, а не IP: при пересоздании кластера адреса меняются, имена — нет
     $nodeNames = @()
     foreach ($line in (Get-NativeLines { kubectl get nodes -o wide --no-headers })) {
         $fields = $line -split '\s+'
@@ -586,8 +589,6 @@ if (-not $SkipGateway) {
     } | Out-Null
     $composeNetwork = Get-NativeLines -AllowFailure { docker network ls --filter "name=^${ComposeProjectNetwork}$" --format '{{.Name}}' }
     if ($composeNetwork.Count) {
-        # Docker Desktop иногда отдаёт "network sandbox not found" сразу после старта
-        # контейнера — повторяем подключение и не считаем это фатальной ошибкой.
         $connected = $false
         $lastConnectError = ''
         for ($attempt = 1; $attempt -le 3 -and -not $connected; $attempt++) {
@@ -613,10 +614,7 @@ if (-not $SkipGateway) {
     Write-Ok "Gateway доступен с хоста: http://localhost:$GatewayPort (нод в апстриме: $($nodeNames.Count))"
 }
 
-# --- 8. Проверка -------------------------------------------------------------
 
-# Если боевой nginx уже ходит в кластер, после пересоздания gateway нужен reload:
-# контейнер получил новый IP, а nginx держит DNS-кэш до 10 секунд.
 if (-not $SkipGateway) {
     $activeNginxConf = Join-Path $BackendDir 'nginx\conf.d\default.conf'
     if ((Test-Path -LiteralPath $activeNginxConf) -and ((Read-Utf8 $activeNginxConf) -match 'ctp_k8s_gateway')) {
@@ -634,9 +632,6 @@ Write-Step 'Проверяю результат'
 Write-Lines (Invoke-Native -Action { kubectl get pods -n $Namespace -o wide } -Capture).Output
 
 if (-not $SkipGateway) {
-    # Поды только что перезапустились — даём им время пройти startupProbe.
-    # Проверяем из контейнера nginx (compose-сеть): опубликованный на хост порт
-    # в Docker Desktop устанавливается с задержкой и для диагностики ненадёжен.
     $health = $null
     $lastHealthError = ''
     for ($attempt = 1; $attempt -le 10 -and -not $health; $attempt++) {
@@ -680,7 +675,6 @@ Write-Host ''
 Write-Host 'Готово. Полезные команды:' -ForegroundColor Cyan
 Write-Host "  kubectl get pods -n $Namespace"
 Write-Host "  kubectl logs -n $Namespace deployment/backend --tail=50"
-# Пути абсолютные: команды можно копировать из любого каталога
 Write-Host "  powershell -File `"$PSScriptRoot\status.ps1`""
 Write-Host "  powershell -File `"$PSScriptRoot\switch-traffic.ps1`" -Target compose   # откат трафика"
 Write-Host "  kubectl rollout undo deployment/backend -n $Namespace   # откат на предыдущий образ"

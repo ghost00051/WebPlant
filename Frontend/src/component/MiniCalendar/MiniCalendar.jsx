@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, forwardRef, useImperativeHandle } from 
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ArrowLeft from '../../assets/ArrowLeft.svg'
 import ArrowRight from '../../assets/ArrowRight.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import {
   addDays,
   dayOfMonth,
@@ -124,10 +125,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         </div>
         <div className='mini-calendar__nav'>
           <button onClick={prev} aria-label='Предыдущие 2 недели'>
-            <img src={ArrowLeft} alt='' />
+            <ThemedIcon src={ArrowLeft} alt='' />
           </button>
           <button onClick={next} aria-label='Следующие 2 недели'>
-            <img src={ArrowRight} alt='' />
+            <ThemedIcon src={ArrowRight} alt='' />
           </button>
         </div>
       </div>
@@ -191,10 +192,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           </div>
           <div className='mini-calendar__nav'>
             <button onClick={prevDesktopMonth} aria-label='Предыдущий месяц'>
-              <img src={ArrowLeft} alt='' />
+              <ThemedIcon src={ArrowLeft} alt='' />
             </button>
             <button onClick={nextDesktopMonth} aria-label='Следующий месяц'>
-              <img src={ArrowRight} alt='' />
+              <ThemedIcon src={ArrowRight} alt='' />
             </button>
           </div>
         </div>

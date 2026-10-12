@@ -119,8 +119,8 @@
   }
 
   .mini-calendar__month-day.is-today {
-    border-color: #7FD1A0;
-    background: #7FD1A0;
+    border-color: var(--color-white-tema);
+    background: var(--color-white-tema);
     color: #fff;
     font-weight: 600;
   }

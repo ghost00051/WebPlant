@@ -7,6 +7,7 @@ import leaf from '../../assets/leaf.svg'
 import sparkles from '../../assets/sparkles.svg'
 import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import {
     reminderWeekdaysForInterval,
@@ -639,7 +640,7 @@ function AddPlants() {
                                         </div>
                                         <div style={{ display: 'flex', gap: 8 }}>
                                             <button type='button' className='counterBtn' onClick={dec} aria-label="Уменьшить">
-                                                <img src={minus} alt="" aria-hidden="true" />
+                                                <ThemedIcon src={minus} alt="" aria-hidden="true" />
                                             </button>
                                             <button type='button' className='counterBtn' onClick={inc} aria-label="Увеличить">
                                                 <img src={plus} alt="" aria-hidden="true" />

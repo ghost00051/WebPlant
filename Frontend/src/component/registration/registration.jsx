@@ -16,13 +16,14 @@ import eye from '../../assets/eye.svg'
 import fingerprint from '../../assets/fingerprint.svg'
 import user from '../../assets/user.svg'
 import shieldcheck from '../../assets/shield-check.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import termsDocument from '../../../document/UserAgreementTemplate.pdf'
 
-async function getResponseMessage(response, fallback) {
+async function getResponseMessage (response, fallback) {
   try {
     const data = await response.json()
     return typeof data.message === 'string' ? data.message : fallback
@@ -31,7 +32,7 @@ async function getResponseMessage(response, fallback) {
   }
 }
 
-function Registration({ initialMode = 'login' }) {
+function Registration ({ initialMode = 'login' }) {
   const [isLogin, setIsLogin] = useState(initialMode !== 'register')
   const [mobilePanelsHeight, setMobilePanelsHeight] = useState(null)
   const blocksWrapperRef = useRef(null)
@@ -46,7 +47,8 @@ function Registration({ initialMode = 'login' }) {
   const [passwordEntr, setPasswordEntr] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
   const [showLoginPassword, setShowLoginPassword] = useState(false)
-  const [showRegistrationPassword, setShowRegistrationPassword] = useState(false)
+  const [showRegistrationPassword, setShowRegistrationPassword] =
+    useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isPasskeyLoginLoading, setIsPasskeyLoginLoading] = useState(false)
   const [formError, setFormError] = useState('')
@@ -154,7 +156,9 @@ function Registration({ initialMode = 'login' }) {
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка регистрации:', error)
-      setFormError(error.message || 'Ошибка при регистрации. Попробуйте ещё раз.')
+      setFormError(
+        error.message || 'Ошибка при регистрации. Попробуйте ещё раз.'
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -206,7 +210,9 @@ function Registration({ initialMode = 'login' }) {
     } catch (error) {
       console.error('Ошибка входа по ключу доступа:', error)
       setFormError(
-        `Не удалось войти с ключом доступа: ${error.message || 'попробуйте ещё раз.'}`
+        `Не удалось войти с ключом доступа: ${
+          error.message || 'попробуйте ещё раз.'
+        }`
       )
     } finally {
       setIsPasskeyLoginLoading(false)
@@ -242,12 +248,14 @@ function Registration({ initialMode = 'login' }) {
 
   return (
     <main
-      className={`blocksOfToService ${isLogin ? 'authModeLogin' : 'authModeRegistration'}`}
+      className={`blocksOfToService ${
+        isLogin ? 'authModeLogin' : 'authModeRegistration'
+      }`}
     >
       <section className='borderOther' aria-label='Вход и регистрация'>
         <div className='borderInner'>
           <div className={`slider-panel ${isLogin ? 'right' : 'left'}`}>
-            <img src={LogoBox} alt='' />
+            <ThemedIcon src={LogoBox} alt='' />
             <h1>{isLogin ? 'С возвращением' : 'Создать аккаунт'}</h1>
             <p>
               {isLogin
@@ -307,7 +315,9 @@ function Registration({ initialMode = 'login' }) {
                     <button
                       className='passwordVisibility'
                       type='button'
-                      aria-label={showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                      aria-label={
+                        showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'
+                      }
                       aria-pressed={showLoginPassword}
                       onClick={() => setShowLoginPassword(value => !value)}
                     >
@@ -315,7 +325,6 @@ function Registration({ initialMode = 'login' }) {
                     </button>
                   </div>
                 </label>
-
                 <div className='loginOptions'>
                   <label className='rememberMeLabel'>
                     <input
@@ -326,8 +335,14 @@ function Registration({ initialMode = 'login' }) {
                     />
                     <span>Запомнить меня</span>
                   </label>
+                  <button
+                    className='resetPassword'
+                    type=''
+                    onClick={() => navigate('/reset-password')}
+                  >
+                    Забыли пароль?
+                  </button>
                 </div>
-
                 {formError && (
                   <p className='formError' role='alert'>
                     {formError}
@@ -365,7 +380,11 @@ function Registration({ initialMode = 'login' }) {
 
               <div className='formSwitch'>
                 <span>Нет аккаунта?</span>
-                <button className='switch-btn' type='button' onClick={handleSwitch}>
+                <button
+                  className='switch-btn'
+                  type='button'
+                  onClick={handleSwitch}
+                >
                   Создать аккаунт
                 </button>
               </div>
@@ -432,7 +451,9 @@ function Registration({ initialMode = 'login' }) {
                       className='passwordVisibility'
                       type='button'
                       aria-label={
-                        showRegistrationPassword ? 'Скрыть пароль' : 'Показать пароль'
+                        showRegistrationPassword
+                          ? 'Скрыть пароль'
+                          : 'Показать пароль'
                       }
                       aria-pressed={showRegistrationPassword}
                       onClick={() =>
@@ -472,7 +493,9 @@ function Registration({ initialMode = 'login' }) {
                     <span className='strength-label'>
                       {currentLevel ? currentLevel.label : 'Надёжность пароля'}
                     </span>
-                    <span className='strength-hint'>8+ символов, буквы и цифры</span>
+                    <span className='strength-hint'>
+                      8+ символов, буквы и цифры
+                    </span>
                   </div>
                 </div>
                 <div className='godOFcosentOption'>
@@ -487,18 +510,15 @@ function Registration({ initialMode = 'login' }) {
                     />
                     <span>
                       Даю отдельное согласие на обработку{' '}
-                      <a href={personalDataDocument} target='_blank' rel='noreferrer'>
+                      <a
+                        href={personalDataDocument}
+                        target='_blank'
+                        rel='noreferrer'
+                      >
                         персональных данных
                       </a>
                     </span>
                   </label>
-                  <p className='consentPolicyNotice'>
-                    До регистрации ознакомьтесь с{' '}
-                    <a href={privacyPolicyDocument} target='_blank' rel='noreferrer'>
-                      Политикой обработки персональных данных
-                    </a>
-                    .
-                  </p>
                   <label className='consentOption'>
                     <input
                       type='checkbox'
@@ -513,6 +533,17 @@ function Registration({ initialMode = 'login' }) {
                       </a>
                     </span>
                   </label>
+                    <p className='consentPolicyNotice'>
+                    До регистрации ознакомьтесь с{' '}
+                    <a
+                      href={privacyPolicyDocument}
+                      target='_blank'
+                      rel='noreferrer'
+                    >
+                      Политикой обработки персональных данных
+                    </a>
+                    .
+                  </p>
                 </div>
                 {formError && (
                   <p className='formError' role='alert'>
@@ -536,7 +567,11 @@ function Registration({ initialMode = 'login' }) {
 
               <div className='formSwitch'>
                 <span>Уже есть аккаунт?</span>
-                <button className='switch-btn' type='button' onClick={handleSwitch}>
+                <button
+                  className='switch-btn'
+                  type='button'
+                  onClick={handleSwitch}
+                >
                   Войти
                 </button>
               </div>
@@ -544,7 +579,6 @@ function Registration({ initialMode = 'login' }) {
           </div>
         </div>
       </section>
-
     </main>
   )
 }

@@ -115,7 +115,6 @@ spec:
           persistentVolumeClaim:
             claimName: backend-uploads
 ---
-# Не оставляем кластер без backend при обновлении/дренаже ноды
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:

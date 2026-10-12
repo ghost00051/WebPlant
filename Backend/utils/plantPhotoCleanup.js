@@ -3,6 +3,41 @@ import path from 'node:path'
 
 const PLANT_PHOTO_FILE = /^[a-f0-9]{32}\.(?:upload|jpg|png|webp|heic)$/
 
+export function plantPhotoFileName(url) {
+    if (typeof url !== 'string' || !url) return null
+    try {
+        const pathname = url.startsWith('/uploads/plants/')
+            ? url.split(/[?#]/, 1)[0]
+            : new URL(url).pathname
+        const name = path.posix.basename(pathname)
+        return PLANT_PHOTO_FILE.test(name) ? name : null
+    } catch {
+        return null
+    }
+}
+
+export async function removePlantPhotoFiles(urls, {
+    directory = path.resolve('uploads', 'plants')
+} = {}) {
+    const list = Array.isArray(urls) ? urls : [urls]
+    let removed = 0
+
+    for (const url of list) {
+        const name = plantPhotoFileName(url)
+        if (!name) continue
+        try {
+            await unlink(path.join(directory, name))
+            removed++
+        } catch (error) {
+            if (error?.code !== 'ENOENT') {
+                console.warn(`⚠️ Не удалось удалить фото растения ${name}:`, error?.code || error)
+            }
+        }
+    }
+
+    return removed
+}
+
 export async function cleanOrphanedPlantPhotoFiles({
     directory = path.resolve('uploads', 'plants'),
     referencedUrls,
@@ -14,15 +49,8 @@ export async function cleanOrphanedPlantPhotoFiles({
 
     const referencedFiles = new Set()
     for (const url of referencedUrls) {
-        if (typeof url !== 'string') continue
-        try {
-            const pathname = url.startsWith('/uploads/plants/')
-                ? url.split(/[?#]/, 1)[0]
-                : new URL(url).pathname
-            referencedFiles.add(path.posix.basename(pathname))
-        } catch {
-            continue
-        }
+        const name = plantPhotoFileName(url)
+        if (name) referencedFiles.add(name)
     }
 
     const entries = await readdir(directory, { withFileTypes: true })

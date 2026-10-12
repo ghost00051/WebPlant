@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import './profile.css'
 import Pencil from '../../assets/pencil.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import {
     isPasskeySupported,
     listPasskeys,
@@ -336,7 +337,7 @@ function Profile() {
                     </div>
                 </div>
                 <Link to="/edit-profile" className='buttonOfEdProfile'>
-                    <img src={Pencil} alt="" />
+                    <ThemedIcon src={Pencil} alt="" />
                     <p>Редактировать профиль</p>
                 </Link>
             </div>

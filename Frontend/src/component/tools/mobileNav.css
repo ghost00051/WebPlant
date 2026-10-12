@@ -17,7 +17,11 @@
     .gofOfMain>.mobileNav {
         position: static;
         flex: 0 0 auto;
-        /* отступ = safe-area (статус-бар / Dynamic Island) + воздух, как раньше 5% */
+        padding-top: calc(8px + env(safe-area-inset-top, 0px) + 5%);
+    }
+    .godOfBlocksChat>.mobileNav {
+        position: static;
+        flex: 0 0 auto;
         padding-top: calc(8px + env(safe-area-inset-top, 0px) + 5%);
     }
 }
@@ -91,7 +95,7 @@
     place-items: center;
     border: 0;
     border-radius: 14px;
-    background: #2f855a;
+    background: var(--color-white-tema);
     cursor: pointer;
     transition: background 0.2s ease, transform 0.12s ease;
     -webkit-tap-highlight-color: transparent;

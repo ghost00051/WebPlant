@@ -7,6 +7,7 @@ import './visionNextPlant.css'
 import './adaptiv.css'
 import './dark-theme.css'
 import IconCircle from '../../assets/IconCircle.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 
 function pluralizePlants (n) {
   const abs = Math.abs(n) % 100
@@ -212,7 +213,7 @@ function VisionNextPlant ({
       <li key={key} className='plantsPreview__item'>
         <div className='plantsPreview__photoWrap'>
           <div>
-            <img
+            <ThemedIcon
               src={getPlantPhoto(plant)}
               alt={plant.name}
               className='plantsPreview__photo'
@@ -342,7 +343,7 @@ function VisionNextPlant ({
             )}
             {day && isEmpty && (
               <div className='selectDayEmpty'>
-                <img
+                <ThemedIcon
                   src={EmptyIcon}
                   alt=''
                   className='headerImgOfselectDayEmpty'
@@ -427,7 +428,7 @@ function VisionNextPlant ({
             aria-labelledby='watering-delete-title'
             aria-describedby='watering-delete-description'
           >
-            <img
+            <ThemedIcon
               src={IconCircle}
               alt=''
               className='wateringDeleteDialog__icon'

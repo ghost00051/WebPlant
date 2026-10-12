@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit'
 import UserController from "../controllers/userController.js"
 import { requireAdmin } from '../middleware/admin.js'
 import passkeyController from '../controllers/passkeyController.js'
+import passwordResetController from '../controllers/passwordResetController.js'
 import notificationPreferenceController from '../controllers/notificationPreferenceController.js'
 import { requireAuth } from '../middleware/auth.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
@@ -54,9 +55,52 @@ const passkeyRegistrationLimiter = rateLimit({
     ...rateLimitStoreOptions('user-passkey-registration')
 })
 
+const passwordResetRequestLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    message: { message: 'Слишком много запросов на сброс пароля. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-password-reset-request')
+})
+
+const passwordResetVerifyLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    message: { message: 'Слишком много запросов. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-password-reset-verify')
+})
+
+const passwordResetConfirmLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 10,
+    message: { message: 'Слишком много попыток смены пароля. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-password-reset-confirm')
+})
+
 router.post("/registration", registrationLimiter, UserController.registration)
 router.post("/login", loginLimiter, UserController.login)
 router.post("/logout", UserController.logout)
+
+router.post(
+    '/password-reset/request',
+    passwordResetRequestLimiter,
+    passwordResetController.request
+)
+router.get(
+    '/password-reset/verify',
+    passwordResetVerifyLimiter,
+    passwordResetController.verify
+)
+router.post(
+    '/password-reset/confirm',
+    passwordResetConfirmLimiter,
+    passwordResetController.confirm
+)
 
 router.get("/me", requireAuth, UserController.getCurrentUser)
 router.patch("/me", requireAuth, UserController.updateProfile)

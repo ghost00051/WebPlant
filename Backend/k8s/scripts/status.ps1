@@ -1,11 +1,4 @@
 ﻿#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Состояние стека WebPlant в Kubernetes: поды, сервисы, тома, данные, Redis, health.
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/status.ps1
-#>
 [CmdletBinding()]
 param(
     [string]$Namespace = 'webplant',
@@ -49,7 +42,6 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 Write-Step 'Health backend (через gateway)'
-# Из контейнера nginx (compose-сеть) — надёжнее опубликованного на хост порта
 $viaNginx = Get-NativeOutput -AllowFailure {
     docker exec ctp_nginx sh -c "wget -qO- -T 8 http://ctp_k8s_gateway:$GatewayPort/health"
 }
@@ -66,8 +58,6 @@ if ($viaNginx -match '"status"') {
 }
 
 Write-Step 'Redis'
-# Внутри sh используем только одинарные кавычки: Windows PowerShell 5.1 ломает
-# двойные кавычки в аргументах нативных команд.
 $redisInfo = Get-NativeOutput -AllowFailure {
     kubectl exec -n $Namespace deployment/redis -- sh -c 'redis-cli dbsize; redis-cli info memory | grep -E ''used_memory_human|maxmemory_human''; echo -n ''ключей ctp:ai: ''; redis-cli --scan --pattern ''ctp:ai:*'' | wc -l; echo -n ''ключей ctp:rl: ''; redis-cli --scan --pattern ''ctp:rl:*'' | wc -l; echo -n ''активных локов: ''; redis-cli --scan --pattern ''ctp:lock:*'' | wc -l'
 }
@@ -78,6 +68,39 @@ $dbInfo = Get-NativeOutput -AllowFailure {
     kubectl exec -n $Namespace statefulset/postgres -- sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -c ''select relname, n_live_tup from pg_stat_user_tables order by n_live_tup desc limit 8'''
 }
 Write-Host $dbInfo
+
+Write-Step 'Схема базы и миграции'
+$schemaSql = "select (select count(*) from information_schema.tables where table_schema = 'public') || '|' || " +
+    "(select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'site_visit_days') || '|' || " +
+    "(select count(*) from information_schema.columns where table_name = 'users' and column_name = 'created_at');"
+$schemaRaw = ($schemaSql | kubectl exec -i -n $Namespace statefulset/postgres -- sh -c 'psql -U $POSTGRES_USER -d $POSTGRES_DB -tA' 2>&1 | Out-String).Trim()
+Write-Host $schemaRaw
+
+if ($schemaRaw -match '^(\d+)\|(\d+)\|(\d+)$') {
+    $tables = [int]$Matches[1]
+    $visitsTable = [int]$Matches[2]
+    $createdAtColumn = [int]$Matches[3]
+    Write-Host ("таблиц: {0}, site_visit_days: {1}, users.created_at: {2}" -f `
+        $tables, $(if ($visitsTable) { 'есть' } else { 'нет' }), $(if ($createdAtColumn) { 'есть' } else { 'нет' }))
+
+    if (-not $visitsTable -or -not $createdAtColumn) {
+        Write-Host 'Схема отстала от кода: поды backend будут падать с "Database schema is missing required tables".' -ForegroundColor Yellow
+        Write-Host 'Примените миграции: powershell -File Backend/scripts/apply-migrations.ps1' -ForegroundColor Yellow
+        Write-Host 'Затем: kubectl rollout restart deployment/backend -n webplant' -ForegroundColor Yellow
+    }
+} else {
+    Write-Host 'не удалось прочитать схему (кластер недоступен?)' -ForegroundColor Yellow
+}
+
+Write-Step 'Логи backend, если поды не в Ready'
+$notReady = (kubectl get pods -n $Namespace -l app=webplant-backend --no-headers 2>$null) |
+    Where-Object { $_ -notmatch 'Running' -or $_ -notmatch '\s1/1\s' }
+if ($notReady) {
+    $notReady | ForEach-Object { Write-Host $_ }
+    kubectl logs -n $Namespace deployment/backend --tail=30 --all-containers=true 2>&1 | Select-Object -Last 30
+} else {
+    Write-Host 'все реплики backend в Running/Ready (или подов нет)'
+}
 
 Write-Step 'Внешние контейнеры-мостики'
 docker ps --filter 'name=ctp_k8s_' --format '{{.Names}}  {{.Status}}  {{.Ports}}'

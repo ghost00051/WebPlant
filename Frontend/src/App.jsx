@@ -5,6 +5,7 @@ import SeoMetadata from './component/SeoMetadata/SeoMetadata.jsx'
 import RouteFallback from './component/RouteFallback/RouteFallback.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import './styles/dark-theme.css'
+import ResetPassword from './component/resetPassword/resetPassword.jsx'
 
 const Registration = lazy(() => import('./component/registration/registration.jsx'))
 const Home = lazy(() => import('./component/home/home.jsx'))
@@ -121,6 +122,7 @@ function App() {
             }
           />
           <Route path='*' element={<Navigate to='/' replace />} />
+          <Route path='/reset-password' element={<ResetPassword/>}/>
         </Routes>
         <Suspense fallback={null}>
           <CookieConsentManager />

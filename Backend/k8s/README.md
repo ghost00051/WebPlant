@@ -46,7 +46,19 @@
 
 Объекты `webplant-env` (ConfigMap) и `webplant-secrets` (Secret) создаёт `deploy.ps1`
 из `Backend/.env`: секреты не хранятся в git, пароль Redis генерируется один раз и
-переиспользуется при следующих деплоях.
+переиспользуется при следующих деплоях. Пароль почты `SMTP_PASSWORD` тоже уходит
+в Secret (перечислен в `$secretKeys`), остальные `SMTP_*`/`MAIL_*` — в ConfigMap.
+Почта нужна для писем со ссылкой сброса пароля: пока `SMTP_PASSWORD` пуст,
+восстановление пароля отвечает `503`, а `GET /health` показывает
+`"mail": "not-configured"`. После заполнения пароля образ пересобирать не нужно, но
+одного `deploy.ps1 -SkipBuild -SkipImageLoad` **недостаточно**: Secret обновится,
+а поды продолжат работать со старыми переменными, потому что env читается только
+при старте контейнера. Нужен ещё перезапуск подов:
+
+```powershell
+powershell -File Backend/k8s/scripts/deploy.ps1 -SkipBuild -SkipImageLoad
+kubectl rollout restart deployment/backend -n webplant
+```
 
 ## Требования
 
@@ -120,6 +132,53 @@ kubectl rollout restart deployment/backend -n webplant
 Важно: `kubectl rollout restart` сам по себе **не подхватит новый код** — без нового
 образа поды запустятся из того же тега. Для кода нужен `deploy.ps1`.
 
+**Изменилась схема базы** (новая таблица или колонка модели) — `deploy.ps1`
+применяет миграции сам: перед раскаткой backend он запускает
+`Backend/scripts/apply-migrations.ps1` и прогоняет все файлы из
+`Backend/migrations` по возрастанию имени. Миграции идемпотентны, поэтому
+повторный запуск ничего не меняет.
+
+Это обязательный шаг: backend в production проверяет схему при старте и
+**завершает запуск ошибкой**, если таблиц или колонок моделей нет в базе. Без
+миграции поды уходят в `CrashLoopBackOff`, а `kubectl rollout status` падает по
+таймауту с сообщением вида:
+
+```text
+Database schema is missing required tables or columns: site_visit_days.
+Apply migration(s): Backend/migrations/20261012_create_admin_analytics.sql
+```
+
+Применить миграции отдельно (например, после `-RestoreData` из старого дампа или
+если схема разошлась):
+
+```powershell
+# в кластере (по умолчанию)
+powershell -File Backend/scripts/apply-migrations.ps1
+
+# только новые миграции, начиная с указанной
+powershell -File Backend/scripts/apply-migrations.ps1 -From 20261012
+
+# в compose-стеке
+powershell -File Backend/scripts/apply-migrations.ps1 -Target compose
+```
+
+Compose-стек применяет те же миграции автоматически: сервис `migrate` в
+`Backend/docker-compose.yml` запускается перед backend и должен завершиться
+успешно (`condition: service_completed_successfully`). Вручную:
+`docker compose run --rm migrate`.
+
+Проверить, что схема в кластере не отстала от кода, можно одной командой:
+
+```powershell
+powershell -File Backend/k8s/scripts/status.ps1
+```
+
+Раздел «Схема базы и миграции» показывает число таблиц, наличие
+`site_visit_days` и `users.created_at`, а при отставании сразу печатает команды
+применения миграций и перезапуска подов. Если схема пустая (нет даже `users`),
+`apply-migrations.ps1` и compose-сервис `migrate` остановятся с подсказкой
+сначала восстановить данные из дампа.
+
 **Изменился только frontend** — кластер не затрагивается, фронт собирается и
 выкладывается отдельно (`Frontend/`).
 
@@ -169,6 +228,15 @@ kubectl exec -n webplant deployment/redis -- redis-cli --scan --pattern 'ctp:*'
   `.k8s-images` (в корне репозитория), раздаёт его контейнером `ctp_k8s_img_server`
   на порту 8099, а DaemonSet `image-loader` скачивает архив и импортирует его в
   containerd каждой ноды через `ctr`.
+  * Доставка 92-МБ архива на шесть нод через NAT занимает 10–25 минут: `deploy.ps1`
+    ждёт до 30 минут (`-ImageLoadTimeoutMinutes`), раз в 30 секунд печатает, на
+    сколько нод образ уже доехал. Если время вышло, DaemonSet **не удаляется** и
+    продолжает докачивать образ в фоне — подождите и повторите
+    `deploy.ps1 -SkipBuild -SkipImageLoad`.
+  * `image-loader` докачивает архив (`wget -c`) и сверяет его размер с
+    `IMAGE_TAR_SIZE`: busybox wget на уже полном файле получает HTTP 416, и без
+    проверки размера нода не понимает, что качать больше нечего. Повторный импорт
+    битого архива начинается заново.
 * **NodePort и LoadBalancer не проброшены на хост.** Поэтому наружу стек отдаёт
   контейнер `ctp_k8s_gateway` (nginx `stream`): он живёт в docker-сети `kind`,
   проксирует на NodePort `30080` всех нод с пассивным исключением упавших и

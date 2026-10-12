@@ -1,6 +1,7 @@
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import App from './App.jsx';
 import { registerServiceWorker } from './utils/pushNotifications.js';
+import { startVisitTracking } from './utils/visits.js';
 import './utils/pwaInstall.js';
 
 
@@ -18,3 +19,5 @@ if (rootElement.dataset.prerendered === 'true') {
 } else {
     createRoot(rootElement).render(<App />)
 }
+
+startVisitTracking()

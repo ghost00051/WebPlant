@@ -12,6 +12,7 @@ import './dark-theme.css'
 import dropletIcon from '../../assets/droplet.svg'
 import alertIcon from '../../assets/alert-triangle.svg'
 import appIcon from '../../assets/AppIcon.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 
 function NotificationPrompt({ onClose }) {
   const [loading, setLoading] = useState(false)
@@ -62,7 +63,7 @@ function NotificationPrompt({ onClose }) {
       <div className='notification-prompt'>
         <div className='godOfNotifications'>
           <div className='notification-prompt-icon'>
-            <img src={appIcon} alt='' />
+            <ThemedIcon src={appIcon} alt='' />
           </div>
           {needsIOSInstall ? (
             <>

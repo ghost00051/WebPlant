@@ -93,6 +93,7 @@ WebPlant/
 │   └── package-lock.json
 ├── Frontend/
 │   ├── src/
+│   ├── admin/              # статическая админ-панель для admin.checktheplants.ru
 │   ├── index.html
 │   ├── package.json
 │   └── package-lock.json
@@ -112,6 +113,8 @@ Backend содержит базовый набор методов для раб�
 - logout
 - получение текущего пользователя
 - получение списка пользователей
+- восстановление пароля по ссылке из письма (см. «Сброс пароля» ниже)
+- приветственное письмо после регистрации (один раз на аккаунт, см. «Приветственное письмо»)
 
 При регистрации выполняется ряд проверок:
 
@@ -268,6 +271,25 @@ npm run indexnow -- --engine=yandex       # отправить напрямую 
 - email
 - password
 - role
+- name, username, phone, bio, privilege_level
+- created_at (появляется после миграции `20261012_create_admin_analytics.sql`)
+
+### site_visit_days
+
+Ежедневная агрегация посещений для админ-панели: одна строка на посетителя в
+сутки по московскому времени.
+
+- id
+- visitor_id (случайный идентификатор браузера, не персональные данные)
+- day (дата в `Europe/Moscow`)
+- user_id (если посетитель авторизован)
+- views (просмотров за день)
+- first_path, referrer_host, device
+- created_at, updated_at
+
+Таблица наполняется публичным маяком `POST /api/system/visit` только при
+согласии посетителя на аналитику; данные старше 400 дней удаляет ежедневная
+задача очистки.
 
 ### user_cookie_consents
 
@@ -292,6 +314,115 @@ npm run indexnow -- --engine=yandex       # отправить напрямую 
 ### user_legal_consents
 
 Содержит юридические согласия пользователя или гостя, связанные с обработкой данных и соглашениями.
+
+### password_reset_tokens
+
+Одноразовые ссылки сброса пароля (миграция `20261012_create_password_reset_tokens.sql`):
+
+- id
+- user_id
+- token_hash — SHA-256 хеш токена; сам токен существует только в письме
+- expires_at — ссылка живёт 30 минут
+- used_at — проставляется при смене пароля, повторно ссылка не работает
+- requested_ip, user_agent
+- created_at
+
+Неиспользованные ссылки гасятся при новом запросе, а строки старше 30 дней
+удаляет ежедневная задача очистки.
+
+## Сброс пароля
+
+Письмо со ссылкой отправляется через SMTP (по умолчанию `smtp.mail.ru:465`,
+сервис `Backend/services/mailService.js`). Пароль ящика задаётся переменной
+`SMTP_PASSWORD` — это «пароль для внешних приложений», обычный пароль от почты
+для SMTP не подходит. Пока `SMTP_PASSWORD` пуст, сайт работает как обычно, но
+`POST /api/users/password-reset/request` отвечает `503`.
+
+```env
+SMTP_HOST=smtp.mail.ru
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=checktheplants@mail.ru
+SMTP_PASSWORD=app_password_from_mail_settings
+MAIL_FROM=checktheplants@mail.ru
+```
+
+Проверить настройки и отправить тестовое письмо:
+
+```bash
+cd Backend
+node scripts/send-test-mail.mjs you@example.com
+```
+
+В Kubernetes `SMTP_PASSWORD` попадает в Secret `webplant-secrets` (остальные
+`SMTP_*` — в ConfigMap `webplant-env`). Переменные окружения читаются только при
+старте пода, а обновление Secret само по себе поды не перезапускает, поэтому после
+заполнения пароля нужны оба шага: обновить объекты кластера и перезапустить поды.
+
+```powershell
+powershell -File Backend/k8s/scripts/deploy.ps1 -SkipBuild -SkipImageLoad
+kubectl rollout restart deployment/backend -n webplant
+kubectl rollout status deployment/backend -n webplant
+```
+
+Статус почты виден в `GET /health` (поле `mail`: `configured`, `not-configured`
+или `disabled`). Проверка отправки из пода:
+
+```powershell
+kubectl exec -n webplant deployment/backend -- node scripts/send-test-mail.mjs checktheplants@mail.ru
+```
+
+### Что нужно на стороне mail.ru
+
+- **Пароль для внешних приложений.** Обычный пароль от почты SMTP не принимает:
+  Почта → Настройки → Все настройки → Безопасность → «Пароли для внешних приложений»
+  (прямая ссылка `https://account.mail.ru/user/2-step-auth/passwords/`). К ящику
+  должен быть привязан телефон, а в разделе «Внешние сервисы» — включён доступ по
+  IMAP/POP/SMTP.
+- **С 2026 года Mail отдаёт протокольный доступ только с подпиской Mail Space
+  «для работы».** Если при создании пароля интерфейс требует подписку, письма через
+  `smtp.mail.ru` не заработают на бесплатном ящике. Код при этом менять не нужно:
+  достаточно указать SMTP любого транзакционного провайдера (Яндекс 360,
+  Unisender, SendPulse, SMTP2GO, Brevo) в `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
+  `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`.
+- **Свой домен в поле «От» через `smtp.mail.ru` использовать нельзя:** DKIM будет
+  `d=mail.ru` и не выровняется по домену `checktheplants.ru`. Для писем от домена
+  нужен свой релей или «Почта для бизнеса».
+- **Лимиты:** часовой лимит на ящик (число не публикуется, при превышении — ошибка
+  `451 Ratelimit exceeded for mailbox`), до 30 получателей в одном письме. Для
+  регулярных рассылок личный ящик не подходит.
+- **Спам:** первые письма с нового ящика часто попадают в «Спам»; попросите первых
+  получателей отметить письмо как «Не спам» и наращивайте объём постепенно.
+
+## Приветственное письмо
+
+Сразу после регистрации пользователю один раз уходит письмо от разработчика: приветствие
+по имени, три совета «с чего начать», блок «от разработчика» и кнопка «Открыть свой сад».
+Ответить на письмо можно прямо из почты — оно уходит с `Reply-To` из `MAIL_REPLY_TO`.
+
+Факт отправки хранится в `users.welcome_email_sent_at` (миграция
+`20261012_add_welcome_email_sent_at.sql`), поэтому письмо не дублируется: отметка
+ставится до отправки, а если SMTP не ответил — снимается, и письмо уйдёт при следующем
+запуске. Ошибка почты не влияет на регистрацию: ответ пользователю не ждёт отправки.
+
+Тем, кто зарегистрировался раньше, письмо рассылается отдельным скриптом:
+
+```bash
+cd Backend
+node scripts/send-welcome-emails.mjs                       # сухой прогон: список получателей и текст письма
+node scripts/send-welcome-emails.mjs --send                # отправить всем, кому ещё не уходило
+node scripts/send-welcome-emails.mjs --to you@example.com  # одно письмо для проверки вёрстки
+node scripts/send-welcome-emails.mjs --send --force        # отправить повторно, даже если уже уходило
+```
+
+В кластере то же самое:
+
+```powershell
+kubectl exec -n webplant deployment/backend -- node scripts/send-welcome-emails.mjs --send
+```
+
+Текст и вёрстка письма живут в `Backend/services/mailService.js` (`renderWelcomeEmail`),
+подпись разработчика и логотип задаются там же; логотип подтягивается с сайта.
 
 ## API
 
@@ -328,6 +459,39 @@ npm run indexnow -- --engine=yandex       # отправить напрямую 
 #### POST /api/users/logout
 
 Выход пользователя из системы.
+
+#### POST /api/users/password-reset/request
+
+Запрос ссылки для сброса пароля.
+
+```json
+{ "email": "user@example.com" }
+```
+
+Ответ всегда одинаковый (`200`), есть ли такой аккаунт: `{"message": "Если аккаунт с таким email существует, мы отправили на него ссылку для сброса пароля. Проверьте папку «Спам».", "expiresInMinutes": 30}` — это защита от проверки существования пользователей. Если SMTP не настроен, вернётся `503`. Лимиты: не более 5 запросов с одного IP в час, не чаще одной ссылки в минуту и не более 3 в час на аккаунт.
+
+#### GET /api/users/password-reset/verify?token=…
+
+Проверка ссылки из письма перед показом формы нового пароля.
+
+```json
+{ "valid": true, "email": "an***@mail.ru", "expiresInMinutes": 30 }
+```
+
+Недействительная или истёкшая ссылка — `400`.
+
+#### POST /api/users/password-reset/confirm
+
+Смена пароля по ссылке.
+
+```json
+{ "token": "токен из ссылки", "password": "новыйПароль123" }
+```
+
+Пароль — минимум 8 символов. После успешной смены backend закрывает все
+активные сессии пользователя (в том числе refresh-токены), гасит остальные
+ссылки сброса и очищает cookie текущего браузера, поэтому вход выполняется
+заново с новым паролем.
 
 #### GET /api/users/me
 
@@ -399,6 +563,72 @@ Get-Content .\migrations\20261006_create_notifications.sql -Raw | docker-compose
 
 Связывание guest-согласий с пользователем.
 
+### Админ-панель
+
+Отдельный поддомен `admin.checktheplants.ru` обслуживает статическая панель из
+[Frontend/admin](Frontend/admin/README.md) — обычные HTML, CSS и ES-модули без
+сборки. Все данные она берёт из API под cookie-сессией администратора, а
+доступ проверяется на сервере (`requireAdmin`, `role = ADMIN`).
+
+Что умеет панель:
+
+- аналитика: посетители и просмотры, регистрации, растения, поливы, фото,
+  сообщения чата, push-подписки и активные сессии; графики по дням, распределение
+  поливов по дням недели и часам, топы по видам растений и пользователям;
+- раздел «Посетители»: уникальные визиты по дням, новые и авторизованные
+  посетители, устройства, страницы входа и источники переходов;
+- управление: карточка пользователя со всей активностью, смена роли,
+  удаление пользователей, растений, поливов, фотографий и сообщений чата;
+- выгрузка списков в CSV и состояние сервера (`/health`, Redis, Docker).
+
+Маршруты админ-API (все требуют `role = ADMIN`):
+
+```text
+GET    /api/admin/analytics/overview?days=30
+GET    /api/admin/analytics/timeseries?days=30
+GET    /api/admin/analytics/breakdown?days=30
+GET    /api/admin/visits?from=YYYY-MM-DD&to=YYYY-MM-DD
+GET    /api/admin/users | /api/admin/users/:id
+PATCH  /api/admin/users/:id          # роль и уровень привилегий
+DELETE /api/admin/users/:id          # каскадно: растения, поливы, фото, чат, согласия, сессии
+GET    /api/admin/plants             DELETE /api/admin/plants/:id
+GET    /api/admin/waterings          DELETE /api/admin/waterings/:id
+GET    /api/admin/photos             DELETE /api/admin/photos/:id
+GET    /api/admin/chat               DELETE /api/admin/chat/:id
+DELETE /api/admin/chat/session/:sessionId
+POST   /api/system/visit             # публичный маяк посещений (только при согласии на аналитику)
+```
+
+Счётчик посещений — собственный и приватный: сайт отправляет `POST /api/system/visit`
+один раз на загрузку страницы и только если посетитель принял согласие на
+аналитику (см. `Frontend/src/utils/visits.js`). Сохраняются случайный
+идентификатор браузера, путь входа, хост перехода и тип устройства; IP не
+записывается. Один посетитель в сутки — одна строка, данные хранятся 400 дней.
+
+Перед запуском панели в production:
+
+1. добавьте origin админки в `Backend/.env` и разрешите его в CORS:
+
+   ```env
+   ADMIN_PANEL_ORIGIN=https://admin.checktheplants.ru
+   ```
+
+2. примените миграцию, которая добавляет `users.created_at` и таблицу
+   `site_visit_days`:
+
+   ```bash
+   psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
+     -v ON_ERROR_STOP=1 -f Backend/migrations/20261012_create_admin_analytics.sql
+   ```
+
+3. перезапустите backend и выгрузите содержимое `Frontend/admin` в корень
+   поддомена вместе со скрытым `.htaccess`.
+
+Без миграции backend продолжает работать: даты регистраций считаются по
+согласиям, а раздел «Посетители» показывает нули и подсказку применить
+миграцию. Полная инструкция по выгрузке, HTTPS и отладке — в
+[Frontend/admin/README.md](Frontend/admin/README.md).
+
 ## Требования для запуска
 
 Для локального запуска необходимо:
@@ -444,11 +674,19 @@ DB_PASSWORD=your_password
 SECRET_KEY=replace_with_a_random_secret_of_at_least_32_bytes
 FRONTEND_URL=http://localhost:5173
 REDIS_URL=redis://localhost:6379/0
+SMTP_HOST=smtp.mail.ru
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=checktheplants@mail.ru
+SMTP_PASSWORD=app_password_from_mail_settings
 ```
+
+Переменные `SMTP_*` нужны только для писем со ссылкой сброса пароля; без них
+backend стартует, а endpoint сброса отвечает `503` (см. «Сброс пароля»).
 
 Redis не обязателен: без `REDIS_URL` backend работает как раньше — лимиты запросов считаются в памяти процесса, cron-задачи выполняются без распределённых локов, кэш ответов ИИ отключён. Если Redis задан, он используется для общего rate-limit, распределённых локов cron-задач (напоминания, push-рассылки, очистка) и кэша ответов Yandex Cloud AI. При недоступности Redis backend продолжает работать в прежнем режиме, а `GET /health` показывает `"redis": "unavailable"`.
 
-Для production также задайте `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY` для web push, укажите HTTPS-origin в `FRONTEND_URL`, установите `NODE_ENV=production` и используйте отдельные защищённые credentials PostgreSQL. Для passkey-аутентификации задайте `RP_ID` (домен сайта без схемы, например `checktheplants.ru`) и `FRONTEND_ORIGIN` (разрешённые HTTPS-origin через запятую; каждый должен быть в `FRONTEND_URL` и покрываться `RP_ID`). `YANDEX_CLOUD_FOLDER` и `YANDEX_CLOUD_API_KEY` используются чатом, подсказкой вида и диалогом рекомендаций полива.
+Для production также задайте `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY` для web push, укажите HTTPS-origin в `FRONTEND_URL`, установите `NODE_ENV=production` и используйте отдельные защищённые credentials PostgreSQL. Для passkey-аутентификации задайте `RP_ID` (домен сайта без схемы, например `checktheplants.ru`) и `FRONTEND_ORIGIN` (разрешённые HTTPS-origin через запятую; каждый должен быть в `FRONTEND_URL` и покрываться `RP_ID`). `YANDEX_CLOUD_FOLDER` и `YANDEX_CLOUD_API_KEY` используются чатом, подсказкой вида и диалогом рекомендаций полива. Для админ-панели задайте `ADMIN_PANEL_ORIGIN` (например `https://admin.checktheplants.ru`): этот origin добавляется к разрешённым для API отдельно от `FRONTEND_URL`, чтобы не расширять список passkey-origin.
 
 Push-уведомления работают в поддерживаемых браузерах на HTTPS. На iPhone и iPad требуется iOS/iPadOS 16.4 или новее: откройте сайт в Safari, добавьте его через «Поделиться» → «На экран Домой», запустите установленное приложение и разрешите уведомления. На Android разрешите уведомления в браузере или установленном PWA. Подписка и разрешение задаются отдельно для каждого браузера/устройства.
 
@@ -535,6 +773,14 @@ docker compose logs -f backend
 
 Redis в compose (`ctp_redis`) хранит общий rate-limit, распределённые локи cron-задач и кэш ответов ИИ; пароль задаётся переменной `REDIS_PASSWORD` в `Backend/.env`, данные лежат в томе `redis_data`.
 
+Перед стартом backend compose запускает одноразовый сервис `migrate` (`ctp_migrate`): он прогоняет все файлы `Backend/migrations/*.sql` по порядку и только после успешного завершения поднимает backend (`condition: service_completed_successfully`). Это обязательно, потому что production-backend завершает запуск ошибкой, если таблиц или колонок моделей нет в базе. Вручную миграции применяются так:
+
+```bash
+cd Backend
+docker compose run --rm migrate                                   # через compose
+powershell -File scripts/apply-migrations.ps1 -Target compose      # через скрипт (Windows)
+```
+
 ### Kubernetes
 
 Стек также разворачивается в Kubernetes (PostgreSQL, Redis, две реплики backend, перенос боевых данных и шлюз наружу). Манифесты, скрипты и описание переезда — в [Backend/k8s/README.md](Backend/k8s/README.md):
@@ -548,6 +794,13 @@ powershell -File Backend/k8s/scripts/status.ps1
 ```
 
 В кластере фоновые задачи по умолчанию выключены (`BACKGROUND_JOBS_ENABLED=false`), чтобы не дублировать push-уведомления рядом с работающим compose-стеком; включаются флагом `-EnableBackgroundJobs` после переключения трафика.
+
+`deploy.ps1` перед раскаткой backend сам применяет миграции из `Backend/migrations` (все файлы идемпотентны). Если поды не выходят в Ready, скрипт выводит их состояние и логи: типичная причина `Database schema is missing required tables or columns` лечится прогоном миграций и перезапуском подов.
+
+```powershell
+powershell -File Backend/scripts/apply-migrations.ps1            # применить миграции в кластере
+kubectl rollout restart deployment/backend -n webplant           # перезапустить поды
+```
 
 ## Основные сценарии использования
 
@@ -589,8 +842,8 @@ Backend устанавливает production-настройки cookie, огр�
 
 В текущем виде проект может иметь следующие ограничения:
 
-- отсутствует полноценная система ролей и прав доступа
-- нет админ-панели
+- отсутствует полноценная система ролей и прав доступа: есть только `USER`/`ADMIN` и уровень `privilege_level`
+- админ-панель закрывает аналитику и управление данными, но не редактирует содержимое пользователей (только удаляет и меняет роль)
 - автоматизированные тесты backend не заменяют интеграционные тесты API с отдельной PostgreSQL
 - frontend build и lint не заменяют браузерные e2e-тесты критических сценариев
 - возможны изменения структуры API
@@ -602,9 +855,9 @@ Backend устанавливает production-настройки cookie, огр�
 Планируется дальнейшее развитие проекта в таких направлениях:
 
 - полноценный личный кабинет пользователя
-- восстановление пароля
+- ✅ восстановление пароля по одноразовой ссылке из письма (30 минут, сброс всех сессий)
 - подтверждение email
-- админ-панель для управления пользователями
+- ✅ админ-панель для управления пользователями, растениями и поливами (`Frontend/admin`)
 - улучшенная система ролей и permissions
 - интеграционные и браузерные e2e-тесты
 - рефакторинг структуры проекта
@@ -697,6 +950,19 @@ psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
 psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
   -v ON_ERROR_STOP=1 -f Backend/migrations/20261006_create_notifications.sql
 ```
+
+Для админ-панели (дата регистрации `users.created_at` и таблица посещений
+`site_visit_days`) примените миграцию до выгрузки поддомена:
+
+```bash
+psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
+  -v ON_ERROR_STOP=1 -f Backend/migrations/20261012_create_admin_analytics.sql
+```
+
+Миграция идемпотентна: дата регистрации существующих пользователей
+заполняется по первому согласию с источником `registration`, затем по первой
+серверной сессии. Без неё backend работает, но аналитика регистраций и
+посещений деградирует (см. раздел «Админ-панель»).
 
 ### Доступ к pgAdmin из локальной сети
 

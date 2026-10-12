@@ -27,6 +27,8 @@ spec:
               value: "__IMAGE_REF__"
             - name: IMAGE_TAR
               value: "__IMAGE_TAR__"
+            - name: IMAGE_TAR_SIZE
+              value: "__IMAGE_TAR_SIZE__"
             - name: KEEP_IMAGE
               value: "__KEEP_IMAGE__"
             - name: IMAGE_SERVER_PORT
@@ -40,38 +42,52 @@ spec:
               SOCK=/host/run/containerd/containerd.sock
               IMAGE="docker.io/library/${IMAGE_REF}"
 
+              tar_bytes() { wc -c < /tmp/image.tar 2>/dev/null || echo 0; }
+
+              tar_complete() {
+                [ -n "${IMAGE_TAR_SIZE}" ] && [ "${IMAGE_TAR_SIZE}" != "0" ] &&
+                  [ "$(tar_bytes)" = "${IMAGE_TAR_SIZE}" ]
+              }
+
+              import_tar() {
+                echo "импортирую ${IMAGE} в containerd ноды $(hostname)..."
+                if ${CTR} --address ${SOCK} --namespace k8s.io images import /tmp/image.tar; then
+                  rm -f /tmp/image.tar
+                  return 0
+                fi
+                echo "импорт не удался, перекачиваю архив"
+                rm -f /tmp/image.tar
+                return 1
+              }
+
               ensure_image() {
                 if ${CTR} --address ${SOCK} --namespace k8s.io images ls -q | grep -qx "${IMAGE}"; then
                   echo "образ ${IMAGE} уже есть на ноде $(hostname)"
                   return 0
                 fi
 
-                # Разброс по времени: шесть нод качают 90-мегабайтный архив одновременно,
-                # и Docker Desktop рвёт часть соединений.
-                sleep $(( (RANDOM % 20) + 1 ))
+                sleep $(( (RANDOM % 30) + 1 ))
 
-                for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
-                  ATTEMPT=1
-                  while [ "${ATTEMPT}" -le 4 ]; do
+                ATTEMPT=1
+                while [ "${ATTEMPT}" -le 10 ]; do
+                  for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
                     echo "скачиваю ${IMAGE_TAR} с ${HOST} (попытка ${ATTEMPT})..."
-                    rm -f /tmp/image.tar
-                    if wget -q -T 60 -O /tmp/image.tar "http://${HOST}:${IMAGE_SERVER_PORT}/${IMAGE_TAR}"; then
-                      echo "импортирую ${IMAGE} в containerd ноды $(hostname)..."
-                      if ${CTR} --address ${SOCK} --namespace k8s.io images import /tmp/image.tar; then
-                        rm -f /tmp/image.tar
-                        return 0
-                      fi
+                    if wget -q -c -T 300 -O /tmp/image.tar "http://${HOST}:${IMAGE_SERVER_PORT}/${IMAGE_TAR}"; then
+                      import_tar && return 0
+                    elif tar_complete; then
+                      echo "wget завершился с ошибкой, но архив полный ($(tar_bytes) байт)"
+                      import_tar && return 0
+                    else
+                      echo "загрузка прервана на $(tar_bytes) байт, продолжу с этого места"
                     fi
-                    ATTEMPT=$((ATTEMPT + 1))
                     sleep 5
                   done
+                  ATTEMPT=$((ATTEMPT + 1))
                 done
 
                 return 1
               }
 
-              # Оставляем только текущий образ и один предыдущий (для kubectl rollout undo),
-              # чтобы 90-мегабайтные слои не копились на каждой ноде.
               prune_images() {
                 for REF in $(${CTR} --address ${SOCK} --namespace k8s.io images ls -q |
                   grep '^docker.io/library/webplant-backend:' || true); do

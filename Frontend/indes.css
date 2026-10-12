@@ -7,6 +7,8 @@
     --font-size-xl: 1.25rem;
     --font-size-2xl: 1.5rem;
     --font-size-3xl: 2rem;
+    --color-white-tema: #7C9082;
+    --color-black-tema:
     --font-size-hero: clamp(2.375rem, 5vw, 3.875rem);
     --mobile-nav-height: calc(60px + env(safe-area-inset-top, 0px));
     font-family: 'Inter', sans-serif;

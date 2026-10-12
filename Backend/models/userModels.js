@@ -41,6 +41,10 @@ const User = sequelize.define("user", {
         type: DataTypes.STRING(20),
         allowNull: false,
         defaultValue: "free"
+    },
+    welcome_email_sent_at: {
+        type: DataTypes.DATE,
+        allowNull: true
     }
 }, {
     tableName: 'users',

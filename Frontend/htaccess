@@ -58,7 +58,7 @@ DirectoryIndex index.html
     RewriteCond %{THE_REQUEST} ^\S+\s+/index\.html[\s?] [NC]
     RewriteRule ^ / [R=301,L,NE]
 
-    RewriteRule ^(login|register|home|add-plant|edit-profile|my-plants)/?$ $1.html [L]
+    RewriteRule ^(login|register|home|add-plant|edit-profile|my-plants|reset-password)/?$ $1.html [L]
 
     RewriteRule ^plants/?$ plants.html [L]
     RewriteRule ^care/?$ care.html [L]

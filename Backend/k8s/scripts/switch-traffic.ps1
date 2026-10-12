@@ -1,33 +1,4 @@
-#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Переключение боевого трафика между compose-стеком и Kubernetes.
-
-.DESCRIPTION
-    Меняет Backend/nginx/conf.d/default.conf на выбранный режим, проверяет
-    конфигурацию через `nginx -t` и перезагружает nginx (graceful reload,
-    без разрыва активных соединений). При неудачной проверке возвращает
-    предыдущий файл, поэтому домен не остаётся без рабочей конфигурации.
-
-    Режимы:
-      compose — всё обслуживает compose-стек (исходное состояние, полный откат);
-      canary  — /api и /uploads остаются на compose, /health уходит в Kubernetes
-                (проверка связки с кластером на живом домене без риска для данных);
-      k8s     — /api, /uploads и /health обслуживает стек в Kubernetes.
-
-    ВАЖНО про режим k8s: backend в кластере работает со своей копией базы.
-    Перед переключением перенесите свежие данные:
-      powershell -File Backend/k8s/scripts/deploy.ps1 -RestoreData -EnableBackgroundJobs
-
-.PARAMETER Target
-    compose | canary | k8s
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/switch-traffic.ps1 -Target canary
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/switch-traffic.ps1 -Target compose
-#>
+﻿#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)]
@@ -80,8 +51,6 @@ function Get-Health {
 }
 
 function Get-StackName([string]$HealthJson) {
-    # Основной признак — DEPLOY_TARGET из конфигурации стека,
-    # запасной — backgroundJobs (у k8s-стека задачи обычно выключены)
     if ($HealthJson -match '"deployTarget"\s*:\s*"kubernetes"') { return 'kubernetes' }
     if ($HealthJson -match '"deployTarget"\s*:\s*"compose"') { return 'compose' }
     if ($HealthJson -match '"backgroundJobs"\s*:\s*false') { return 'kubernetes' }

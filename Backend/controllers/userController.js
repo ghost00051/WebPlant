@@ -22,6 +22,7 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
@@ -226,6 +227,10 @@ class UserController {
                 await setSessionAuth(res, user)
             }
             clearGuestTokenCookie(res)
+
+            void sendWelcomeEmailToUser(user).catch(error => {
+                console.error('❌ Не удалось отправить приветственное письмо:', error)
+            })
 
             return res.status(201).json({
                 message: 'Регистрация успешна',

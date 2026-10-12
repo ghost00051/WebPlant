@@ -70,7 +70,7 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: inherit;
+    color: var(--color-white-tema);
     font: inherit;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;

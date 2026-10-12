@@ -1,4 +1,5 @@
 import IconTile from '../../assets/IconTile.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { TABS } from './tabs.js'
 import '../tools/tools.css'
 import './dark-theme.css'
@@ -40,7 +41,7 @@ function Tools({ onTabChange, activeTab }) {
                 className="desktopAssistantLink"
                 onClick={() => onTabChange?.('chat')}
             >
-                <img src={IconTile} alt="" />
+                <ThemedIcon src={IconTile} alt="" />
                 <span>
                     <strong>Спросить ИИ-помощника</strong>
                     <small>Подскажет, когда и как поливать</small>

@@ -9,6 +9,7 @@ import VisionNextPlant from '../visionNextPlant/visionNextPlant'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import {
   dayOfMonth,
@@ -381,7 +382,7 @@ function HomePage({ user, onTabChange }) {
           <p>Мои растения</p>
         </div>
         <div>
-          <img src={Notification} alt='уведомления' />
+          <ThemedIcon src={Notification} alt='уведомления' />
         </div>
       </div>
       <div className='desktopDashboardHeader'>
@@ -486,12 +487,12 @@ function HomePage({ user, onTabChange }) {
         </section>
         <section className='offScheduleWatering'>
           <div className='descriptioOfoffScheduleWatering'>
-            <img src={IconTile} alt="" />
+            <ThemedIcon src={IconTile} alt="" />
             <div>
               <p>Полив вне графика</p>
               <p>Отметьте растение, которое полили раньше срока</p>
             </div>
-            <img src={chevronleft} alt="" />
+            <ThemedIcon src={chevronleft} alt="" />
           </div>
           <div>
             {onePlant && (
@@ -530,12 +531,12 @@ function HomePage({ user, onTabChange }) {
           className='desktopDashboardAssistant'
           onClick={() => onTabChange?.('chat')}
         >
-          <img src={IconTile} alt='' />
+          <ThemedIcon src={IconTile} alt='' />
           <span>
             <strong>Спросить ИИ-помощника</strong>
             <small>Подскажет, когда и как поливать ваши растения</small>
           </span>
-          <img className='desktopAssistantChevron' src={chevronleft} alt='' />
+          <ThemedIcon className='desktopAssistantChevron' src={chevronleft} alt='' />
         </button>
       </div>
       <VisionNextPlant

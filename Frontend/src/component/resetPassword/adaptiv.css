@@ -1,0 +1,307 @@
+
+@media (max-width: 767px) {
+    .resetPasswordBLocks {
+        align-items: flex-start;
+        padding: max(16px, env(safe-area-inset-top)) 14px
+            max(16px, env(safe-area-inset-bottom));
+    }
+
+    .resetPasswordBLocks .resetPasswordCard {
+        width: 100%;
+        margin: auto;
+        border-radius: 22px;
+    }
+
+    .resetPasswordBLocks .headerresetPassword {
+        gap: 10px;
+        padding: 18px 18px 0;
+    }
+
+    .resetPasswordBLocks .headerresetPassword button {
+        width: 34px;
+        height: 34px;
+        border-radius: 10px;
+    }
+
+    .resetPasswordBLocks .headerresetPassword button img {
+        width: 32px;
+        height: 32px;
+    }
+
+    .resetPasswordBLocks .headerresetPassword p {
+        font-size: 0.875rem;
+    }
+
+    .resetPasswordBLocks .resetPasswordHero {
+        padding: 14px 18px 22px;
+    }
+
+    .resetPasswordBLocks .iconOfReset {
+        margin-bottom: 14px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > img {
+        width: 84px;
+        height: 84px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > .resetPasswordStepIcon {
+        width: 52px;
+        height: 52px;
+        padding: 13px;
+    }
+
+    .resetPasswordBLocks .mainResetColor h1 {
+        margin-bottom: 8px;
+        font-size: 1.3125rem;
+    }
+
+    .resetPasswordBLocks .mainResetColor p {
+        font-size: 0.875rem;
+        line-height: 1.55;
+    }
+
+    .resetPasswordBLocks .resetPasswordBody {
+        padding: 0 18px 24px;
+    }
+
+    .resetPasswordBLocks .resetPasswordForm {
+        gap: 14px;
+    }
+
+    .resetPasswordBLocks .inputShellResetPassword {
+        min-height: 50px;
+        padding: 0 14px;
+        border-radius: 12px;
+    }
+
+    .resetPasswordBLocks .buttonResetPassword {
+        min-height: 52px;
+        border-radius: 12px;
+    }
+
+    .resetPasswordBLocks .buttonOfPasswordReset {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .resetPasswordBLocks .buttonOfPasswordReset button {
+        width: 100%;
+    }
+
+    .resetPasswordBLocks .resetPasswordSpinner {
+        width: 38px;
+        height: 38px;
+    }
+}
+
+@media (max-width: 380px) {
+    .resetPasswordBLocks {
+        padding-right: 10px;
+        padding-left: 10px;
+    }
+
+    .resetPasswordBLocks .resetPasswordCard {
+        border-radius: 18px;
+    }
+
+    .resetPasswordBLocks .resetPasswordHero {
+        padding: 12px 14px 18px;
+    }
+
+    .resetPasswordBLocks .resetPasswordBody {
+        padding: 0 14px 20px;
+    }
+
+    .resetPasswordBLocks .mainResetColor h1 {
+        font-size: 1.1875rem;
+    }
+
+    .resetPasswordBLocks .iconOfReset > img {
+        width: 72px;
+        height: 72px;
+    }
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+    .resetPasswordBLocks .resetPasswordCard {
+        width: min(100%, 560px);
+        margin: auto;
+    }
+
+    .resetPasswordBLocks .headerresetPassword {
+        padding: 22px 32px 0;
+    }
+
+    .resetPasswordBLocks .resetPasswordHero {
+        padding: 18px 32px 28px;
+    }
+
+    .resetPasswordBLocks .resetPasswordBody {
+        padding: 0 32px 32px;
+    }
+}
+
+@media (min-width: 1024px) {
+    .resetPasswordBLocks {
+        padding: clamp(32px, 5vw, 72px);
+        background-image:
+            radial-gradient(circle at 8% 4%, var(--rp-accent-soft), transparent 40%),
+            radial-gradient(circle at 92% 96%, var(--rp-accent-soft), transparent 44%);
+    }
+
+    .resetPasswordBLocks .resetPasswordCard {
+        width: min(100%, 560px);
+        margin: auto;
+        border-radius: 30px;
+    }
+
+    .resetPasswordBLocks .headerresetPassword {
+        padding: 24px 40px 0;
+    }
+
+    .resetPasswordBLocks .headerresetPassword p {
+        font-size: 1rem;
+    }
+
+    .resetPasswordBLocks .resetPasswordHero {
+        padding: 22px 40px 34px;
+    }
+
+    .resetPasswordBLocks .iconOfReset {
+        margin-bottom: 18px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > img {
+        width: 108px;
+        height: 108px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > .resetPasswordStepIcon {
+        width: 60px;
+        height: 60px;
+        padding: 15px;
+    }
+
+    .resetPasswordBLocks .mainResetColor h1 {
+        font-size: 1.75rem;
+    }
+
+    .resetPasswordBLocks .mainResetColor p {
+        font-size: 1rem;
+    }
+
+    .resetPasswordBLocks .resetPasswordBody {
+        padding: 0 40px 40px;
+    }
+
+    .resetPasswordBLocks .resetPasswordForm {
+        gap: 20px;
+    }
+
+    .resetPasswordBLocks .inputShellResetPassword {
+        min-height: 58px;
+    }
+
+    .resetPasswordBLocks .buttonResetPassword {
+        min-height: 58px;
+    }
+
+    .resetPasswordBLocks .buttonOfPasswordReset {
+        gap: 14px 20px;
+    }
+}
+
+@media (min-width: 768px) and (max-height: 640px) {
+    .resetPasswordBLocks {
+        align-items: flex-start;
+        padding-top: 20px;
+        padding-bottom: 20px;
+    }
+
+    .resetPasswordBLocks .resetPasswordCard {
+        margin-block: auto;
+    }
+
+    .resetPasswordBLocks .iconOfReset {
+        margin-bottom: 10px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > img {
+        width: 72px;
+        height: 72px;
+    }
+
+    .resetPasswordBLocks .resetPasswordHero {
+        padding-top: 12px;
+        padding-bottom: 18px;
+    }
+}
+
+@media (orientation: landscape) and (max-height: 560px) {
+    .resetPasswordBLocks .resetPasswordHero {
+        padding-bottom: 14px;
+    }
+
+    .resetPasswordBLocks .iconOfReset > img {
+        width: 60px;
+        height: 60px;
+    }
+
+    .resetPasswordBLocks .mainResetColor h1 {
+        font-size: 1.25rem;
+    }
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .resetPasswordBLocks .headerresetPassword button:hover {
+        border-color: var(--rp-accent);
+        transform: scale(1.04);
+    }
+
+    .resetPasswordBLocks .inputShellResetPassword:hover {
+        border-color: var(--rp-accent);
+    }
+
+    .resetPasswordBLocks .resetShowPassword:hover {
+        border-color: var(--rp-accent);
+    }
+
+    .resetPasswordBLocks .buttonResetPassword:not(:disabled):hover {
+        transform: translateY(-1px);
+        background-color: var(--rp-accent-hover);
+        box-shadow: var(--rp-shadow-accent);
+    }
+
+    .resetPasswordBLocks .buttonOfPasswordReset button:not(:disabled):hover {
+        transform: translateY(-1px);
+        background-color: var(--rp-accent-hover);
+    }
+
+    .resetPasswordBLocks .buttonOfPasswordReset button.resetPasswordGhost:not(:disabled):hover {
+        border-color: var(--rp-accent);
+        background-color: var(--rp-accent-soft);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .resetPasswordBLocks .resetPasswordCard {
+        animation: none;
+    }
+
+    .resetPasswordBLocks .resetPasswordSpinner {
+        animation-duration: 2.4s;
+    }
+
+    .resetPasswordBLocks .buttonResetPassword,
+    .resetPasswordBLocks .buttonOfPasswordReset button,
+    .resetPasswordBLocks .headerresetPassword button {
+        transition: none;
+    }
+
+    .resetPasswordBLocks .buttonResetPassword:not(:disabled):hover,
+    .resetPasswordBLocks .buttonOfPasswordReset button:not(:disabled):hover,
+    .resetPasswordBLocks .headerresetPassword button:hover {
+        transform: none;
+    }
+}

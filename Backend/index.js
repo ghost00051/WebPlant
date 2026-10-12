@@ -8,6 +8,7 @@ import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
+import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
 import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
 import { getAiCacheStats } from './utils/aiCache.js'
 import sequelize from "./db.js"
@@ -20,16 +21,19 @@ import "./models/NotificationPreference.js"
 import "./models/Notification.js"
 import "./models/PushBroadcast.js"
 import "./models/PushBroadcastRecipient.js"
+import "./models/PasswordResetToken.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
 import "./models/ChatLog.js"
+import "./models/SiteVisit.js"
 
 
 import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
 import adminPushRouter from './routes/adminPushRoutes.js'
+import adminRouter from './routes/adminRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
@@ -51,7 +55,10 @@ const MIGRATION_FILES_BY_TABLE = {
     notification_preferences: 'Backend/migrations/20261005_create_notification_preferences.sql',
     notifications: 'Backend/migrations/20261006_create_notifications.sql',
     push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
-    push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql'
+    push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
+    'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
+    site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
 function formatSchemaMigrationHint(missing) {
@@ -108,6 +115,10 @@ function validateProductionConfig() {
         frontendOrigin: process.env.FRONTEND_ORIGIN,
         frontendUrl: process.env.FRONTEND_URL
     })
+
+    for (const problem of describeMailConfigProblems()) {
+        console.warn(`⚠️ Почта: ${problem}`)
+    }
 }
 
 app.set('trust proxy', 1)
@@ -150,6 +161,7 @@ app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/admin/push", adminPushRouter)
+app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
@@ -164,6 +176,7 @@ app.get('/health', async (req, res) => {
             timestamp: new Date().toISOString(),
             deployTarget: process.env.DEPLOY_TARGET || null,
             redis: describeRedisStatus(),
+            mail: describeMailStatus(),
             backgroundJobs: BACKGROUND_JOBS_ENABLED,
             aiCache: getAiCacheStats()
         })
@@ -218,6 +231,12 @@ async function startServer() {
             console.log(redisReady
                 ? "✅ Redis подключён: кэш ИИ, распределённые локи и общий rate-limit активны"
                 : "⚠️ Redis недоступен: работаем без кэша ИИ, локов и общего rate-limit")
+        }
+
+        if (isMailConfigured()) {
+            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля будут отправляться`)
+        } else {
+            console.warn("⚠️ SMTP не настроен: восстановление пароля вернёт 503 (см. SMTP_USER/SMTP_PASSWORD)")
         }
 
         if (process.env.NODE_ENV === 'production') {

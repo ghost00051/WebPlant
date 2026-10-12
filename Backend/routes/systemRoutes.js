@@ -1,9 +1,22 @@
 import 'dotenv/config'
 import express from 'express'
+import rateLimit from 'express-rate-limit'
 import Docker from 'dockerode'
 import { requireAdmin } from '../middleware/admin.js'
+import { optionalAuth } from '../middleware/auth.js'
+import visitController from '../controllers/visitController.js'
+import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = express.Router()
+
+const visitLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 180,
+    message: { counted: false },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('system-visit')
+})
 
 const dockerHost = process.env.DOCKER_HOST?.trim()
 const dockerEnabled = process.env.DOCKER_STATS_ENABLED !== 'false' && Boolean(dockerHost)
@@ -168,5 +181,7 @@ router.get('/docker-stats', requireAdmin, async (req, res) => {
     res.status(500).json({ error: 'Failed to get docker stats' })
   }
 })
+
+router.post('/visit', visitLimiter, optionalAuth, visitController.track)
 
 export default router

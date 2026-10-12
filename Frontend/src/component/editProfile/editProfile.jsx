@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import BackBtn from '../../assets/BackBtn.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './editProfile.css'
 import './dark-theme.css'
 import { API_URL } from '../../utils/api.js'
@@ -153,7 +154,7 @@ function EditProfile() {
     return (
         <div className='editProfilePage'>
             <div className='editProfileHeader'>
-                <img
+                <ThemedIcon
                     src={BackBtn}
                     alt="Назад"
                     onClick={() => navigate(-1)}

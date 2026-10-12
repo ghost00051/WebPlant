@@ -1,7 +1,4 @@
 @echo off
-rem Daily sync of the WebPlant bug registry with Google Sheets.
-rem Registered in Windows Task Scheduler; log: %LOCALAPPDATA%\WebPlant\bug-tracker-sync.log
-rem Node.js is looked up as: BUG_TRACKER_NODE -> PATH -> default install locations.
 setlocal EnableExtensions
 
 set "REPO=%~dp0.."

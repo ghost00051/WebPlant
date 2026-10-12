@@ -6,6 +6,7 @@ import IconLeaf from '../../assets/IconLeaf.svg'
 import IconMenu from '../../assets/IconMenu.svg'
 import IconSend from '../../assets/IconSend.svg'
 import IconMic from '../../assets/IconMic.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 
 const GREETING = 'Привет! Я Алиса 💚 Помогу с поливом и уходом за растениями. Спроси: «Что полить?», «Покажи график» или «Сколько у меня растений?»'
@@ -151,7 +152,7 @@ function Chat() {
                     </div>
                 </div>
                 <button className='chatMenuBtn' aria-label='Меню'>
-                    <img src={IconMenu} alt="" />
+                    <ThemedIcon src={IconMenu} alt="" />
                 </button>
             </div>
             <div className='chatMessages' ref={listRef}>
@@ -203,7 +204,7 @@ function Chat() {
                         disabled={isTyping || !input.trim()}
                         aria-label={input.trim() ? 'Отправить' : 'Голосовой ввод'}
                     >
-                        <img src={IconMic} alt="" />
+                        <ThemedIcon src={IconMic} alt="" />
                     </button>
                     <button
                         type='button'

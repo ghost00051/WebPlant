@@ -206,8 +206,8 @@
 
 .loginOptions {
   display: flex;
-  justify-content: flex-start;
-  margin-top: -2px;
+  justify-content: space-between;
+  margin-top: 2px;
 }
 
 .rememberMeLabel {
@@ -528,4 +528,13 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+.resetPassword {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-md);
+  color: var(--auth-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
 }

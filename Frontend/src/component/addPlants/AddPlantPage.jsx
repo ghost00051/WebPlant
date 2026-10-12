@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AddPlants from './addPlants.jsx'
 import BackBtn from '../../assets/BackBtn.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import './AddPlantPage.css'
 import './adaptiv.css'
@@ -64,7 +65,7 @@ function AddPlantPage() {
                     onClick={() => navigate('/home')}
                     aria-label='Вернуться на главную'
                 >
-                    <img src={BackBtn} alt='' />
+                    <ThemedIcon src={BackBtn} alt='' />
                 </button>
                 <span>Добавить растение</span>
             </header>

@@ -1,18 +1,4 @@
 ﻿#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Удаление стека WebPlant из Kubernetes.
-
-.DESCRIPTION
-    По умолчанию удаляются только рабочие нагрузки (deployments, services, jobs),
-    секреты и тома остаются. С -RemoveData удаляется весь namespace вместе с PVC —
-    это необратимо уничтожит базу и загруженные фото в кластере.
-    Compose-стек не затрагивается.
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/teardown.ps1
-    powershell -File Backend/k8s/scripts/teardown.ps1 -RemoveData -RemoveGateway
-#>
 [CmdletBinding()]
 param(
     [string]$Namespace = 'webplant',
@@ -21,9 +7,6 @@ param(
     [switch]$RemoveImages
 )
 
-# Мягкий режим ошибок: в Windows PowerShell 5.1 запись docker/kubectl в stderr
-# при ErrorActionPreference = 'Stop' прерывает скрипт (например, если namespace
-# уже удалён), а для уборки это не нужно.
 $ErrorActionPreference = 'Continue'
 $GatewayName = 'ctp_k8s_gateway'
 $ImageServerName = 'ctp_k8s_img_server'

@@ -1,26 +1,4 @@
 ﻿#Requires -Version 5.1
-<#
-.SYNOPSIS
-    Возврат данных из Kubernetes в compose-стек (откат после полного переезда).
-
-.DESCRIPTION
-    После `switch-traffic.ps1 -Target k8s` источником правды становится стек в
-    кластере, поэтому обычный откат (compose) показал бы устаревшие данные.
-    Этот скрипт переносит обратно:
-      1) дамп базы из PostgreSQL кластера → в PostgreSQL compose-стека;
-      2) каталог uploads из PVC кластера → в Backend/uploads.
-    Compose-backend на время восстановления останавливается и поднимается обратно.
-
-.PARAMETER SkipUploads
-    Перенести только базу.
-
-.PARAMETER KeepBackendStopped
-    Не поднимать compose-backend после восстановления (например, если трафик
-    остаётся в кластере).
-
-.EXAMPLE
-    powershell -File Backend/k8s/scripts/restore-back.ps1
-#>
 [CmdletBinding()]
 param(
     [switch]$SkipUploads,
@@ -173,7 +151,6 @@ if (-not $SkipUploads) {
             New-Item -ItemType Directory -Path $uploadsDir | Out-Null
         }
 
-        # Windows tar (bsdtar) надёжнее контейнерного на облачной папке-монтировании
         $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
         if (-not (Test-Path -LiteralPath $tarExe)) { $tarExe = 'tar.exe' }
         $extractResult = Invoke-Native -Action { & $tarExe -xzf $archivePath -C $uploadsDir } -Capture
