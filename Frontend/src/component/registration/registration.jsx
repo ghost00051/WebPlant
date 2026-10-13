@@ -19,6 +19,7 @@ import shieldcheck from '../../assets/shield-check.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
+import { detectTimeZone } from '../../utils/timeZone.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import termsDocument from '../../../document/UserAgreementTemplate.pdf'
@@ -141,7 +142,8 @@ function Registration ({ initialMode = 'login' }) {
           privacyPolicyAccepted,
           termsAccepted,
           name: normalizedName,
-          rememberMe
+          rememberMe,
+          timezone: detectTimeZone()
         }),
         credentials: 'include'
       })

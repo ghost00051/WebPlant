@@ -8,6 +8,7 @@ import './adaptiv.css'
 import './dark-theme.css'
 import IconCircle from '../../assets/IconCircle.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import PlantPhoto from '../PlantPhoto/PlantPhoto'
 
 function pluralizePlants (n) {
   const abs = Math.abs(n) % 100
@@ -95,17 +96,16 @@ function VisionNextPlant ({
   const [waterError, setWaterError] = useState(null)
   const kind = day?.kind ?? 'empty'
 
-  const isFuture = kind === 'future'
   const isPast = kind === 'past'
   const isEmpty = kind === 'empty'
 
-  const futureCount = day?.plants?.length ?? 0
-  const pastEvents = day?.events ?? []
-
+  const pendingPlants = day?.plants ?? []
   const localEvents = day?.events ?? []
   const wateredEvents = localEvents.filter(e => e.kind === 'watered')
   const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
   const skippedEvents = localEvents.filter(e => e.kind === 'skipped')
+  const pendingCount = pendingPlants.length
+  const hasRows = pendingCount > 0 || localEvents.length > 0
 
   const dayIso = day?.iso ?? null
   const waterErrorMessage =
@@ -129,37 +129,37 @@ function VisionNextPlant ({
     }
   }
 
-  let counterLabel = ''
-  if (isFuture) {
-    counterLabel =
-      futureCount === 1
-        ? '1 растение ждёт полива'
-        : `${futureCount} ${pluralizePlants(futureCount)} ждут полива`
-  } else if (isPast) {
-    const parts = []
-    if (wateredEvents.length) {
-      parts.push(
-        wateredEvents.length === 1
-          ? '1 полито'
-          : `${wateredEvents.length} полито`
-      )
-    }
-    if (overdueEvents.length) {
-      parts.push(
-        overdueEvents.length === 1
-          ? '1 просрочено'
-          : `${overdueEvents.length} просрочено`
-      )
-    }
-    if (skippedEvents.length) {
-      parts.push(
-        skippedEvents.length === 1
-          ? '1 пропущено'
-          : `${skippedEvents.length} пропущено`
-      )
-    }
-    counterLabel = parts.join(' · ') || 'Событий нет'
+  const counterParts = []
+  if (wateredEvents.length) {
+    counterParts.push(
+      wateredEvents.length === 1
+        ? '1 полито'
+        : `${wateredEvents.length} полито`
+    )
   }
+  if (overdueEvents.length) {
+    counterParts.push(
+      overdueEvents.length === 1
+        ? '1 просрочено'
+        : `${overdueEvents.length} просрочено`
+    )
+  }
+  if (skippedEvents.length) {
+    counterParts.push(
+      skippedEvents.length === 1
+        ? '1 пропущено'
+        : `${skippedEvents.length} пропущено`
+    )
+  }
+  if (pendingCount) {
+    counterParts.push(
+      pendingCount === 1
+        ? '1 растение ждёт полива'
+        : `${pendingCount} ${pluralizePlants(pendingCount)} ждут полива`
+    )
+  }
+
+  const counterLabel = counterParts.join(' · ')
 
   useEffect(() => {
     if (!deleteTarget) return undefined
@@ -213,15 +213,12 @@ function VisionNextPlant ({
       <li key={key} className='plantsPreview__item'>
         <div className='plantsPreview__photoWrap'>
           <div>
-            <ThemedIcon
+            <PlantPhoto
               src={getPlantPhoto(plant)}
               alt={plant.name}
               className='plantsPreview__photo'
               loading='lazy'
               decoding='async'
-              onError={e => {
-                e.currentTarget.src = plantPlaceholder
-              }}
             />
           </div>
           <div>
@@ -374,18 +371,7 @@ function VisionNextPlant ({
                 )}
               </div>
             )}
-            {day && isFuture && futureCount > 0 && (
-              <ul className='plantsPreview'>
-                {day.plants.map(p =>
-                  renderPlantRow(p, {
-                    variant: 'future',
-                    timeLabel: getWateringTime(p.watering_time_of_day),
-                    key: p.id
-                  })
-                )}
-              </ul>
-            )}
-            {day && isPast && pastEvents.length > 0 && (
+            {day && hasRows && (
               <ul className='plantsPreview'>
                 {overdueEvents.map((ev, i) =>
                   renderPlantRow(ev.plant, {
@@ -401,6 +387,13 @@ function VisionNextPlant ({
                     timeLabel: getMissedTimeLabel(ev),
                     scheduledFor: ev.scheduled_for ?? day.iso,
                     key: `skipped-${ev.plant.id}-${i}`
+                  })
+                )}
+                {pendingPlants.map(p =>
+                  renderPlantRow(p, {
+                    variant: 'future',
+                    timeLabel: getWateringTime(p.watering_time_of_day),
+                    key: `plan-${p.id}`
                   })
                 )}
                 {wateredEvents.map((ev, i) =>

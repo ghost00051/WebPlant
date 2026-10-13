@@ -10,15 +10,16 @@ import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import { API_URL } from '../../utils/api.js'
 import {
+  buildDayView,
   dayOfMonth,
   diffInDays,
   monthGenitive,
   monthNominative,
   partitionScheduleDates,
   relativeDayLabel,
-  resolveDayKind,
   toDate,
   toISODate,
   weekdayName,
@@ -300,25 +301,21 @@ function HomePage({ user, onTabChange }) {
     const pastItem = historyMap.get(iso) ?? null
     const pastEvents = pastItem?.events ?? []
 
-    const isPastDay = diffInDays(target, new Date()) < 0
-    const kind = resolveDayKind({
-      isPastDay,
-      hasSchedule: futurePlants.length > 0,
-      hasEvents: pastEvents.length > 0,
-      hasMissed: pastEvents.some(e => e.kind === 'overdue' || e.kind === 'skipped'),
+    const view = buildDayView({
+      date: target,
+      now,
+      plannedPlants: futurePlants,
+      events: pastEvents,
     })
-
-    const plants = kind === 'future' ? futurePlants : []
-    const events = kind === 'past' ? pastEvents : []
 
     return {
       date: target,
-      diffDays: diffInDays(target, new Date()),
+      diffDays: diffInDays(target, now),
       relative,
       iso,
-      kind,
-      plants,
-      events,
+      kind: view.kind,
+      plants: view.plants,
+      events: view.events,
       futurePlants,
       pastEvents,
       hasOverdue: pastItem?.hasOverdue ?? false,
@@ -329,7 +326,7 @@ function HomePage({ user, onTabChange }) {
       year: String(target.getFullYear()),
       full: `${capitalize(weekdayName(target))}, ${dayOfMonth(target)} ${monthGenitive(target)}`,
     }
-  }, [scheduleMap, historyMap])
+  }, [scheduleMap, historyMap, now])
 
   const selectedDay = useMemo(
     () => (selectedDate ? buildDay(selectedDate) : null),
@@ -450,7 +447,7 @@ function HomePage({ user, onTabChange }) {
                   >
                     <div className='description'>
                       {mainPhoto ? (
-                        <img src={mainPhoto} alt={item.name} />
+                        <PlantPhoto src={mainPhoto} alt={item.name} />
                       ) : (
                         <div className='no-photo' />
                       )}
@@ -500,7 +497,7 @@ function HomePage({ user, onTabChange }) {
                 <div className='menuOfSoffSchedule'>
                   <div className='childOfmenuOfSoffSchedule'>
                     {onePlant.photo_url ? (
-                      <img src={onePlant.photo_url} alt={onePlant.name} />
+                      <PlantPhoto src={onePlant.photo_url} alt={onePlant.name} />
                     ) : (
                       <div className='no-photo' />
                     )}

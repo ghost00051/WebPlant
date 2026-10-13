@@ -115,7 +115,7 @@
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
     font-weight: 500;
-    color: inherit;
+    color: var(--color-white-tema);
     white-space: nowrap;
     pointer-events: none;
     transition: color 0.25s ease;

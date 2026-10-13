@@ -18,6 +18,7 @@ import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
+import { syncUserTimeZone } from '../../utils/timeZone.js'
 import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
@@ -54,6 +55,14 @@ function Home() {
 
                 const userData = await res.json()
                 setUser(userData)
+
+                // Часовой пояс устройства: в нём сервер считает время полива
+                // и сутки для просрочки (Владивосток ≠ Москва).
+                void syncUserTimeZone(userData.timezone).then(timeZone => {
+                    if (timeZone && timeZone !== userData.timezone) {
+                        setUser(current => (current ? { ...current, timezone: timeZone } : current))
+                    }
+                })
 
                 if (!isPushSupported()) {
                     setLoading(false)

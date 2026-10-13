@@ -1,458 +1,469 @@
 .profilePage {
-    box-sizing: border-box;
-    width: 100%;
-    max-width: 760px;
-    align-self: center;
-    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760px;
+  align-self: center;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
 }
 
 .headerBlocskProfils {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-2xl);
-    font-weight: bold;
-    font-style: normal;
-    color: #2d2d2d;
-    margin: 0 0 14px;
-    padding: 0 clamp(14px, 4vw, 24px);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-2xl);
+  font-weight: bold;
+  font-style: normal;
+  color: #2d2d2d;
+  margin: 0 0 14px;
+  padding: 0 clamp(14px, 4vw, 24px);
 }
 
 .headerBlocskProfils p {
-    margin: 0;
+  margin: 0;
 }
 
 .blocksDescriptionProfile {
-    margin: 0 clamp(12px, 4vw, 24px);
-    background-color: #FFFFFF;
-    border-radius: 20px;
-    padding: clamp(16px, 4vw, 24px);
+  margin: 0 clamp(12px, 4vw, 24px);
+  background-color: #ffffff;
+  border-radius: 20px;
+  padding: clamp(16px, 4vw, 24px);
 }
 
 .nameBlocksDescriptionProfile {
-    display: flex;
-    gap: 15px;
-    align-items: center;
+  display: flex;
+  gap: 15px;
+  align-items: center;
 }
 
 .imgOfName {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background-color: #E8F5E9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  background-color: #e8f5e9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .imgOfName p {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xl);
-    font-weight: bold;
-    color: var(--color-white-team);
-    margin: 0;
-    line-height: 1;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xl);
+  font-weight: bold;
+  color: var(--color-white-team);
+  margin: 0;
+  line-height: 1;
 }
 
 .descritpionOfProfile p:nth-child(1) {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-base);
-    font-weight: bold;
-    color: #2D2D2D;
-    margin-bottom: 7%;
-    margin-top: 0;
-    overflow-wrap: anywhere;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-base);
+  font-weight: bold;
+  color: #2d2d2d;
+  margin-bottom: 7%;
+  margin-top: 0;
+  overflow-wrap: anywhere;
 }
 
 .descritpionOfProfile p:nth-child(2) {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    color: #8A8A8A;
-    margin: 0;
-    overflow-wrap: anywhere;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: #8a8a8a;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .descritpionOfProfile .adminProfileBadge {
-    align-self: flex-start;
-    margin: 8px 0 0;
-    padding: 3px 10px;
-    border-radius: 999px;
-    background-color: var(--color-white-team);
-    border: 1px solid var(--color-white-team);
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xs, 12px);
-    font-weight: 600;
-    color: #4F7A57;
+  align-self: flex-start;
+  margin: 8px 0 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background-color: var(--color-white-team);
+  border: 1px solid var(--color-white-team);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 600;
+  color: #4f7a57;
 }
 
 .adminPushLoading {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-sm);
-    color: #8A8A8A;
-    margin: 16px 0;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  color: #8a8a8a;
+  margin: 16px 0;
 }
 
 .buttonOfEdProfile {
-    display: flex;
-    min-height: 44px;
-    box-sizing: border-box;
-    background-color: #F5F3EF;
-    border-radius: 20px;
-    align-items: center;
-    justify-content: center;
-    padding: 10px 12px;
-    margin-top: 16px;
-    cursor: pointer;
-    text-decoration: none;
-    color: inherit;
+  display: flex;
+  min-height: 44px;
+  box-sizing: border-box;
+  background-color: #f5f3ef;
+  border-radius: 20px;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  margin-top: 16px;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
 }
 
 .buttonOfEdProfile p {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-sm);
-    font-weight: 400;
-    color: #5A5A5A;
-    margin: 0 0 0 2%;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: #5a5a5a;
+  margin: 0 0 0 2%;
 }
 
 .passkeySettings {
-    margin: 16px clamp(12px, 4vw, 24px) 0;
-    padding: 20px;
-    background-color: #FFFFFF;
-    border-radius: 20px;
+  margin: 16px clamp(12px, 4vw, 24px) 0;
+  padding: 20px;
+  background-color: #ffffff;
+  border-radius: 20px;
 }
 
 .passkeySettings h2 {
-    margin: 0;
-    color: #2D2D2D;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-base);
+  margin: 0;
+  color: #2d2d2d;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-base);
 }
 
 .passkeyStatus,
 .passkeyMessage {
-    margin: 12px 0 0;
-    color: #5A5A5A;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-md);
-    line-height: 1.5;
+  margin: 12px 0 0;
+  color: #5a5a5a;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-md);
+  line-height: 1.5;
 }
 
 .passkeyError {
-    color: #B42318;
+  color: #b42318;
 }
 
 .passkeyCreateButton {
-    width: 100%;
-    margin-top: 16px;
-    padding: 12px 16px;
-    border: 0;
-    border-radius: 14px;
-    background-color: #E8F5E9;
-    color: #2D2D2D;
-    font: inherit;
-    font-size: var(--font-size-md);
-    cursor: pointer;
+  width: 100%;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 0;
+  border-radius: 14px;
+  background-color: #e8f5e9;
+  color: #2d2d2d;
+  font: inherit;
+  font-size: var(--font-size-md);
+  cursor: pointer;
 }
 
 .passkeyCreateButton:disabled {
-    cursor: wait;
-    opacity: 0.65;
+  cursor: wait;
+  opacity: 0.65;
 }
 
 .plantQuantity,
 .historyWaterPlant,
 .interestPlant {
-    background-color: #FFFFFF;
-    border-radius: 16px;
-    padding: 1% 1%;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 1% 1%;
 }
 
 .plantQuantity p:nth-child(1),
 .historyWaterPlant p:nth-child(1) {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-lg);
-    font-weight: bold;
-    color: #2D2D2D;
-    margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  color: #2d2d2d;
+  margin: 0;
 }
 
 .plantQuantity p:nth-child(2),
 .historyWaterPlant p:nth-child(2),
 .interestPlant p:nth-child(2) {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xs);
-    font-weight: 500;
-    color: #8A8A8A;
-    margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: #8a8a8a;
+  margin: 0;
 }
 
 .interestPlant p:nth-child(1) {
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-lg);
-    font-weight: bold;
-    color: var(--color-white-team);
-    margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: bold;
+  color: var(--color-white-team);
+  margin: 0;
 }
 
 .informationOfProfile {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
-    padding: 0 clamp(12px, 4vw, 24px);
-    margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 clamp(12px, 4vw, 24px);
+  margin-top: 16px;
 }
 
-.informationOfProfile>div {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    box-sizing: border-box;
+.informationOfProfile > div {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .plantQuantity,
 .historyWaterPlant,
 .interestPlant {
-    background-color: #FFFFFF;
-    border-radius: 16px;
-    padding: 12px 8px;
+  background-color: #ffffff;
+  border-radius: 16px;
+  padding: 12px 8px;
 }
 
 .gofOfHeaderOfAllPlants {
-    display: flex;
-    margin: 18px clamp(12px, 4vw, 24px) 0;
-    justify-content: space-between;
-    align-items: center;
+  display: flex;
+  margin: 18px clamp(12px, 4vw, 24px) 0;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .HeaderOfAllPlants {
-    font-family: 'Inter', sans-serif;
-    font-size: 15px;
-    font-weight: 500;
-    color: #2D2D2D;
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  color: #2d2d2d;
 }
 
 .buttonOfPlant {
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    font-weight: 300;
-    color: #7FD1A0;
-    text-decoration: none;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 300;
+  color: #7fd1a0;
+  text-decoration: none;
 }
 
 .settingsNotification {
-    display: flex;
-    justify-content: space-between;
-    flex-direction: column;
-    margin: 16px clamp(12px, 4vw, 24px) 0;
-    background-color: #FFFFFF;
-    border-radius: 20px;
-    padding: clamp(16px, 4vw, 24px);
+  display: flex;
+  justify-content: space-between;
+  flex-direction: column;
+  margin: 16px clamp(12px, 4vw, 24px) 0;
+  background-color: #ffffff;
+  border-radius: 20px;
+  padding: clamp(16px, 4vw, 24px);
 }
 
 .profileAppVersion {
-    padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
-    color: #8A8A8A;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xs);
-    text-align: center;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
+  color: #8a8a8a;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
+  text-align: center;
 }
 
 .profileAppVersion p {
-    margin: 0;
+  margin: 0;
 }
 
 .profileAppVersion .profileFeedback {
-    margin-top: 10px;
-    line-height: 1.5;
+  margin-top: 10px;
+  line-height: 1.5;
 }
 
 .profileFeedback a {
-    color: inherit;
-    text-decoration: underline;
+  color: inherit;
+  text-decoration: underline;
 }
 
 .profileFeedback small {
-    display: block;
-    margin-top: 4px;
+  display: block;
+  margin-top: 4px;
 }
 
 .headerOfsettingsNotification {
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    font-weight: 500;
-    color: #2D2D2D;
-    margin: 2% 0;
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  color: #2d2d2d;
+  margin: 2% 0;
 }
 
 .pushSettings {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 14px;
-    padding: 8px 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 0;
 }
 
 .pushSettings > div {
-    min-width: 0;
+  min-width: 0;
 }
 
 .pushSettings div p:nth-child(1) {
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    color: #2D2D2D;
-    margin-bottom: 0;
-    margin-top: 0;
-    overflow-wrap: anywhere;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: #2d2d2d;
+  margin-bottom: 0;
+  margin-top: 0;
+  overflow-wrap: anywhere;
 }
 
 .pushSettings div p:nth-child(2) {
-    font-family: 'Inter', sans-serif;
-    font-size: 11px;
-    font-weight: 300;
-    color: #8A8A8A;
-    margin: 4px 0 0;
-    line-height: 1.45;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 300;
+  color: #8a8a8a;
+  margin: 4px 0 0;
+  line-height: 1.45;
 }
 
 .appleSwitchSettings {
-    position: relative;
-    display: inline-block;
-    flex: 0 0 35px;
-    width: 35px;
-    height: 20px;
+  position: relative;
+  display: inline-block;
+  flex: 0 0 35px;
+  width: 35px;
+  height: 20px;
 }
 
 .appleSwitchSettings input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
 }
 
 .sliderSettings {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: #e5e5ea;
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 31px;
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #e5e5ea;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 31px;
 }
 
 .sliderSettings::before {
-    position: absolute;
-    content: "";
-    height: 17px;
-    width: 17px;
-    left: 2px;
-    bottom: 2px;
-    background-color: white;
-    transition: .3s cubic-bezier(0.4, 0, 0.2, 1);
-    border-radius: 50%;
-    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 3px 1px rgba(0, 0, 0, 0.06);
+  position: absolute;
+  content: '';
+  height: 17px;
+  width: 17px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 50%;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 3px 1px rgba(0, 0, 0, 0.06);
 }
 
-.appleSwitchSettings input:checked+.sliderSettings {
-    background-color: #34c759;
+.appleSwitchSettings input:checked + .sliderSettings {
+  background-color: #34c759;
 }
 
-.appleSwitchSettings input:checked+.sliderSettings::before {
-    transform: translateX(13px);
+.appleSwitchSettings input:checked + .sliderSettings::before {
+  transform: translateX(13px);
 }
 
-.appleSwitchSettings input:focus-visible+.sliderSettings {
-    outline: 2px solid #2D2D2D;
-    outline-offset: 3px;
+.appleSwitchSettings input:focus-visible + .sliderSettings {
+  outline: 2px solid #2d2d2d;
+  outline-offset: 3px;
 }
 
-.appleSwitchSettings input:disabled+.sliderSettings {
-    cursor: not-allowed;
-    opacity: 0.6;
+.appleSwitchSettings input:disabled + .sliderSettings {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .visualTheme {
-    display: flex;
-    justify-content: space-between;
-    flex-direction: column;
-    margin: 16px clamp(12px, 4vw, 24px) 0;
-    background-color: #FFFFFF;
-    border-radius: 20px;
-    padding: clamp(16px, 4vw, 24px);
+  display: flex;
+  justify-content: space-between;
+  flex-direction: column;
+  margin: 16px clamp(12px, 4vw, 24px) 0;
+  background-color: #ffffff;
+  border-radius: 20px;
+  padding: clamp(16px, 4vw, 24px);
 }
 
 .visualTheme > p:first-child {
-    margin: 0 0 12px;
-    color: #2D2D2D;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-md);
-    font-weight: 500;
+  margin: 0 0 12px;
+  color: #2d2d2d;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-md);
+  font-weight: 500;
 }
 
 .selectThemeColor {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .selectThemeColor button {
-    min-height: 44px;
-    border: 1px solid #E5E5E5;
-    border-radius: 12px;
-    background: #F5F3EF;
-    color: #5A5A5A;
-    font: inherit;
-    cursor: pointer;
+  min-height: 44px;
+  border: 1px solid #e5e5e5;
+  border-radius: 12px;
+  background: #f5f3ef;
+  color: #5a5a5a;
+  font: inherit;
+  cursor: pointer;
 }
 
 .selectThemeColor button.is-active {
-    border-color: #7FD1A0;
-    background: #E8F5E9;
-    color: #35463B;
-    font-weight: 600;
+  border-color: #7fd1a0;
+  background: #e8f5e9;
+  color: #35463b;
+  font-weight: 600;
 }
 
 .selectThemeColor button:disabled {
-    cursor: wait;
-    opacity: 0.7;
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .themePreferenceError {
-    margin: 0 0 12px;
-    color: #B42318;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-sm);
+  margin: 0 0 12px;
+  color: #b42318;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
 }
 
 .themeModeDescription {
-    margin: 10px 0 0;
-    color: #8A8A8A;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xs);
+  margin: 10px 0 0;
+  color: #8a8a8a;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
 }
 
 @media (max-width: 360px) {
-    .informationOfProfile {
-        grid-template-columns: 1fr;
-        gap: 8px;
-    }
+  .informationOfProfile {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
 
-    .informationOfProfile > div {
-        flex-direction: row;
-        justify-content: space-between;
-        gap: 12px;
-        padding-inline: 14px;
-        text-align: left;
-    }
+  .informationOfProfile > div {
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 12px;
+    padding-inline: 14px;
+    text-align: left;
+  }
 
-    .selectThemeColor {
-        grid-template-columns: 1fr;
-    }
+  .selectThemeColor {
+    grid-template-columns: 1fr;
+  }
+}
+
+.exitButton{
+  margin: 0 16px;
+
+}
+
+.exitButton button{
+  width: 100%;
+  background-color: #ff0000;
+  border-radius: 20px;
 }

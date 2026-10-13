@@ -7,6 +7,7 @@ import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
+import { plantThumbRequestHandler } from './utils/plantPhotoThumb.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
 import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
 import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
@@ -58,6 +59,7 @@ const MIGRATION_FILES_BY_TABLE = {
     push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
+    'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
     site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
@@ -153,7 +155,10 @@ app.use((req, res, next) => {
 })
 app.use(refreshRememberedSession)
 
+app.use('/uploads/thumbs', plantThumbRequestHandler())
 app.use('/uploads', express.static(path.resolve('uploads'), {
+    maxAge: '365d',
+    immutable: true,
     setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
 }))
 

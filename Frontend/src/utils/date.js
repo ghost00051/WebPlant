@@ -97,10 +97,139 @@ export function isBefore(a, b) {
   return toDate(a).getTime() < toDate(b).getTime()
 }
 
-export function resolveDayKind({ isPastDay, hasSchedule, hasEvents, hasMissed }) {
-  if (hasEvents && (hasMissed || isPastDay)) return 'past'
-  if (hasSchedule) return 'future'
-  return hasEvents ? 'past' : 'empty'
+export const APP_TIME_ZONE = 'Europe/Moscow'
+
+export const MISSED_GRACE_HOUR = 24
+
+function toInstant(value) {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? new Date(value.getTime()) : null
+  }
+  if (typeof value === 'number') {
+    const fromNumber = new Date(value)
+    return Number.isFinite(fromNumber.getTime()) ? fromNumber : null
+  }
+  if (typeof value === 'string') {
+    const parsed = new Date(value)
+    return Number.isFinite(parsed.getTime()) ? parsed : null
+  }
+  return null
+}
+
+const zonedFormatters = new Map()
+
+function zonedFormatter(timeZone) {
+  let formatter = zonedFormatters.get(timeZone)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hourCycle: 'h23',
+    })
+    zonedFormatters.set(timeZone, formatter)
+  }
+  return formatter
+}
+
+function zonedParts(date, timeZone = APP_TIME_ZONE) {
+  const parts = zonedFormatter(timeZone).formatToParts(date)
+  const values = {}
+  for (const part of parts) {
+    if (part.type !== 'literal') values[part.type] = Number(part.value)
+  }
+  return values
+}
+
+function zonedDateTimeToUtc(
+  { year, month, day, hour = 0, minute = 0, second = 0 },
+  timeZone = APP_TIME_ZONE
+) {
+  const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second)
+  const observed = zonedParts(new Date(utcGuess), timeZone)
+  const observedAsUtc = Date.UTC(
+    observed.year,
+    observed.month - 1,
+    observed.day,
+    observed.hour,
+    observed.minute,
+    observed.second
+  )
+  return new Date(utcGuess - (observedAsUtc - utcGuess))
+}
+
+export function missedDeadline(value) {
+  const scheduled = toInstant(value)
+  if (!scheduled) return null
+
+  const parts = zonedParts(scheduled)
+
+  return zonedDateTimeToUtc({ year: parts.year, month: parts.month, day: parts.day + 1 })
+}
+
+export function isMissedOccurrence(value, now = new Date()) {
+  const deadline = missedDeadline(value)
+  const current = toInstant(now)
+  if (!deadline || !current) return false
+
+  return current.getTime() >= deadline.getTime()
+}
+
+export function resolveDayKind({ isPastDay, hasPlans, hasEvents }) {
+  if (isPastDay) return hasPlans || hasEvents ? 'past' : 'empty'
+  return hasPlans || hasEvents ? 'future' : 'empty'
+}
+
+export function buildDayView({ date, now = new Date(), plannedPlants = [], events = [] }) {
+  const target = toDate(date)
+  const isPastDay = diffInDays(target, now) < 0
+  const dayEvents = Array.isArray(events) ? events : []
+  const resolvedPlantIds = new Set(dayEvents.map(event => event?.plant?.id))
+
+  const plants = []
+  const missedFromPlans = []
+
+  for (const plant of Array.isArray(plannedPlants) ? plannedPlants : []) {
+    if (!plant || resolvedPlantIds.has(plant.id)) continue
+
+    const isMissed = typeof plant.is_missed === 'boolean'
+      ? plant.is_missed
+      : isPastDay || isMissedOccurrence(plant.next_watering_at, now)
+
+    if (isMissed) {
+      missedFromPlans.push({
+        kind: 'overdue',
+        plant,
+        scheduled_for: plant.next_watering_at,
+        hours_late: null,
+        days_late: null,
+        fromPlan: true,
+      })
+    } else {
+      plants.push(plant)
+    }
+  }
+
+  const combinedEvents = missedFromPlans.length
+    ? [...missedFromPlans, ...dayEvents]
+    : dayEvents
+
+  return {
+    date: target,
+    iso: toISODate(target),
+    isPastDay,
+    kind: resolveDayKind({
+      isPastDay,
+      hasPlans: plants.length > 0,
+      hasEvents: combinedEvents.length > 0,
+    }),
+    plants,
+    events: combinedEvents,
+  }
 }
 
 export function partitionScheduleDates(schedule, now = new Date()) {
@@ -115,8 +244,11 @@ export function partitionScheduleDates(schedule, now = new Date()) {
     if (!date || plants.length === 0) continue
 
     for (const plant of plants) {
-      const at = new Date(plant?.next_watering_at ?? '').getTime()
-      if (Number.isFinite(at) && at < nowTime) missed.add(date)
+      const isMissed = typeof plant?.is_missed === 'boolean'
+        ? plant.is_missed
+        : isMissedOccurrence(plant?.next_watering_at, now)
+
+      if (isMissed) missed.add(date)
       else planned.add(date)
     }
   }

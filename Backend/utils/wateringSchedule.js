@@ -1,5 +1,135 @@
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
 const HOUR_IN_MILLISECONDS = 60 * 60 * 1000
+export const APP_TIME_ZONE = 'Europe/Moscow'
+
+export const WATERING_TIME_OF_DAY_HOURS = { morning: 9, day: 14, evening: 19 }
+
+export const MISSED_GRACE_HOUR = 24
+
+const formatterCache = new Map()
+
+function zonedFormatter(timeZone) {
+    let formatter = formatterCache.get(timeZone)
+    if (!formatter) {
+        formatter = new Intl.DateTimeFormat('en-CA', {
+            timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hourCycle: 'h23'
+        })
+        formatterCache.set(timeZone, formatter)
+    }
+    return formatter
+}
+
+function zonedParts(date, timeZone) {
+    const parts = zonedFormatter(timeZone).formatToParts(date)
+
+    const values = {}
+    for (const part of parts) {
+        if (part.type !== 'literal') values[part.type] = Number(part.value)
+    }
+    return values
+}
+
+export function zonedDateTimeToUtc(
+    { year, month, day, hour = 0, minute = 0, second = 0 },
+    timeZone = APP_TIME_ZONE
+) {
+    const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second)
+    const observed = zonedParts(new Date(utcGuess), timeZone)
+    const observedAsUtc = Date.UTC(
+        observed.year,
+        observed.month - 1,
+        observed.day,
+        observed.hour,
+        observed.minute,
+        observed.second
+    )
+    return new Date(utcGuess - (observedAsUtc - utcGuess))
+}
+
+export function zonedDayKey(value, timeZone = APP_TIME_ZONE) {
+    const date = toValidDate(value)
+    if (!date) return null
+    const parts = zonedParts(date, timeZone)
+    return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`
+}
+
+export function zonedDayHourAfter(value, days, hour, timeZone = APP_TIME_ZONE) {
+    const date = toValidDate(value)
+    if (!date || !Number.isInteger(days)) return null
+
+    const parts = zonedParts(date, timeZone)
+    const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+    shifted.setUTCDate(shifted.getUTCDate() + days)
+
+    return zonedDateTimeToUtc(
+        {
+            year: shifted.getUTCFullYear(),
+            month: shifted.getUTCMonth() + 1,
+            day: shifted.getUTCDate(),
+            hour: Number.isInteger(hour) ? hour : 0
+        },
+        timeZone
+    )
+}
+
+/** `days` суток вперёд с сохранением московского времени суток. */
+export function addZonedDays(value, days, timeZone = APP_TIME_ZONE) {
+    const date = toValidDate(value)
+    if (!date || !Number.isInteger(days)) return null
+
+    const parts = zonedParts(date, timeZone)
+    const shifted = new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
+    shifted.setUTCDate(shifted.getUTCDate() + days)
+
+    return zonedDateTimeToUtc(
+        {
+            year: shifted.getUTCFullYear(),
+            month: shifted.getUTCMonth() + 1,
+            day: shifted.getUTCDate(),
+            hour: parts.hour,
+            minute: parts.minute,
+            second: parts.second
+        },
+        timeZone
+    )
+}
+
+export function nextWateringInstant(
+    from,
+    days,
+    timeOfDay = 'morning',
+    { timeZone = APP_TIME_ZONE, hours = WATERING_TIME_OF_DAY_HOURS } = {}
+) {
+    const hour = hours && Object.hasOwn(hours, timeOfDay)
+        ? hours[timeOfDay]
+        : WATERING_TIME_OF_DAY_HOURS.morning
+    return zonedDayHourAfter(from, days, hour, timeZone)
+}
+
+export function wateringMissDeadline(scheduledFor, { timeZone = APP_TIME_ZONE } = {}) {
+    const scheduled = toValidDate(scheduledFor)
+    if (!scheduled) return null
+
+    return zonedDayHourAfter(scheduled, 1, 0, timeZone)
+}
+
+export function isWateringMissed(
+    scheduledFor,
+    { now = new Date(), timeZone = APP_TIME_ZONE } = {}
+) {
+    const deadline = wateringMissDeadline(scheduledFor, { timeZone })
+    const current = toValidDate(now)
+    if (!deadline || !current) return false
+
+    return current.getTime() >= deadline.getTime()
+}
 
 export function generateWateringOccurrences(
     nextWateringAt,
@@ -78,7 +208,7 @@ export function resolveMissedLateness(
     return { hoursLate, daysLate: Math.floor(hoursLate / 24) }
 }
 
-export function parseWateringSlot(value, timeOfDayHours = 8) {
+export function parseWateringSlot(value, timeOfDayHours = 8, timeZone = APP_TIME_ZONE) {
     if (typeof value !== 'string') return null
 
     const trimmed = value.trim()
@@ -89,12 +219,13 @@ export function parseWateringSlot(value, timeOfDayHours = 8) {
         const month = Number(dateOnly[2]) - 1
         const day = Number(dateOnly[3])
         const hour = Number.isInteger(timeOfDayHours) ? timeOfDayHours : 8
-        const slot = new Date(year, month, day, hour, 0, 0, 0)
+        const slot = zonedDateTimeToUtc({ year, month: month + 1, day, hour }, timeZone)
 
+        const check = zonedParts(slot, timeZone)
         if (
-            slot.getFullYear() !== year ||
-            slot.getMonth() !== month ||
-            slot.getDate() !== day
+            check.year !== year ||
+            check.month !== month + 1 ||
+            check.day !== day
         ) {
             return null
         }
@@ -111,7 +242,8 @@ export function resolvePastWatering(scheduledFor, {
     lastWateredAt = null,
     nextWateringAt = null,
     intervalDays = 7,
-    timeOfDayHours = 8
+    timeOfDayHours = 8,
+    timeZone = APP_TIME_ZONE
 } = {}) {
     const slot = toValidDate(scheduledFor)
     const current = toValidDate(now)
@@ -121,9 +253,7 @@ export function resolvePastWatering(scheduledFor, {
     const interval = Number.isInteger(intervalDays) && intervalDays > 0 ? intervalDays : 7
     const hour = Number.isInteger(timeOfDayHours) ? timeOfDayHours : 8
 
-    const plannedNext = new Date(slot.getTime())
-    plannedNext.setDate(plannedNext.getDate() + interval)
-    plannedNext.setHours(hour, 0, 0, 0)
+    const plannedNext = zonedDayHourAfter(slot, interval, hour, timeZone)
 
     const previousNext = toValidDate(nextWateringAt)
     const next = previousNext && previousNext > plannedNext ? previousNext : plannedNext
