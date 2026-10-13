@@ -1,3 +1,14 @@
+// Приветственное письмо: рассылка тем, кто зарегистрировался раньше,
+// и проверочная отправка на один адрес.
+//
+// Запуск из каталога Backend:
+//   node scripts/send-welcome-emails.mjs                     # сухой прогон: список получателей
+//   node scripts/send-welcome-emails.mjs --send              # отправить всем, кому ещё не уходило
+//   node scripts/send-welcome-emails.mjs --to you@example.com  # одно письмо для проверки вёрстки
+//   node scripts/send-welcome-emails.mjs --send --force      # отправить повторно, даже если уже уходило
+//
+// В кластере:
+//   kubectl exec -n webplant deployment/backend -- node scripts/send-welcome-emails.mjs --send
 import 'dotenv/config'
 import { Op } from 'sequelize'
 import sequelize from '../db.js'

@@ -26,6 +26,13 @@ $GatewayPort = 8090
 $ComposeProjectNetwork = 'backend_ctp_network'
 $NodePort = 30080
 
+# Каталоги, исключённые в Backend/.dockerignore: docker их не читает,
+# поэтому облачные заглушки Yandex.Disk внутри них сборке не мешают.
+$BuildIgnoreDirs = @(
+    'node_modules', 'uploads', 'backups', 'logs',
+    'certbot', 'nginx', 'k8s', 'coverage', '.vscode', '.idea'
+)
+
 function Write-Step([string]$Text) {
     Write-Host ''
     Write-Host "=== $Text ===" -ForegroundColor Cyan
@@ -156,6 +163,57 @@ function Test-DockerContainer([string]$Name) {
     return [bool]($found | Where-Object { $_ -eq $Name })
 }
 
+# Ищет файлы-заглушки Yandex.Disk (online-only) в контексте сборки.
+# Их чтение висит (облако не отдаёт данные), поэтому docker build и git status
+# встают намертво. Каталоги из .dockerignore пропускаем — docker их не читает.
+function Get-CloudPlaceholderFiles {
+    param(
+        [Parameter(Mandatory)][string]$ContextDir,
+        [string[]]$ExcludeDirs = @()
+    )
+
+    $found = @()
+    foreach ($file in (Get-ChildItem -LiteralPath $ContextDir -Recurse -File -Force -ErrorAction SilentlyContinue)) {
+        if (-not ([int]$file.Attributes -band 0x1000)) { continue }
+        $relative = $file.FullName.Substring($ContextDir.Length).TrimStart('\')
+        $top = ($relative -split '\\')[0]
+        if ($ExcludeDirs -contains $top) { continue }
+        $found += $relative
+    }
+    return @($found)
+}
+
+# Готовит копию контекста сборки на локальном диске (вне Yandex.Disk),
+# чтобы docker вообще не читал облачную папку.
+function New-LocalBuildContext {
+    param(
+        [Parameter(Mandatory)][string]$ContextDir,
+        [string[]]$ExcludeDirs = @()
+    )
+
+    $stagingRoot = Join-Path ([System.IO.Path]::GetTempPath()) 'webplant-build-context'
+    if ($stagingRoot.StartsWith($RepoRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Локальный контекст сборки не должен лежать в репозитории: $stagingRoot"
+    }
+
+    New-Item -ItemType Directory -Force -Path $stagingRoot | Out-Null
+
+    $roboArgs = @(
+        $ContextDir, $stagingRoot,
+        '/MIR', '/COPY:DAT', '/DCOPY:T', '/R:0', '/W:0', '/XJ',
+        '/NJH', '/NJS', '/NDL', '/NP'
+    )
+    foreach ($dir in $ExcludeDirs) { $roboArgs += @('/XD', (Join-Path $ContextDir $dir)) }
+
+    $result = Invoke-Native -Action { robocopy @roboArgs }
+    if ($result.ExitCode -ge 8) {
+        Write-Lines $result.Output
+        throw "Не удалось подготовить локальный контекст сборки (robocopy код $($result.ExitCode))"
+    }
+
+    return $stagingRoot
+}
+
 
 Write-Step 'Проверяю окружение'
 
@@ -172,6 +230,23 @@ foreach ($required in @('DB_NAME', 'DB_USER', 'DB_PASSWORD', 'SECRET_KEY', 'FRON
     if (-not $envMap[$required]) { throw "В Backend/.env не задано $required" }
 }
 Write-Ok "Backend/.env прочитан (БД: $dbName, пользователь: $dbUser)"
+
+$cloudPlaceholders = Get-CloudPlaceholderFiles -ContextDir $BackendDir -ExcludeDirs $BuildIgnoreDirs
+if ($cloudPlaceholders.Count -gt 0) {
+    Write-Lines ($cloudPlaceholders | ForEach-Object { "      $_" })
+    $placeholdersList = $cloudPlaceholders -join "`n        "
+    throw @"
+В Backend/ $($cloudPlaceholders.Count) файлов лежат в облаке как заглушки Yandex.Disk.
+Их чтение висит (клиент не отдаёт данные), поэтому docker build и git status встанут намертво:
+        $placeholdersList
+Что делать:
+  1) закрепить папку и дождаться выгрузки файлов:
+        attrib +P -U /S /D "$BackendDir\*"
+  2) либо вернуть файл из коммита, если правок в нём нет:
+        git -C "$RepoRoot" checkout -- Backend/<путь>
+"@
+}
+Write-Ok 'Контекст сборки читается локально (облачных заглушек нет)'
 
 if (-not (Test-Path -LiteralPath $StagingDir)) {
     New-Item -ItemType Directory -Path $StagingDir | Out-Null
@@ -327,8 +402,10 @@ Write-Ok 'Redis готов'
 if (-not $SkipImageLoad) {
     if (-not $SkipBuild) {
         Write-Step "Собираю образ $image"
+        $buildContext = New-LocalBuildContext -ContextDir $BackendDir -ExcludeDirs $BuildIgnoreDirs
+        Write-Ok "Локальный контекст сборки: $buildContext"
         Invoke-Checked "Не удалось собрать образ $image" {
-            docker build -t $image -f (Join-Path $BackendDir 'Dockerfile') $BackendDir
+            docker build -t $image -f (Join-Path $buildContext 'Dockerfile') $buildContext
         } | Out-Null
         Write-Ok "Образ $image собран"
     }
