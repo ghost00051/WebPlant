@@ -41,6 +41,15 @@ const User = sequelize.define("user", {
         type: DataTypes.STRING(20),
         allowNull: false,
         defaultValue: "free"
+    },
+    welcome_email_sent_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    timezone: {
+        type: DataTypes.STRING(64),
+        allowNull: true,
+        comment: 'IANA-пояс пользователя: в нём считаются время полива и сутки календаря'
     }
 }, {
     tableName: 'users',

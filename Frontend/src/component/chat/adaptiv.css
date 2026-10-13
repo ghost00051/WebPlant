@@ -6,7 +6,7 @@
     }
 
     .chatHeader {
-        padding: calc(28px + env(safe-area-inset-top, 0px)) 14px 14px;
+        padding: 14px 14px;
     }
 
     .chatMessages {
@@ -54,20 +54,18 @@
     .chatWindow {
         grid-column: 3;
         grid-row: 2;
-        /* высота = высота grid-строки (100vh - 50px хедера): header сверху,
-           chatInputArea снизу, chatMessages занимает и скроллит середину */
         height: 100%;
         min-height: 0;
-    }
-
-    .chatWindow {
         max-width: 100%;
         padding-bottom: 0;
         width: 100%;
         background: none;
         position: initial;
+        margin-top: 0;
     }
-    .chatHeader{
+
+    .chatHeader {
         background-color: #FFFFFF;
+        margin-top: 0;
     }
 }

@@ -1,3 +1,5 @@
+import { createPlantPhotoThumb, plantThumbUrl } from '../utils/plantPhotoThumb.js'
+
 class UploadController {
     async uploadPlantPhotos(req, res) {
         try {
@@ -7,12 +9,20 @@ class UploadController {
 
             const baseUrl = `${req.protocol}://${req.get('host')}`
 
-            const urls = req.files.map(file => {
-                const relative = '/uploads/plants/' + file.filename
-                return baseUrl + relative
-            })
+            const uploaded = await Promise.all(req.files.map(async file => {
+                const url = `${baseUrl}/uploads/plants/${file.filename}`
+                const thumbnail = await createPlantPhotoThumb(file.path)
 
-            return res.status(201).json({ urls })
+                return {
+                    url,
+                    thumbUrl: thumbnail.ok ? plantThumbUrl(url) : null
+                }
+            }))
+
+            return res.status(201).json({
+                urls: uploaded.map(item => item.url),
+                thumbs: uploaded.map(item => item.thumbUrl)
+            })
         } catch (error) {
             console.error('❌ Ошибка загрузки:', error)
             return res.status(500).json({ message: 'Ошибка загрузки' })

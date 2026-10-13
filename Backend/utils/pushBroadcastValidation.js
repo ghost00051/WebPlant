@@ -18,7 +18,6 @@ const SCHEDULED_MESSAGE = 'Время отправки должно быть в 
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/
 const WHITESPACE = /\s/
 
-// Длина в символах (code points), а не в UTF-16 code units.
 function characterLength(value) {
     return Array.from(value).length
 }

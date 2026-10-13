@@ -22,10 +22,12 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
 } from '../middleware/guestToken.js'
+import { isValidTimeZone, resolveTimeZone } from '../utils/timeZone.js'
 
 dotenv.config()
 
@@ -38,7 +40,8 @@ function buildUserPayload(user) {
         phone: user.phone,
         bio: user.bio,
         role: user.role,
-        privilege_level: user.privilege_level
+        privilege_level: user.privilege_level,
+        timezone: resolveTimeZone(user.timezone)
     }
 }
 
@@ -93,7 +96,8 @@ class UserController {
                 username,
                 privacyPolicyAccepted,
                 termsAccepted,
-                rememberMe
+                rememberMe,
+                timezone
             } = req.body || {}
 
             const normalizedEmail = typeof email === 'string' ? normalizeEmail(email) : ''
@@ -108,6 +112,12 @@ class UserController {
             ) {
                 return res.status(400).json({
                     message: "Укажите корректные email, пароль, имя и срок сессии"
+                })
+            }
+
+            if (timezone !== undefined && timezone !== null && !isValidTimeZone(timezone)) {
+                return res.status(400).json({
+                    message: "Некорректный часовой пояс"
                 })
             }
 
@@ -162,7 +172,8 @@ class UserController {
                 name: normalizedName || null,
                 username: finalUsername,
                 role: 'USER',
-                privilege_level: 'free'
+                privilege_level: 'free',
+                timezone: isValidTimeZone(timezone) ? timezone.trim() : null
             }, { transaction })
 
             if (!finalUsername) {
@@ -226,6 +237,10 @@ class UserController {
                 await setSessionAuth(res, user)
             }
             clearGuestTokenCookie(res)
+
+            void sendWelcomeEmailToUser(user).catch(error => {
+                console.error('❌ Не удалось отправить приветственное письмо:', error)
+            })
 
             return res.status(201).json({
                 message: 'Регистрация успешна',
@@ -351,8 +366,18 @@ class UserController {
                 return res.status(404).json({ message: "Пользователь не найден" })
             }
 
-            const { name, username, phone, bio } = req.body || {}
+            const { name, username, phone, bio, timezone } = req.body || {}
             const updates = {}
+
+            if (timezone !== undefined) {
+                if (timezone === null || timezone === '') {
+                    updates.timezone = null
+                } else if (!isValidTimeZone(timezone)) {
+                    return res.status(400).json({ message: "Некорректный часовой пояс" })
+                } else {
+                    updates.timezone = timezone.trim()
+                }
+            }
 
             if (name !== undefined) {
                 if (name !== null && (typeof name !== 'string' || name.length > 100)) {

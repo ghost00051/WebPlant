@@ -1,0 +1,53 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: uploads-restore-__RUN_ID__
+  namespace: webplant
+  labels:
+    app: uploads-restore
+spec:
+  backoffLimit: 1
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: uploads-restore
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restore
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ARCHIVE_FILE
+              value: "__ARCHIVE_FILE__"
+            - name: IMAGE_SERVER_PORT
+              value: "8099"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+
+              DOWNLOADED=0
+              for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
+                if wget -q -O /tmp/uploads.tar.gz "http://${HOST}:${IMAGE_SERVER_PORT}/${ARCHIVE_FILE}"; then
+                  DOWNLOADED=1
+                  break
+                fi
+              done
+              [ "${DOWNLOADED}" = "1" ] || { echo "не удалось скачать ${ARCHIVE_FILE}" >&2; exit 1; }
+
+              mkdir -p /app/uploads
+              echo "распаковываю архив $(ls -lh /tmp/uploads.tar.gz | awk '{print $5}')..."
+              tar -xzf /tmp/uploads.tar.gz -C /app/uploads
+              chown -R 1001:1001 /app/uploads
+
+              echo "готово: $(find /app/uploads -type f | wc -l) файлов, $(du -sh /app/uploads | awk '{print $1}')"
+          volumeMounts:
+            - name: uploads
+              mountPath: /app/uploads
+      volumes:
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: backend-uploads

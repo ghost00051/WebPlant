@@ -1,13 +1,12 @@
 .chatWindow {
     position: fixed;
-    top: var(--visual-viewport-top, 0px);
+    top: calc(var(--visual-viewport-top, 0px) + var(--mobile-nav-height));
     left: 0;
     right: 0;
     bottom: auto;
-    height: 100vh;
-    height: var(--visual-viewport-height, 100vh);
+    height: calc(var(--visual-viewport-height, 100vh) - var(--mobile-nav-height));
     box-sizing: border-box;
-    padding-bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     max-width: 420px;
     margin: 0 auto;
     background-color: #FAF8F5;
@@ -16,25 +15,23 @@
     flex-direction: column;
     font-family: 'Inter', sans-serif;
     z-index: 50;
+    margin-top: 5%;
 }
 
 body.keyboard-open .chatWindow {
     padding-bottom: 0;
 }
 
-/* body.keyboard-open .chatInputArea {
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
-} */
-
 .chatHeader {
     flex-shrink: 0;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: calc(28px + env(safe-area-inset-top, 0px)) 16px 14px;
+    padding: 14px 16px;
     background-color: #FAF8F5;
     border-bottom: 1px solid #EAE6E1;
     z-index: 10;
+    margin-top: 4%;
 }
 
 .chatHeaderLeft {
@@ -73,7 +70,7 @@ body.keyboard-open .chatWindow {
 .chatAvatar svg {
     width: 20px;
     height: 20px;
-    color: #7C9082;
+    color: #7FD1A0;
 }
 
 .chatHeaderTitle {
@@ -174,7 +171,7 @@ body.keyboard-open .chatWindow {
 }
 
 .chatBubbleUser {
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     color: #FFFFFF;
     border-bottom-right-radius: 6px;
 }
@@ -230,7 +227,7 @@ body.keyboard-open .chatWindow {
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     animation: typingBounce 1.2s infinite;
 }
 
@@ -342,7 +339,7 @@ body.keyboard-open .chatWindow {
     height: 40px;
     border-radius: 50%;
     border: none;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     display: flex;
     align-items: center;
     justify-content: center;

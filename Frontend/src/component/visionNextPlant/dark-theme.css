@@ -9,3 +9,21 @@ html[data-theme='dark'] .wateringDeleteDialog__card {
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .plantsPreview__water {
+    background: #378f63;
+}
+
+html[data-theme='dark'] .plantsPreview__water:hover:not(:disabled) {
+    background: #43a271;
+    box-shadow: 0 4px 12px rgba(67, 162, 113, 0.32);
+}
+
+html[data-theme='dark'] .plantsPreview__water:focus-visible {
+    outline-color: #43a271;
+}
+
+html[data-theme='dark'] .wateringNote--error {
+    background: rgba(224, 122, 122, 0.16);
+    color: #e6a1a1;
+}

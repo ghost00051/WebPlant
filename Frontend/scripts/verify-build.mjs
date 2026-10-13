@@ -68,7 +68,8 @@ const PRIVATE_PAGES = [
   'home.html',
   'add-plant.html',
   'edit-profile.html',
-  'my-plants.html'
+  'my-plants.html',
+  'reset-password.html'
 ]
 
 console.log('Проверка dist\n')
@@ -120,7 +121,7 @@ ok(
 ok(
   'sitemap: нет закрытых разделов',
   !sitemapLocs.some(loc =>
-    /\/(login|register|home|add-plant|edit-profile|my-plants)$/.test(loc)
+    /\/(login|register|home|add-plant|edit-profile|my-plants|reset-password)$/.test(loc)
   )
 )
 

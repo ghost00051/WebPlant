@@ -58,9 +58,14 @@ export function parseLocalDevOrigins(value = '') {
     return [...new Set(origins)]
 }
 
+export function parseAdminPanelOrigins(value = '') {
+    return value.split(',').map(origin => origin.trim()).filter(Boolean)
+}
+
 export function isAllowedOrigin(origin, {
     frontendUrl = process.env.FRONTEND_URL,
     localDevOrigins = process.env.LOCAL_DEV_ORIGINS,
+    adminPanelOrigins = process.env.ADMIN_PANEL_ORIGIN,
     nodeEnv = process.env.NODE_ENV
 } = {}) {
     if (!origin) return true
@@ -74,6 +79,13 @@ export function isAllowedOrigin(origin, {
             }
         })) return true
     }
+    if (parseAdminPanelOrigins(adminPanelOrigins).some(configuredOrigin => {
+        try {
+            return new URL(configuredOrigin).origin === origin
+        } catch {
+            return configuredOrigin.replace(/\/$/, '') === origin
+        }
+    })) return true
     if (parseLocalDevOrigins(localDevOrigins).includes(origin)) return true
     if (nodeEnv === 'production') return false
     if (DEVELOPMENT_ORIGINS.includes(origin)) return true

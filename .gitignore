@@ -24,6 +24,8 @@ out/
 .env.local
 .env.*.local
 
+.k8s-images/
+
 .npm
 *.tgz
 

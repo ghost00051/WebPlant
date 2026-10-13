@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webplant-config
+  namespace: webplant
+  labels:
+    app.kubernetes.io/name: webplant
+data:
+  NODE_ENV: production
+  PORT: "5000"
+
+  DEPLOY_TARGET: kubernetes
+
+  DB_HOST: postgres
+  DB_PORT: "5432"
+
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_KEY_PREFIX: ctp
+  REDIS_CONNECT_TIMEOUT_MS: "3000"
+  REDIS_COMMAND_TIMEOUT_MS: "500"
+  REDIS_FAILURE_THRESHOLD: "3"
+  REDIS_BREAKER_COOLDOWN_MS: "30000"
+
+
+  AI_CACHE_ENABLED: "true"
+  AI_CACHE_TTL_SECONDS: "604800"
+  AI_CHAT_CACHE_TTL_SECONDS: "600"
+
+  BACKGROUND_JOBS_ENABLED: "false"
+
+  DOCKER_STATS_ENABLED: "false"

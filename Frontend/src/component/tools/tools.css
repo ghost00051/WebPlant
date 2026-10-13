@@ -1,15 +1,3 @@
-@media (max-width: 1023px) {
-    body.keyboard-open .toolsWrapper {
-        display: none !important;
-    }
-}
-
-/* body.vision-open .toolsWrapper {
-    transform: translateY(110%);
-    opacity: 0;
-    pointer-events: none;
-} */
-
 .toolsWrapper {
     position: fixed;
     bottom: 0;
@@ -27,10 +15,13 @@
 }
 
 .tabbar {
+    --tabbar-height: 76px;
     background-color: #FFFFFF;
     border-radius: 20px 20px 0 0;
     box-shadow: 0 -6px 20px rgba(45, 45, 45, 0.08);
-    height: 76px;
+    height: calc(var(--tabbar-height) + env(safe-area-inset-bottom, 0px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    box-sizing: border-box;
     width: 100%;
     display: flex;
     align-items: center;
@@ -79,14 +70,14 @@
     padding: 0;
     border: 0;
     background: transparent;
-    color: inherit;
+    color: var(--color-white-tema);
     font: inherit;
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
 }
 
 .tabbarButton:focus-visible {
-    outline: 2px solid #7C9082;
+    outline: 2px solid #7FD1A0;
     outline-offset: -4px;
     border-radius: 10px;
 }
@@ -100,7 +91,7 @@
 }
 
 .tabbar li.active {
-    color: #7C9082;
+    color: #7FD1A0;
 }
 
 .tabbar li.active img {
@@ -117,14 +108,14 @@
     width: 18px;
     height: 3px;
     border-radius: 2px;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
 }
 
 .tab-label {
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
     font-weight: 500;
-    color: inherit;
+    color: var(--color-white-tema);
     white-space: nowrap;
     pointer-events: none;
     transition: color 0.25s ease;
@@ -132,4 +123,10 @@
 
 .desktopAssistantLink {
     display: none;
+}
+
+@media (max-width: 1023px) {
+    .toolsWrapper {
+        display: none;
+    }
 }

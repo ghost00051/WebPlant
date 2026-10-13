@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: image-loader
+  namespace: webplant
+  labels:
+    app: image-loader
+spec:
+  selector:
+    matchLabels:
+      app: image-loader
+  template:
+    metadata:
+      labels:
+        app: image-loader
+    spec:
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+        - operator: Exists
+      containers:
+        - name: loader
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: IMAGE_REF
+              value: "__IMAGE_REF__"
+            - name: IMAGE_TAR
+              value: "__IMAGE_TAR__"
+            - name: IMAGE_TAR_SIZE
+              value: "__IMAGE_TAR_SIZE__"
+            - name: KEEP_IMAGE
+              value: "__KEEP_IMAGE__"
+            - name: IMAGE_SERVER_PORT
+              value: "8099"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              CTR=/host/usr/local/bin/ctr
+              SOCK=/host/run/containerd/containerd.sock
+              IMAGE="docker.io/library/${IMAGE_REF}"
+
+              tar_bytes() { wc -c < /tmp/image.tar 2>/dev/null || echo 0; }
+
+              tar_complete() {
+                [ -n "${IMAGE_TAR_SIZE}" ] && [ "${IMAGE_TAR_SIZE}" != "0" ] &&
+                  [ "$(tar_bytes)" = "${IMAGE_TAR_SIZE}" ]
+              }
+
+              import_tar() {
+                echo "импортирую ${IMAGE} в containerd ноды $(hostname)..."
+                if ${CTR} --address ${SOCK} --namespace k8s.io images import /tmp/image.tar; then
+                  rm -f /tmp/image.tar
+                  return 0
+                fi
+                echo "импорт не удался, перекачиваю архив"
+                rm -f /tmp/image.tar
+                return 1
+              }
+
+              ensure_image() {
+                if ${CTR} --address ${SOCK} --namespace k8s.io images ls -q | grep -qx "${IMAGE}"; then
+                  echo "образ ${IMAGE} уже есть на ноде $(hostname)"
+                  return 0
+                fi
+
+                sleep $(( (RANDOM % 30) + 1 ))
+
+                ATTEMPT=1
+                while [ "${ATTEMPT}" -le 10 ]; do
+                  for HOST in host.docker.internal 192.168.65.254 192.168.65.3; do
+                    echo "скачиваю ${IMAGE_TAR} с ${HOST} (попытка ${ATTEMPT})..."
+                    if wget -q -c -T 300 -O /tmp/image.tar "http://${HOST}:${IMAGE_SERVER_PORT}/${IMAGE_TAR}"; then
+                      import_tar && return 0
+                    elif tar_complete; then
+                      echo "wget завершился с ошибкой, но архив полный ($(tar_bytes) байт)"
+                      import_tar && return 0
+                    else
+                      echo "загрузка прервана на $(tar_bytes) байт, продолжу с этого места"
+                    fi
+                    sleep 5
+                  done
+                  ATTEMPT=$((ATTEMPT + 1))
+                done
+
+                return 1
+              }
+
+              prune_images() {
+                for REF in $(${CTR} --address ${SOCK} --namespace k8s.io images ls -q |
+                  grep '^docker.io/library/webplant-backend:' || true); do
+                  if [ "${REF}" != "${IMAGE}" ] && [ "${REF}" != "${KEEP_IMAGE}" ]; then
+                    echo "удаляю устаревший образ ${REF}"
+                    ${CTR} --address ${SOCK} --namespace k8s.io images rm "${REF}" || true
+                  fi
+                done
+              }
+
+              ensure_image || { echo "не удалось доставить ${IMAGE_TAR}" >&2; exit 1; }
+              prune_images
+
+              echo "image-loader ready"
+              sleep infinity
+          volumeMounts:
+            - name: host-root
+              mountPath: /host
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: host-root
+          hostPath:
+            path: /
+            type: Directory

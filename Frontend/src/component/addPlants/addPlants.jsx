@@ -7,7 +7,13 @@ import leaf from '../../assets/leaf.svg'
 import sparkles from '../../assets/sparkles.svg'
 import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
+import {
+    reminderWeekdaysForInterval,
+    upcomingWateringDays,
+    weekdayRestrictionApplies
+} from '../../utils/date.js'
 
 const MAX_PHOTOS = 2
 
@@ -34,17 +40,13 @@ const WEEKDAY = [
     { id: 0, label: 'Вс' },
 ]
 
-const getReminderWeekdays = (intervalDays, startDate = new Date()) => {
-    const weekdays = new Set()
-    let weekday = startDate.getDay()
+const getReminderWeekdays = (intervalDays, startDate = new Date()) =>
+    reminderWeekdaysForInterval(intervalDays, startDate)
 
-    while (!weekdays.has(weekday)) {
-        weekdays.add(weekday)
-        weekday = (weekday + intervalDays) % 7
-    }
+const WEEKDAY_LABELS = new Map(WEEKDAY.map(day => [day.id, day.label]))
 
-    return [...weekdays]
-}
+const formatPreviewDate = date =>
+    `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}`
 
 function AddPlants() {
     const navigate = useNavigate()
@@ -116,6 +118,10 @@ function AddPlants() {
         setSelectedPreset('custom')
         setWateringInterval(Math.min(365, days + 1))
     }
+
+    const canRestrictWeekdays = weekdayRestrictionApplies(days)
+    const weekdayPreview = canRestrictWeekdays ? [] : upcomingWateringDays(days, new Date(), 4)
+    const previewWeekdays = new Set(weekdayPreview.map(item => item.weekday))
 
     const goToStep = (next) => {
         setLeaving(step)
@@ -634,7 +640,7 @@ function AddPlants() {
                                         </div>
                                         <div style={{ display: 'flex', gap: 8 }}>
                                             <button type='button' className='counterBtn' onClick={dec} aria-label="Уменьшить">
-                                                <img src={minus} alt="" aria-hidden="true" />
+                                                <ThemedIcon src={minus} alt="" aria-hidden="true" />
                                             </button>
                                             <button type='button' className='counterBtn' onClick={inc} aria-label="Увеличить">
                                                 <img src={plus} alt="" aria-hidden="true" />
@@ -732,21 +738,45 @@ function AddPlants() {
                                 </label>
                             </div>
                             <p className='commentOfPreset'>
-                                Дни выбраны по частоте полива. При необходимости измените их вручную.
+                                {!canRestrictWeekdays
+                                    ? 'Полив попадает на разные дни недели — дни ниже показывают ближайшие поливы, а напоминание придёт в каждый день полива. Ограничить дни недели можно при графике «каждый день» или кратном 7.'
+                                    : selectedDays.length === 0
+                                        ? 'Напоминание придёт в каждый день полива. При необходимости ограничьте дни недели.'
+                                        : 'Дни выбраны по частоте полива. При необходимости измените их вручную.'}
                             </p>
                             <div className='buttonHoldWeekday'>
-                                {WEEKDAY.map(w => (
-                                    <button
-                                        key={w.id}
-                                        type='button'
-                                        className={`wateringWeekday ${selectedDays.includes(w.id) ? 'active' : ''}`}
-                                        onClick={() => toggleDay(w.id)}
-                                        aria-pressed={selectedDays.includes(w.id)}
-                                    >
-                                        {w.label}
-                                    </button>
-                                ))}
+                                {WEEKDAY.map(w => {
+                                    const isSelected = canRestrictWeekdays && selectedDays.includes(w.id)
+                                    const isPreview = !canRestrictWeekdays && previewWeekdays.has(w.id)
+
+                                    return (
+                                        <button
+                                            key={w.id}
+                                            type='button'
+                                            className={[
+                                                'wateringWeekday',
+                                                isSelected && 'active',
+                                                isPreview && 'preview'
+                                            ].filter(Boolean).join(' ')}
+                                            onClick={() => toggleDay(w.id)}
+                                            disabled={!canRestrictWeekdays}
+                                            aria-pressed={canRestrictWeekdays ? isSelected : undefined}
+                                        >
+                                            {w.label}
+                                        </button>
+                                    )
+                                })}
                             </div>
+                            {weekdayPreview.length > 0 && (
+                                <p className='wateringWeekdayPreview'>
+                                    {weekdayPreview.map(item => (
+                                        <span key={item.date.getTime()}>
+                                            {formatPreviewDate(item.date)}
+                                            <b>{WEEKDAY_LABELS.get(item.weekday)}</b>
+                                        </span>
+                                    ))}
+                                </p>
+                            )}
                         </div>
                         <div className='buttonOfslider'>
                             <button

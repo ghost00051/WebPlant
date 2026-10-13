@@ -7,7 +7,11 @@ import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
+import { plantThumbRequestHandler } from './utils/plantPhotoThumb.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
+import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
+import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
+import { getAiCacheStats } from './utils/aiCache.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -18,16 +22,19 @@ import "./models/NotificationPreference.js"
 import "./models/Notification.js"
 import "./models/PushBroadcast.js"
 import "./models/PushBroadcastRecipient.js"
+import "./models/PasswordResetToken.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
 import "./models/ChatLog.js"
+import "./models/SiteVisit.js"
 
 
 import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
 import adminPushRouter from './routes/adminPushRoutes.js'
+import adminRouter from './routes/adminRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
@@ -41,6 +48,7 @@ import chatRouter from './routes/chatRoutes.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
+const BACKGROUND_JOBS_ENABLED = process.env.BACKGROUND_JOBS_ENABLED !== 'false'
 const MIGRATION_FILES_BY_TABLE = {
     auth_sessions: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     passkeys: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
@@ -48,7 +56,11 @@ const MIGRATION_FILES_BY_TABLE = {
     notification_preferences: 'Backend/migrations/20261005_create_notification_preferences.sql',
     notifications: 'Backend/migrations/20261006_create_notifications.sql',
     push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
-    push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql'
+    push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
+    'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
+    'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
+    site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
 function formatSchemaMigrationHint(missing) {
@@ -105,6 +117,10 @@ function validateProductionConfig() {
         frontendOrigin: process.env.FRONTEND_ORIGIN,
         frontendUrl: process.env.FRONTEND_URL
     })
+
+    for (const problem of describeMailConfigProblems()) {
+        console.warn(`⚠️ Почта: ${problem}`)
+    }
 }
 
 app.set('trust proxy', 1)
@@ -139,7 +155,10 @@ app.use((req, res, next) => {
 })
 app.use(refreshRememberedSession)
 
+app.use('/uploads/thumbs', plantThumbRequestHandler())
 app.use('/uploads', express.static(path.resolve('uploads'), {
+    maxAge: '365d',
+    immutable: true,
     setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
 }))
 
@@ -147,6 +166,7 @@ app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/admin/push", adminPushRouter)
+app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
@@ -156,7 +176,15 @@ app.use('/api/chat', getGuestToken, chatRouter)
 app.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate()
-        return res.json({ status: 'ok', timestamp: new Date().toISOString() })
+        return res.json({
+            status: 'ok',
+            timestamp: new Date().toISOString(),
+            deployTarget: process.env.DEPLOY_TARGET || null,
+            redis: describeRedisStatus(),
+            mail: describeMailStatus(),
+            backgroundJobs: BACKGROUND_JOBS_ENABLED,
+            aiCache: getAiCacheStats()
+        })
     } catch (error) {
         console.error('❌ Проверка готовности не пройдена:', error)
         return res.status(503).json({ status: 'unavailable' })
@@ -203,6 +231,19 @@ async function startServer() {
         await sequelize.authenticate()
         console.log("✅ База данных подключена успешно!")
 
+        if (isRedisConfigured()) {
+            const redisReady = await pingRedis()
+            console.log(redisReady
+                ? "✅ Redis подключён: кэш ИИ, распределённые локи и общий rate-limit активны"
+                : "⚠️ Redis недоступен: работаем без кэша ИИ, локов и общего rate-limit")
+        }
+
+        if (isMailConfigured()) {
+            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля будут отправляться`)
+        } else {
+            console.warn("⚠️ SMTP не настроен: восстановление пароля вернёт 503 (см. SMTP_USER/SMTP_PASSWORD)")
+        }
+
         if (process.env.NODE_ENV === 'production') {
             const queryInterface = sequelize.getQueryInterface()
             const tables = await queryInterface.showAllTables()
@@ -233,11 +274,15 @@ async function startServer() {
             console.log("✅ Таблицы созданы/обновлены успешно!")
         }
 
-        startCleanupJob()
-        console.log("⏰ Запущена очистка истекших согласий и auth-данных")
-        reminderService.start()
-        startPushBroadcastJob()
-        console.log("📣 Планировщик отложенных рассылок запущен")
+        if (BACKGROUND_JOBS_ENABLED) {
+            startCleanupJob()
+            console.log("⏰ Запущена очистка истекших согласий и auth-данных")
+            reminderService.start()
+            startPushBroadcastJob()
+            console.log("📣 Планировщик отложенных рассылок запущен")
+        } else {
+            console.log("⏸ Фоновые задачи отключены (BACKGROUND_JOBS_ENABLED=false)")
+        }
 
         app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)

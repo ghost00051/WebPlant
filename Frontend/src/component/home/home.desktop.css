@@ -2,7 +2,7 @@
     .gofOfMain {
         display: grid;
         grid-template-columns: 170px minmax(0, 1fr);
-        grid-template-rows: 50px minmax(0, 1fr);
+        grid-template-rows: 50px auto minmax(0, 1fr);
         padding-top: 0;
         background: #faf8f5;
     }
@@ -70,7 +70,7 @@
         height: 26px;
         place-items: center;
         border-radius: 50%;
-        background: #7c9082;
+        background: var(--color-white-tema);
         color: white;
         font-size: 12px;
         font-weight: 600;
@@ -94,23 +94,34 @@
         font-size: 9px;
     }
 
-    .gofOfMain > .screenTransition {
+    .gofOfMain>.aiTicker {
         grid-column: 2;
         grid-row: 2;
+        align-self: start;
+    }
+
+    .gofOfMain>.toolsWrapper {
+        grid-row: 2 / 4;
+    }
+
+    .gofOfMain>.screenTransition {
+        grid-column: 2;
+        grid-row: 3;
         min-width: 0;
         padding: 18px 24px 24px;
         overflow: auto;
         background: #faf8f5;
     }
 
-    .screenTransition > .pwaInstallHint {
+    .screenTransition>.pwaInstallHint {
         display: none;
     }
 }
 
 @media (min-width: 1024px) {
+
     html[data-theme='dark'] .desktopAppHeader,
-    html[data-theme='dark'] .gofOfMain > .screenTransition,
+    html[data-theme='dark'] .gofOfMain>.screenTransition,
     html[data-theme='dark'] .toolsWrapper {
         background: var(--theme-page);
         border-color: var(--theme-border);

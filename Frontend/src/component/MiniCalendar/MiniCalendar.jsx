@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, forwardRef, useImperativeHandle } from 
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ArrowLeft from '../../assets/ArrowLeft.svg'
 import ArrowRight from '../../assets/ArrowRight.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import {
   addDays,
   dayOfMonth,
@@ -9,6 +10,7 @@ import {
   isBefore,
   isSameDay,
   monthNominative,
+  resolveWateringMarkers,
   startOfISOWeek,
   toDate,
   today,
@@ -25,7 +27,7 @@ const MONTH_WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
 
 const MiniCalendar = forwardRef(function MiniCalendar(
-  { onSelectDay, scheduleMap, pastDates, overdueDates, externalIso },
+  { onSelectDay, futureDates, pastDates, overdueDates, externalIso },
   ref
 ) {
   const [anchorTime, setAnchorTime] = useState(
@@ -39,11 +41,6 @@ const MiniCalendar = forwardRef(function MiniCalendar(
   const [animKey, setAnimKey] = useState(0)
 
   const anchor = useMemo(() => toDate(anchorTime), [anchorTime])
-
-  const futureWaterings = useMemo(
-    () => (scheduleMap ? [...scheduleMap.keys()] : []),
-    [scheduleMap]
-  )
 
   const todayDate = useMemo(() => today(), [])
 
@@ -105,17 +102,17 @@ const MiniCalendar = forwardRef(function MiniCalendar(
     onSelectDay?.(date)
   }, [onSelectDay])
 
-  const getWateringState = useCallback((dateStr) => ({
-    isFuture: futureWaterings.includes(dateStr),
-    isPast: pastDates?.has?.(dateStr) ?? false,
-    isOverdue: overdueDates?.has?.(dateStr) ?? false,
-  }), [futureWaterings, pastDates, overdueDates])
+  const getWateringState = useCallback((dateStr) => resolveWateringMarkers({
+    isPlanned: futureDates?.has?.(dateStr) ?? false,
+    hasHistory: pastDates?.has?.(dateStr) ?? false,
+    hasMissed: overdueDates?.has?.(dateStr) ?? false,
+  }), [futureDates, pastDates, overdueDates])
 
   const renderDots = ({ isFuture, isPast, isOverdue }) => (
     <div className='mini-calendar__dots'>
       {isFuture && <span className='dot dot--future' title='Будущий полив' />}
-      {isOverdue && <span className='dot dot--overdue' title='Пропущенный полив' />}
-      {isPast && !isOverdue && <span className='dot dot--past' title='Прошлый полив' />}
+      {isOverdue && <span className='dot dot--overdue' title='Просроченный или пропущенный полив' />}
+      {isPast && <span className='dot dot--past' title='Прошлый полив' />}
     </div>
   )
 
@@ -128,10 +125,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         </div>
         <div className='mini-calendar__nav'>
           <button onClick={prev} aria-label='Предыдущие 2 недели'>
-            <img src={ArrowLeft} alt='' />
+            <ThemedIcon src={ArrowLeft} alt='' />
           </button>
           <button onClick={next} aria-label='Следующие 2 недели'>
-            <img src={ArrowRight} alt='' />
+            <ThemedIcon src={ArrowRight} alt='' />
           </button>
         </div>
       </div>
@@ -181,7 +178,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span className='dot dot--past' /> Прошлый полив
         </span>
         <span className='legend-item'>
-          <span className='dot dot--overdue' /> Пропущенный
+          <span className='dot dot--overdue' /> Пропущенный/просроченный
         </span>
         <span className='legend-item'>
           <span className='dot dot--today' /> Сегодня
@@ -195,10 +192,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           </div>
           <div className='mini-calendar__nav'>
             <button onClick={prevDesktopMonth} aria-label='Предыдущий месяц'>
-              <img src={ArrowLeft} alt='' />
+              <ThemedIcon src={ArrowLeft} alt='' />
             </button>
             <button onClick={nextDesktopMonth} aria-label='Следующий месяц'>
-              <img src={ArrowRight} alt='' />
+              <ThemedIcon src={ArrowRight} alt='' />
             </button>
           </div>
         </div>
@@ -216,7 +213,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
             const wateringLabels = [
               isFuture && 'будущий полив',
               isOverdue && 'пропущенный полив',
-              isPast && !isOverdue && 'прошлый полив',
+              isPast && 'прошлый полив',
             ].filter(Boolean)
 
             return (
@@ -241,7 +238,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         <div className='mini-calendar__desktop-legend'>
           <span><i className='dot dot--future' /> Будущий полив</span>
           <span><i className='dot dot--past' /> Прошлый полив</span>
-          <span><i className='dot dot--overdue' /> Пропущенный</span>
+          <span><i className='dot dot--overdue' /> Пропущенный/просроченный</span>
           <span><i className='dot dot--today' /> Сегодня</span>
         </div>
       </div>

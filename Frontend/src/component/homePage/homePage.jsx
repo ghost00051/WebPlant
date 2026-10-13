@@ -9,12 +9,16 @@ import VisionNextPlant from '../visionNextPlant/visionNextPlant'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import { API_URL } from '../../utils/api.js'
 import {
+  buildDayView,
   dayOfMonth,
   diffInDays,
   monthGenitive,
   monthNominative,
+  partitionScheduleDates,
   relativeDayLabel,
   toDate,
   toISODate,
@@ -34,7 +38,8 @@ function HomePage({ user, onTabChange }) {
   const [wateringId, setWateringId] = useState(null)
   const [deletingWateringId, setDeletingWateringId] = useState(null)
   const [removingId, setRemovingId] = useState(null)
-  const [selectedDay, setSelectedDay] = useState(null)
+  const [selectedDate, setSelectedDate] = useState(null)
+  const [missedWateringId, setMissedWateringId] = useState(null)
   const [schedule, setSchedule] = useState([])
   const [history, setHistory] = useState([])
   const [now, setNow] = useState(new Date())
@@ -62,13 +67,18 @@ function HomePage({ user, onTabChange }) {
     [historyMap]
   )
 
+  const { planned: plannedDates, missed: missedScheduleDates } = useMemo(
+    () => partitionScheduleDates(schedule, now),
+    [schedule, now]
+  )
+
   const overdueDatesSet = useMemo(() => {
-    const set = new Set()
+    const set = new Set(missedScheduleDates)
     for (const item of history) {
       if (item.hasOverdue) set.add(item.date)
     }
     return set
-  }, [history])
+  }, [history, missedScheduleDates])
 
   const getWateringPlant = useCallback(async () => {
     const response = await fetch(
@@ -121,7 +131,7 @@ function HomePage({ user, onTabChange }) {
     if (!Array.isArray(data.items)) throw new Error('Сервер вернул некорректную историю полива')
     const normalized = data.items.map(item => {
       const events = Array.isArray(item.events) ? item.events : []
-      const hasOverdue = events.some(e => e.kind === 'overdue')
+      const hasOverdue = events.some(e => e.kind === 'overdue' || e.kind === 'skipped')
       const hasWatered = events.some(e => e.kind === 'watered')
       return {
         date: item.date,
@@ -166,11 +176,6 @@ function HomePage({ user, onTabChange }) {
     const id = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
-
-  useEffect(() => {
-    document.body.style.overflow = selectedDay ? 'hidden' : ''
-    return () => { document.body.style.overflow = '' }
-  }, [selectedDay])
 
   const waterPlant = async plantId => {
     if (!plantId || wateringId) return
@@ -222,7 +227,7 @@ function HomePage({ user, onTabChange }) {
         throw new Error(errorData.message || `Не удалось удалить запись: HTTP ${response.status}`)
       }
 
-      setSelectedDay(null)
+      setSelectedDate(null)
       await loadHomeData()
       return true
     } catch (error) {
@@ -231,6 +236,44 @@ function HomePage({ user, onTabChange }) {
       return false
     } finally {
       setDeletingWateringId(null)
+    }
+  }
+
+  const waterMissedPlant = async (plantId, scheduledFor) => {
+    if (!plantId || missedWateringId) {
+      return { ok: false, message: '' }
+    }
+
+    setMissedWateringId(plantId)
+    let alreadyWatered = false
+    try {
+      const response = await fetch(
+        `${API_URL}/plants/${plantId}/water`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduled_for: scheduledFor }),
+          credentials: 'include'
+        }
+      )
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        alreadyWatered = response.status === 409
+        throw new Error(data.message || `Не удалось отметить полив: HTTP ${response.status}`)
+      }
+
+      await loadHomeData()
+      return { ok: true, convertedSkip: Boolean(data.converted_skip) }
+    } catch (error) {
+      console.error('Ошибка отметки просроченного полива:', error)
+      if (alreadyWatered) await loadHomeData()
+      return {
+        ok: false,
+        message: error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
+      }
+    } finally {
+      setMissedWateringId(null)
     }
   }
 
@@ -258,26 +301,21 @@ function HomePage({ user, onTabChange }) {
     const pastItem = historyMap.get(iso) ?? null
     const pastEvents = pastItem?.events ?? []
 
-    let kind = 'empty'
-    let plants = []
-    let events = []
-
-    if (futurePlants.length) {
-      kind = 'future'
-      plants = futurePlants
-    } else if (pastEvents.length) {
-      kind = 'past'
-      events = pastEvents
-    }
+    const view = buildDayView({
+      date: target,
+      now,
+      plannedPlants: futurePlants,
+      events: pastEvents,
+    })
 
     return {
       date: target,
-      diffDays: diffInDays(target, new Date()),
+      diffDays: diffInDays(target, now),
       relative,
       iso,
-      kind,
-      plants,
-      events,
+      kind: view.kind,
+      plants: view.plants,
+      events: view.events,
       futurePlants,
       pastEvents,
       hasOverdue: pastItem?.hasOverdue ?? false,
@@ -288,21 +326,26 @@ function HomePage({ user, onTabChange }) {
       year: String(target.getFullYear()),
       full: `${capitalize(weekdayName(target))}, ${dayOfMonth(target)} ${monthGenitive(target)}`,
     }
-  }, [scheduleMap, historyMap])
+  }, [scheduleMap, historyMap, now])
+
+  const selectedDay = useMemo(
+    () => (selectedDate ? buildDay(selectedDate) : null),
+    [selectedDate, buildDay]
+  )
 
   const handleSelectDay = useCallback((date) => {
-    setSelectedDay(prev => {
-      if (prev && prev.date.getTime() === date.getTime()) return null
-      return buildDay(date)
-    })
-  }, [buildDay])
+    const target = toDate(date)
+    setSelectedDate(prev =>
+      prev && prev.getTime() === target.getTime() ? null : target
+    )
+  }, [])
 
   const nextWatering = useMemo(() => {
     if (!selectedDay) return null
     const fromIso = selectedDay.iso
 
     const upcoming = schedule
-      .filter(item => item.date > fromIso && item.plants?.length)
+      .filter(item => item.date > fromIso && item.plants?.length && plannedDates.has(item.date))
       .sort((a, b) => a.date.localeCompare(b.date))
 
     if (!upcoming.length) return null
@@ -312,19 +355,20 @@ function HomePage({ user, onTabChange }) {
       iso: upcoming[0].date,
       label: `${dayOfMonth(nextDate)} ${monthGenitive(nextDate)}`,
     }
-  }, [schedule, selectedDay])
+  }, [schedule, selectedDay, plannedDates])
 
   const handleGoToDate = useCallback((iso) => {
     calendarRef.current?.scrollTo(iso)
-    setSelectedDay(buildDay(toDate(iso)))
-  }, [buildDay])
+    setSelectedDate(toDate(iso))
+  }, [])
 
 
   const onePlant = useMemo(() => {
-    const firstDay = schedule.find(d => d.plants?.length > 0)
+    const withPlants = schedule.filter(d => d.plants?.length > 0)
+    const firstDay = withPlants.find(d => plannedDates.has(d.date)) ?? withPlants[0]
     if (!firstDay) return null
     return { ...firstDay.plants[0], nextDate: firstDay.date }
-  }, [schedule])
+  }, [schedule, plannedDates])
 
   return (
     <div className='homePageDashboard'>
@@ -335,7 +379,7 @@ function HomePage({ user, onTabChange }) {
           <p>Мои растения</p>
         </div>
         <div>
-          <img src={Notification} alt='уведомления' />
+          <ThemedIcon src={Notification} alt='уведомления' />
         </div>
       </div>
       <div className='desktopDashboardHeader'>
@@ -352,7 +396,7 @@ function HomePage({ user, onTabChange }) {
         <MiniCalendar
           ref={calendarRef}
           onSelectDay={handleSelectDay}
-          scheduleMap={scheduleMap}
+          futureDates={plannedDates}
           pastDates={pastDatesSet}
           overdueDates={overdueDatesSet}
           externalIso={selectedDay?.iso}
@@ -403,7 +447,7 @@ function HomePage({ user, onTabChange }) {
                   >
                     <div className='description'>
                       {mainPhoto ? (
-                        <img src={mainPhoto} alt={item.name} />
+                        <PlantPhoto src={mainPhoto} alt={item.name} />
                       ) : (
                         <div className='no-photo' />
                       )}
@@ -440,12 +484,12 @@ function HomePage({ user, onTabChange }) {
         </section>
         <section className='offScheduleWatering'>
           <div className='descriptioOfoffScheduleWatering'>
-            <img src={IconTile} alt="" />
+            <ThemedIcon src={IconTile} alt="" />
             <div>
               <p>Полив вне графика</p>
               <p>Отметьте растение, которое полили раньше срока</p>
             </div>
-            <img src={chevronleft} alt="" />
+            <ThemedIcon src={chevronleft} alt="" />
           </div>
           <div>
             {onePlant && (
@@ -453,7 +497,7 @@ function HomePage({ user, onTabChange }) {
                 <div className='menuOfSoffSchedule'>
                   <div className='childOfmenuOfSoffSchedule'>
                     {onePlant.photo_url ? (
-                      <img src={onePlant.photo_url} alt={onePlant.name} />
+                      <PlantPhoto src={onePlant.photo_url} alt={onePlant.name} />
                     ) : (
                       <div className='no-photo' />
                     )}
@@ -484,12 +528,12 @@ function HomePage({ user, onTabChange }) {
           className='desktopDashboardAssistant'
           onClick={() => onTabChange?.('chat')}
         >
-          <img src={IconTile} alt='' />
+          <ThemedIcon src={IconTile} alt='' />
           <span>
             <strong>Спросить ИИ-помощника</strong>
             <small>Подскажет, когда и как поливать ваши растения</small>
           </span>
-          <img className='desktopAssistantChevron' src={chevronleft} alt='' />
+          <ThemedIcon className='desktopAssistantChevron' src={chevronleft} alt='' />
         </button>
       </div>
       <VisionNextPlant
@@ -497,9 +541,11 @@ function HomePage({ user, onTabChange }) {
         day={selectedDay}
         nextWatering={nextWatering}
         onGoToDate={handleGoToDate}
+        onWater={waterMissedPlant}
         onDeleteWatering={deleteWatering}
+        wateringPlantId={missedWateringId}
         deletingWateringId={deletingWateringId}
-        onClose={() => setSelectedDay(null)}
+        onClose={() => setSelectedDate(null)}
       />
     </div>
   )

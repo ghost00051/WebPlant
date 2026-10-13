@@ -4,5 +4,6 @@ dist/
 .env.*
 !.env.example
 *.local
+admin/
 
 .vite/

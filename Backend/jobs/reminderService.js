@@ -5,10 +5,16 @@ import pushService from '../services/pushService.js'
 import WateringLog from '../models/WateringLog.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import { storeNotification } from '../services/notificationService.js'
-import { isReminderWeekday } from '../utils/wateringSchedule.js'
+import { isReminderWeekday, weekdayRestrictionApplies } from '../utils/wateringSchedule.js'
+import { withDistributedLock } from '../utils/distributedLock.js'
+import User from '../models/userModels.js'
+import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
 
 const HOUR = 60 * 60 * 1000
-const SUMMARY_TIMEZONE = 'Europe/Moscow'
+const SUMMARY_HOUR = 9
+const TICK_LOCK = 'job:reminder-tick'
+const TICK_LOCK_TTL_MS = 9 * 60 * 1000
+const SUMMARY_LOCK_TTL_MS = 30 * 60 * 1000
 
 function getDateParts(date, timeZone) {
     return Object.fromEntries(
@@ -41,8 +47,8 @@ function zonedMidnightToUtc({ year, month, day }, timeZone) {
     return new Date(utcGuess - (zonedAsUtc - utcGuess))
 }
 
-function getMoscowDayBounds(now) {
-    const today = getDateParts(now, SUMMARY_TIMEZONE)
+function getDayBounds(now, timeZone) {
+    const today = getDateParts(now, timeZone)
     const todayUtc = Date.UTC(today.year, today.month - 1, today.day)
     const tomorrow = new Date(todayUtc + 24 * HOUR)
     const tomorrowParts = {
@@ -53,22 +59,38 @@ function getMoscowDayBounds(now) {
 
     return {
         date: `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`,
-        end: zonedMidnightToUtc(tomorrowParts, SUMMARY_TIMEZONE)
+        end: zonedMidnightToUtc(tomorrowParts, timeZone)
     }
+}
+
+async function loadTimeZones(userIds) {
+    const ids = [...new Set(userIds)]
+    if (!ids.length) return new Map()
+
+    const users = await User.findAll({
+        where: { id: { [Op.in]: ids } },
+        attributes: ['id', 'timezone'],
+        raw: true
+    })
+
+    return new Map(users.map(user => [user.id, resolveTimeZone(user.timezone)]))
 }
 
 class ReminderService {
     start() {
-        cron.schedule('*/10 * * * *', () => this.tick(), {
+        cron.schedule('*/10 * * * *', () => this.runTick(), {
             timezone: 'UTC'
         })
-        cron.schedule('*/10 9 * * *', () => this.sendMorningSummary().catch(error => {
-            console.error('❌ Ошибка планировщика утренней сводки:', error)
-        }), {
-            timezone: SUMMARY_TIMEZONE
-        })
-        console.log('⏰ ReminderService запущен (каждые 10 минут)')
-        console.log('🌅 Утренняя сводка запланирована ежедневно на 09:00 Europe/Moscow')
+        console.log('⏰ ReminderService запущен (каждые 10 минут, распределённый лок Redis)')
+        console.log('🌅 Утренняя сводка отправляется в 09:00 по часовому поясу пользователя')
+    }
+
+    async runTick() {
+        await withDistributedLock(
+            TICK_LOCK,
+            { ttlMs: TICK_LOCK_TTL_MS },
+            () => this.tick()
+        )
     }
 
     async autoSkipOverdue(now) {
@@ -151,7 +173,8 @@ class ReminderService {
         console.log(`\n🔔 ReminderService.tick() @ ${now.toISOString()}`)
 
         try {
-            await this.autoSkipOverdue(now)  
+            await this.autoSkipOverdue(now)
+            await this.sendMorningSummary(now)
             await this.sendDayBefore(now)
             await this.sendOnDay(now)
         } catch (e) {
@@ -160,55 +183,73 @@ class ReminderService {
     }
 
     async sendMorningSummary(now = new Date()) {
-        const { date, end } = getMoscowDayBounds(now)
         const preferences = await NotificationPreference.findAll({
             where: { morning_summary_enabled: true }
         })
+        if (!preferences.length) return
+
+        const zonesByUser = await loadTimeZones(
+            preferences.map(preference => preference.user_id)
+        )
 
         for (const preference of preferences) {
+            const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
+            const localTime = getDateParts(now, timeZone)
+
+            if (localTime.hour !== SUMMARY_HOUR) continue
+
+            const { date, end } = getDayBounds(now, timeZone)
             if (preference.last_morning_summary_date === date) continue
 
-            try {
-                const plants = await Plant.findAll({
-                    where: {
-                        user_id: preference.user_id,
-                        is_active: true,
-                        next_watering_at: { [Op.lt]: end }
-                    },
-                    attributes: ['id', 'name', 'location'],
-                    order: [['next_watering_at', 'ASC']]
-                })
-                const names = plants.slice(0, 5).map(plant =>
-                    `${plant.name}${plant.location ? ` (${plant.location})` : ''}`
-                )
-                const extraCount = plants.length - names.length
-                const body = plants.length
-                    ? `Сегодня полить: ${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
-                    : 'На сегодня полив не запланирован 🌱'
-                await storeNotification({
-                    userId: preference.user_id,
-                    type: 'morning_summary',
-                    title: '🌿 Утренняя сводка',
-                    body,
-                    dedupeKey: `morning-summary:${date}`
-                })
-                const result = await pushService.sendToUser(
-                    preference.user_id,
-                    '🌿 Утренняя сводка',
-                    body,
-                    '/icons/icon-192.png',
-                    { url: '/home', tag: 'morning-summary' }
-                )
+            await withDistributedLock(
+                `job:morning-summary:${preference.user_id}:${date}`,
+                { ttlMs: SUMMARY_LOCK_TTL_MS },
+                () => this.sendMorningSummaryTo(preference, { date, end })
+            )
+        }
+    }
 
-                if (result.sent > 0) {
-                    await preference.update({ last_morning_summary_date: date })
-                }
-            } catch (error) {
-                console.error(
-                    `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
-                    error
-                )
+    async sendMorningSummaryTo(preference, { date, end }) {
+        try {
+            const plants = await Plant.findAll({
+                where: {
+                    user_id: preference.user_id,
+                    is_active: true,
+                    next_watering_at: { [Op.lt]: end }
+                },
+                attributes: ['id', 'name', 'location'],
+                order: [['next_watering_at', 'ASC']]
+            })
+            const names = plants.slice(0, 5).map(plant =>
+                `${plant.name}${plant.location ? ` (${plant.location})` : ''}`
+            )
+            const extraCount = plants.length - names.length
+            const body = plants.length
+                ? `Сегодня полить: ${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
+                : 'На сегодня полив не запланирован 🌱'
+            await storeNotification({
+                userId: preference.user_id,
+                type: 'morning_summary',
+                title: '🌿 Утренняя сводка',
+                body,
+                dedupeKey: `morning-summary:${date}`
+            })
+            const result = await pushService.sendToUser(
+                preference.user_id,
+                '🌿 Утренняя сводка',
+                body,
+                '/icons/icon-192.png',
+                { url: '/home', tag: 'morning-summary' }
+            )
+
+            if (result.sent > 0) {
+                await preference.update({ last_morning_summary_date: date })
             }
+        } catch (error) {
+            console.error(
+                `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
+                error
+            )
         }
     }
 
@@ -271,6 +312,9 @@ class ReminderService {
     }
 
     matchesWeekday(plant) {
+
+        if (!weekdayRestrictionApplies(plant.watering_interval_days)) return true
+
         return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at)
     }
 

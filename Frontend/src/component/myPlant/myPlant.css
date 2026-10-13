@@ -129,7 +129,7 @@
     border-radius: 8px;
     border: none;
     color: #FFFFFF;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     padding: 5px 6px;
     cursor: pointer;
 }
@@ -161,7 +161,7 @@
     border: 0;
     border-radius: 10px;
     padding: 10px 14px;
-    background: #7C9082;
+    background: #7FD1A0;
     color: #FFFFFF;
     font: inherit;
     cursor: pointer;
@@ -262,7 +262,7 @@
 .plantEditorReminders input {
     width: 18px;
     height: 18px;
-    accent-color: #7C9082;
+    accent-color: #7FD1A0;
 }
 
 .plantEditorWeekdays {
@@ -297,8 +297,8 @@
 }
 
 .plantEditorWeekdays button.active {
-    border-color: #7C9082;
-    background: #7C9082;
+    border-color: #7FD1A0;
+    background: #7FD1A0;
     color: #FFFFFF;
 }
 
@@ -335,7 +335,7 @@
 }
 
 .plantDialogActions button[type='submit'] {
-    background: #7C9082;
+    background: #7FD1A0;
     color: #FFFFFF;
 }
 

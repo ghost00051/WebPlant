@@ -1,0 +1,32 @@
+<svg viewBox="0 0 152 152" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="152.000000" height="152.000000" fill="none" customFrame="#000000">
+	<defs>
+		<g id="pixso_custom_effect_0">
+			<effect x="0.000000" y="10.000000" visibility="visible" fill="rgb(127,209,160)" fill-opacity="0.301960796" effectType="dropShadow" stdDeviation="28" radius="0" />
+		</g>
+		<filter id="filter_0" width="152.000000" height="152.000000" x="0.000000" y="0.000000" filterUnits="userSpaceOnUse" customEffect="url(#pixso_custom_effect_0)" color-interpolation-filters="sRGB">
+			<feFlood flood-opacity="0" result="BackgroundImageFix" />
+			<feColorMatrix result="hardAlpha" in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0 " />
+			<feOffset dx="0.000000" dy="10.000000" in="hardAlpha" />
+			<feGaussianBlur stdDeviation="9.33333302" />
+			<feComposite k2="-1" k3="1" in2="hardAlpha" operator="out" />
+			<feColorMatrix type="matrix" values="0 0 0 0 0.498039 0 0 0 0 0.819608 0 0 0 0 0.627451 0 0 0 0.301961 0 " />
+			<feBlend result="effect_dropShadow_1" in2="BackgroundImageFix" mode="normal" />
+			<feBlend result="shape" in="SourceGraphic" in2="effect_dropShadow_1" mode="normal" />
+		</filter>
+		<clipPath id="clipPath_0">
+			<rect width="96.000000" height="96.000000" x="28.000000" y="18.000000" rx="28.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+		<clipPath id="clipPath_1">
+			<rect width="44.000000" height="44.000000" x="54.000000" y="44.000000" fill="rgb(255,255,255)" />
+		</clipPath>
+	</defs>
+	<g id="IconBadge" filter="url(#filter_0)" customFrame="url(#clipPath_0)">
+		<rect id="IconBadge" width="96.000000" height="96.000000" x="28.000000" y="18.000000" rx="28.000000" fill="rgb(124,144,130)" fill-opacity="0.141176477" />
+		<g id="key-round" customFrame="url(#clipPath_1)">
+			<rect id="key-round" width="44.000000" height="44.000000" x="54.000000" y="44.000000" />
+			<path id="Вектор 240" d="M57.9459 77.1151C57.7615 77.5599 57.6666 78.0367 57.6665 78.5181L57.6665 82.5001C57.6665 82.8219 57.7512 83.1381 57.9121 83.4168C58.073 83.6955 58.3045 83.9269 58.5832 84.0878C58.8619 84.2487 59.178 84.3335 59.4998 84.3335L64.9998 84.3335C65.3217 84.3335 65.6378 84.2487 65.9165 84.0878C66.1952 83.9269 66.4266 83.6955 66.5876 83.4168C66.7485 83.1381 66.8332 82.8219 66.8332 82.5001L66.8332 80.6668C66.8332 80.345 66.9179 80.0288 67.0788 79.7501C67.2397 79.4714 67.4711 79.24 67.7498 79.0791C68.0285 78.9182 68.3447 78.8335 68.6665 78.8335L70.4998 78.8335C70.8217 78.8335 71.1378 78.7487 71.4165 78.5878C71.6952 78.4269 71.9266 78.1955 72.0875 77.9168C72.2485 77.6381 72.3332 77.3219 72.3332 77.0001L72.3332 75.1668C72.3332 74.845 72.4179 74.5288 72.5788 74.2501C72.7397 73.9714 72.9711 73.74 73.2498 73.5791C73.5285 73.4182 73.8447 73.3335 74.1665 73.3335L74.4818 73.3335C74.9633 73.3334 75.4401 73.2384 75.8848 73.0541C76.3296 72.8698 76.7338 72.5996 77.0742 72.2591L78.5665 70.7668C80.8269 71.5542 83.272 71.6426 85.5834 71.0206C87.8947 70.3986 89.9652 69.0949 91.5251 67.2794C93.085 65.4639 94.0621 63.2208 94.329 60.8421C94.5959 58.4634 94.1402 56.0595 93.0215 53.9434C91.9027 51.8274 90.1726 50.0973 88.0565 48.9785C85.9405 47.8597 83.5366 47.4041 81.1579 47.671C78.7792 47.9379 76.536 48.9149 74.7205 50.4748C72.905 52.0347 71.6014 54.1052 70.9793 56.4166C70.3573 58.728 70.4458 61.1731 71.2332 63.4335L58.7408 75.9258C58.4003 76.2662 58.1302 76.6703 57.9459 77.1151Z" fill-rule="nonzero" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.666667" />
+			<circle id="Эллипс 19" cx="84.2501602" cy="57.7499199" r="0.916666687" fill="rgb(124,144,130)" />
+			<circle id="Эллипс 19" cx="84.2501602" cy="57.7499199" r="0.916666687" stroke="rgb(124,144,130)" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.666667" />
+		</g>
+	</g>
+</svg>

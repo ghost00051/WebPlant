@@ -1,2 +1,7 @@
 * text=auto
 Backend/backup.sh text eol=lf
+
+# Реестр багов синхронизируется из Google Sheets (scripts/sync-bug-tracker.mjs):
+# xlsx — бинарный файл, csv-зеркало — с LF, чтобы диффы не зависели от git.
+Bug-Tracker-WebPlant.xlsx binary
+Bug-Tracker-WebPlant.csv text eol=lf

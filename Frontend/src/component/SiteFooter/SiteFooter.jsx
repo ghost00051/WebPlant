@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ARTICLE_NAV, PLANT_NAV } from '../../data/seoMeta.js'
 import { articlePath, plantPath } from '../../data/siteMap.js'
+import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import './SiteFooter.css'
 
 const FOOTER_PLANTS = PLANT_NAV.slice(0, 6)
@@ -46,6 +47,10 @@ function SiteFooter() {
                     Лейка · Забота о растениях без лишней суеты
                     <small>Создатель сайта — Никитин Иван Сергеевич</small>
                 </span>
+                <p className='siteFooterFeedback'>
+                    Нашли баг или хотите предложить что-то своё? Напишите на{' '}
+                    <a href={FEEDBACK_MAILTO}>{FEEDBACK_EMAIL}</a> — с уважением, разработчик Иван.
+                </p>
             </div>
         </footer>
     )

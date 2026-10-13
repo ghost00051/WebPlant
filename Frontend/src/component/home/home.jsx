@@ -3,18 +3,25 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import NotificationPrompt from '../NotificationPrompt/NotificationPrompt.jsx'
 import {
     isPushSupported,
-    isIOS,
-    isStandalone
+    getActivePushSubscription,
+    markPushPromptShown,
+    restorePushSubscription,
+    shouldOfferPushPrompt,
+    syncPushSubscription
 } from '../../utils/pushNotifications.js'
 import Tools from '../tools/tools.jsx'
+import MobileNav from '../tools/MobileNav.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
+import AiTicker from '../aiTicker/aiTicker.jsx'
 import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
+import { syncUserTimeZone } from '../../utils/timeZone.js'
 import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './home.css'
 import './home.desktop.css'
 import './dark-theme.css'
@@ -49,18 +56,28 @@ function Home() {
                 const userData = await res.json()
                 setUser(userData)
 
+                // Часовой пояс устройства: в нём сервер считает время полива
+                // и сутки для просрочки (Владивосток ≠ Москва).
+                void syncUserTimeZone(userData.timezone).then(timeZone => {
+                    if (timeZone && timeZone !== userData.timezone) {
+                        setUser(current => (current ? { ...current, timezone: timeZone } : current))
+                    }
+                })
+
                 if (!isPushSupported()) {
                     setLoading(false)
                     return
                 }
 
                 if (Notification.permission === 'granted') {
-                    const reg = await navigator.serviceWorker.ready
-                    const sub = await reg.pushManager.getSubscription()
-                    if (sub) {
-                        setLoading(false)
-                        return
+                    const subscription = await getActivePushSubscription()
+                    if (subscription) {
+                        void syncPushSubscription()
+                    } else {
+                        void restorePushSubscription()
                     }
+                    setLoading(false)
+                    return
                 }
 
                 if (Notification.permission === 'denied') {
@@ -68,16 +85,15 @@ function Home() {
                     return
                 }
 
-                const lastShown = localStorage.getItem('push_prompt_last_shown')
-                if (lastShown && !(isIOS() && isStandalone())) {
-                    const daysSince = (Date.now() - parseInt(lastShown)) / (1000 * 60 * 60 * 24)
-                    if (daysSince < 7) {
-                        setLoading(false)
-                        return
-                    }
+                if (!shouldOfferPushPrompt()) {
+                    setLoading(false)
+                    return
                 }
 
-                setTimeout(() => setShowPrompt(true), 2000)
+                setTimeout(() => {
+                    markPushPromptShown()
+                    setShowPrompt(true)
+                }, 2000)
                 setLoading(false)
 
             } catch (error) {
@@ -88,6 +104,17 @@ function Home() {
 
         checkAuth()
     }, [navigate])
+
+    useEffect(() => {
+        document.documentElement.classList.add('app-shell')
+        document.body.classList.add('app-shell')
+
+        return () => {
+            document.documentElement.classList.remove('app-shell')
+            document.body.classList.remove('app-shell')
+            document.body.classList.remove('vision-open')
+        }
+    }, [])
 
     if (loading) return <div>Загрузка...</div>
     if (!user) return null
@@ -121,7 +148,7 @@ function Home() {
                             <span>Лейка</span>
                         </div>
                         <div className="desktopAccount">
-                            <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                            <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
                             <button
                                 type="button"
                                 className="desktopProfileButton"
@@ -139,6 +166,7 @@ function Home() {
                     </header>
                     <HistoryChat />
                     <Chat />
+                    <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
                     <Tools onTabChange={handleTabChange} activeTab={activeTab} />
                     {showPrompt && (
                         <NotificationPrompt
@@ -158,7 +186,7 @@ function Home() {
                     <span>Лейка</span>
                 </div>
                 <div className="desktopAccount">
-                    <img className="desktopNotifications" src={Notification} alt="Уведомления" />
+                    <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
                     <button
                         type="button"
                         className="desktopProfileButton"
@@ -174,6 +202,8 @@ function Home() {
                     </button>
                 </div>
             </header>
+            <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
+            {activeTab === 'home' && <AiTicker />}
             <div key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}

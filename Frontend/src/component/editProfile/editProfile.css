@@ -1,11 +1,22 @@
 .editProfilePage {
     position: fixed;
     inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     background: #F5F3EF;
     z-index: 1000;
-    padding: 20px;
+    padding:
+        calc(20px + env(safe-area-inset-top, 0px))
+        calc(20px + env(safe-area-inset-right, 0px))
+        calc(24px + env(safe-area-inset-bottom, 0px))
+        calc(20px + env(safe-area-inset-left, 0px));
     overflow-y: auto;
     box-sizing: border-box;
+}
+
+.editProfilePage > * {
+    width: min(100%, 480px);
 }
 
 .editProfileHeader {
@@ -25,14 +36,14 @@
 .headerOfImgNames {
     display: flex;
     justify-content: center;
-    margin-top: 10%;
+    margin-top: 24px;
 }
 
 .editProfile {
     background-color: #FFFFFF;
     border-radius: 20px;
     padding: 20px 20px;
-    margin-top: 5%;
+    margin-top: 20px;
 }
 
 .editProfile p {
@@ -84,10 +95,10 @@
     font-weight: 400;
     color: #FFFFFF;
     margin-bottom: 0;
-    margin-top: 5%;
-    padding: 3% 0;
+    margin-top: 20px;
+    padding: 14px 0;
     border: none;
-    background-color: #7C9082;
+    background-color: #7FD1A0;
     border-radius: 16px;
     width: 100%;
     cursor: pointer;
@@ -101,7 +112,11 @@
 
 @media (max-width: 480px) {
     .editProfilePage {
-        padding: 16px;
+        padding:
+            calc(16px + env(safe-area-inset-top, 0px))
+            calc(16px + env(safe-area-inset-right, 0px))
+            calc(20px + env(safe-area-inset-bottom, 0px))
+            calc(16px + env(safe-area-inset-left, 0px));
     }
 
     .editProfileHeader {
@@ -139,7 +154,11 @@
 
 @media (min-width: 481px) and (max-width: 768px) {
     .editProfilePage {
-        padding: 18px;
+        padding:
+            calc(18px + env(safe-area-inset-top, 0px))
+            calc(18px + env(safe-area-inset-right, 0px))
+            calc(22px + env(safe-area-inset-bottom, 0px))
+            calc(18px + env(safe-area-inset-left, 0px));
     }
 
     .editProfile {

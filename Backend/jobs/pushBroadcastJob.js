@@ -2,8 +2,11 @@ import cron from 'node-cron'
 import { Op } from 'sequelize'
 import PushBroadcast from '../models/PushBroadcast.js'
 import pushBroadcastService from '../services/pushBroadcastService.js'
+import { withDistributedLock } from '../utils/distributedLock.js'
 
 const STALE_SENDING_MS = 10 * 60 * 1000
+const BROADCAST_LOCK = 'job:push-broadcast'
+const BROADCAST_LOCK_TTL_MS = 2 * 60 * 1000
 
 async function logStaleSending(now) {
     try {
@@ -72,7 +75,15 @@ export async function processDueBroadcasts({ now = new Date() } = {}) {
 export function startPushBroadcastJob() {
     const task = cron.schedule('* * * * *', async () => {
         try {
-            const summary = await processDueBroadcasts()
+            const outcome = await withDistributedLock(
+                BROADCAST_LOCK,
+                { ttlMs: BROADCAST_LOCK_TTL_MS },
+                () => processDueBroadcasts()
+            )
+
+            if (!outcome.ran) return
+
+            const summary = outcome.result
             if (summary.picked > 0) {
                 console.log(
                     `📢 Push-рассылки: ${summary.picked} к отправке, ` +
@@ -84,6 +95,6 @@ export function startPushBroadcastJob() {
         }
     })
 
-    console.log('📢 PushBroadcastJob запущен (каждую минуту)')
+    console.log('📢 PushBroadcastJob запущен (каждую минуту, распределённый лок Redis)')
     return task
 }

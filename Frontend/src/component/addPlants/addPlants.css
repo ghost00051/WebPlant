@@ -370,11 +370,11 @@ body {
 
 .speciesInputShell.isLoading {
     background: conic-gradient(from var(--species-border-angle, 0deg),
-            #7C9082,
+            #7FD1A0,
             #79C9A5,
             #72B7D8,
             #A58AD8,
-            #7C9082);
+            #7FD1A0);
     animation: speciesBorderSpin 1.8s linear infinite;
 }
 
@@ -410,7 +410,7 @@ body {
 @media (prefers-reduced-motion: reduce) {
     .speciesInputShell.isLoading {
         animation: none;
-        background: linear-gradient(90deg, #7C9082, #79C9A5, #72B7D8, #7C9082);
+        background: linear-gradient(90deg, #7FD1A0, #79C9A5, #72B7D8, #7FD1A0);
     }
 }
 
@@ -438,7 +438,7 @@ body {
     font-weight: 500;
     font-style: normal;
     color: #7C9082;
-    background-color: #7c908229;
+    background-color: #7c908233;
     margin-right: 2%;
     border: none;
     border-radius: 11px;
@@ -504,7 +504,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #7C9082;
+    color: #7FD1A0;
     background: none;
     border: none;
     height: fit-content;
@@ -514,7 +514,7 @@ body {
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
     font-weight: 500;
-    color: #7C9082;
+    color: var(--color-white-tema);
 }
 
 .wateringAdviceTrigger {
@@ -642,7 +642,7 @@ body {
 .wateringAdviceMessage.user {
     align-self: flex-end;
     border-bottom-right-radius: 5px;
-    background: #7C9082;
+    background: #7FD1A0;
     color: #FFFFFF;
 }
 
@@ -679,7 +679,7 @@ body {
     padding: 10px 16px;
     border: 0;
     border-radius: 13px;
-    background: #7C9082;
+    background: #7FD1A0;
     color: #FFFFFF;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-md);
@@ -748,7 +748,7 @@ body {
 }
 
 .wateringAdviceReply textarea:focus-visible {
-    outline: 2px solid #7C9082;
+    outline: 2px solid #7FD1A0;
     outline-offset: 2px;
 }
 
@@ -795,9 +795,9 @@ body {
 }
 
 .wateringPreset.active {
-    background-color: #7C9082;
+    background-color: var(--color-white-tema);
     color: #FFFFFF;
-    border-color: #7C9082;
+    border-color: var(--color-white-tema);
 }
 
 .buttonHoldWatering {
@@ -823,11 +823,11 @@ body {
 
 .customSchedule.active {
     background-color: #E9EFEA;
-    border-color: #7C9082;
+    border-color: #7FD1A0;
 }
 
 .customSchedule.active p:first-child {
-    color: #7C9082;
+    color: #7FD1A0;
 }
 
 .counterBtn {
@@ -999,9 +999,41 @@ input:checked+.slider::before {
 }
 
 .wateringWeekday.active {
-    background-color: #7C9082;
+    background-color: var(--color-white-tema);
     color: #FFFFFF;
-    border-color: #7C9082;
+    border-color: #7FD1A0;
+}
+
+.wateringWeekday:disabled {
+    cursor: default;
+    opacity: 1;
+}
+
+.wateringWeekday.preview {
+    background-color: #EAF5EE;
+    border-color: #9FD8B8;
+    color: #4E8A67;
+}
+
+.wateringWeekdayPreview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    margin: 10px 0 0;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    color: #8A8A8A;
+}
+
+.wateringWeekdayPreview span {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+}
+
+.wateringWeekdayPreview b {
+    color: #5C7163;
+    font-weight: 600;
 }
 
 .addPlantError {

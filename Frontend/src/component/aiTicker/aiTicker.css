@@ -1,0 +1,109 @@
+.aiTicker {
+    position: relative;
+    flex: 0 0 auto;
+    overflow: hidden;
+    border-bottom: 1px solid #E7BB2C;
+    background: linear-gradient(90deg, #FFE382 0%, #FFD54A 12%, #FFD54A 88%, #FFE382 100%);
+    color: #3B2C00;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.01em;
+}
+
+.aiTickerViewport {
+    overflow: hidden;
+    padding: 6px 0;
+    -webkit-mask-image: linear-gradient(
+        90deg,
+        transparent 0,
+        #000 14px,
+        #000 calc(100% - 14px),
+        transparent 100%
+    );
+    mask-image: linear-gradient(
+        90deg,
+        transparent 0,
+        #000 14px,
+        #000 calc(100% - 14px),
+        transparent 100%
+    );
+}
+
+.aiTickerTrack {
+    display: flex;
+    width: max-content;
+    animation: aiTickerScroll 30s linear infinite;
+    will-change: transform;
+}
+
+.aiTicker:hover .aiTickerTrack,
+.aiTicker:focus-within .aiTickerTrack {
+    animation-play-state: paused;
+}
+
+.aiTickerGroup {
+    display: flex;
+    flex: 0 0 auto;
+}
+
+.aiTickerItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 22px;
+    white-space: nowrap;
+}
+
+.aiTickerIcon {
+    font-size: 11px;
+    line-height: 1;
+}
+
+@keyframes aiTickerScroll {
+    from {
+        transform: translate3d(0, 0, 0);
+    }
+
+    to {
+        transform: translate3d(-50%, 0, 0);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .aiTickerViewport {
+        -webkit-mask-image: none;
+        mask-image: none;
+    }
+
+    .aiTickerTrack {
+        display: block;
+        width: auto;
+        animation: none;
+    }
+
+    .aiTickerGroup {
+        display: block;
+        width: auto;
+    }
+
+    .aiTickerGroup + .aiTickerGroup {
+        display: none;
+    }
+
+    .aiTickerItem {
+        display: block;
+        width: 100%;
+        padding: 0 14px;
+        line-height: 1.35;
+        white-space: normal;
+    }
+
+    .aiTickerIcon {
+        margin-right: 6px;
+    }
+
+    .aiTickerItem + .aiTickerItem {
+        display: none;
+    }
+}

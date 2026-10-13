@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import EmptyIcon from '../../assets/EmptyIcon.svg'
 import chevronRight from '../../assets/chevron-right.svg'
 import plantPlaceholder from '../../assets/PlantTile.svg'
@@ -6,8 +7,10 @@ import './visionNextPlant.css'
 import './adaptiv.css'
 import './dark-theme.css'
 import IconCircle from '../../assets/IconCircle.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import PlantPhoto from '../PlantPhoto/PlantPhoto'
 
-function pluralizePlants(n) {
+function pluralizePlants (n) {
   const abs = Math.abs(n) % 100
   const last = abs % 10
   if (abs > 10 && abs < 20) return 'растений'
@@ -16,7 +19,7 @@ function pluralizePlants(n) {
   return 'растений'
 }
 
-function pluralizeDays(n) {
+function pluralizeDays (n) {
   const abs = Math.abs(n) % 100
   const last = abs % 10
   if (abs > 10 && abs < 20) return 'дней'
@@ -25,23 +28,27 @@ function pluralizeDays(n) {
   return 'дней'
 }
 
-function getWateringTime(timeOfDay) {
+function getWateringTime (timeOfDay) {
   switch (timeOfDay) {
-    case 'morning': return '9:00'
-    case 'day': return '14:00'
-    case 'evening': return '19:00'
-    default: return null
+    case 'morning':
+      return '9:00'
+    case 'day':
+      return '14:00'
+    case 'evening':
+      return '19:00'
+    default:
+      return null
   }
 }
 
-function getPastTime(iso) {
+function getPastTime (iso) {
   const d = new Date(iso)
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
   return `${hh}:${mm}`
 }
 
-function getPlantPhoto(plant) {
+function getPlantPhoto (plant) {
   if (plant?.photo_url) return plant.photo_url
   if (Array.isArray(plant?.photos) && plant.photos.length > 0) {
     const first = plant.photos[0]
@@ -50,18 +57,33 @@ function getPlantPhoto(plant) {
   return plantPlaceholder
 }
 
-function formatWateringCycle(days) {
+function formatWateringCycle (days) {
   if (!days || days <= 0) return null
   if (days === 1) return 'Ежедневно'
   return `каждые ${days} ${pluralizeDays(days)}`
 }
 
-function VisionNextPlant({
+function getMissedTimeLabel (event) {
+  if (Number.isFinite(event?.days_late) && event.days_late > 0) {
+    return `${event.days_late} ${pluralizeDays(event.days_late)}`
+  }
+  if (Number.isFinite(event?.hours_late) && event.hours_late > 0) {
+    return `${event.hours_late} ч`
+  }
+  if (event?.scheduled_for) {
+    return getPastTime(event.scheduled_for)
+  }
+  return '—'
+}
+
+function VisionNextPlant ({
   active,
   day,
   nextWatering,
   onGoToDate,
+  onWater,
   onDeleteWatering,
+  wateringPlantId,
   deletingWateringId,
   onClose
 }) {
@@ -71,43 +93,73 @@ function VisionNextPlant({
   }, [active])
 
   const [deleteTarget, setDeleteTarget] = useState(null)
-
+  const [waterError, setWaterError] = useState(null)
   const kind = day?.kind ?? 'empty'
 
-  const isFuture = kind === 'future'
   const isPast = kind === 'past'
   const isEmpty = kind === 'empty'
 
-  const futureCount = day?.plants?.length ?? 0
-  const pastEvents = day?.events ?? []
-
+  const pendingPlants = day?.plants ?? []
   const localEvents = day?.events ?? []
   const wateredEvents = localEvents.filter(e => e.kind === 'watered')
   const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
+  const skippedEvents = localEvents.filter(e => e.kind === 'skipped')
+  const pendingCount = pendingPlants.length
+  const hasRows = pendingCount > 0 || localEvents.length > 0
 
-  let counterLabel = ''
-  if (isFuture) {
-    counterLabel = futureCount === 1
-      ? '1 растение ждёт полива'
-      : `${futureCount} ${pluralizePlants(futureCount)} ждут полива`
-  } else if (isPast) {
-    const parts = []
-    if (wateredEvents.length) {
-      parts.push(
-        wateredEvents.length === 1
-          ? '1 полито'
-          : `${wateredEvents.length} полито`
-      )
+  const dayIso = day?.iso ?? null
+  const waterErrorMessage =
+    waterError && waterError.iso === dayIso ? waterError.message : ''
+
+  const handleWaterPlant = async (plantId, scheduledFor) => {
+    if (!plantId || wateringPlantId) return
+
+    setWaterError(null)
+    try {
+      const result = await onWater?.(plantId, scheduledFor)
+      if (result && result.ok === false && result.message) {
+        setWaterError({ iso: dayIso, message: result.message })
+      }
+    } catch (error) {
+      console.error('Ошибка отметки просроченного полива:', error)
+      setWaterError({
+        iso: dayIso,
+        message: 'Не удалось отметить полив. Попробуйте ещё раз.'
+      })
     }
-    if (overdueEvents.length) {
-      parts.push(
-        overdueEvents.length === 1
-          ? '1 пропущено'
-          : `${overdueEvents.length} пропущено`
-      )
-    }
-    counterLabel = parts.join(' · ') || 'Событий нет'
   }
+
+  const counterParts = []
+  if (wateredEvents.length) {
+    counterParts.push(
+      wateredEvents.length === 1
+        ? '1 полито'
+        : `${wateredEvents.length} полито`
+    )
+  }
+  if (overdueEvents.length) {
+    counterParts.push(
+      overdueEvents.length === 1
+        ? '1 просрочено'
+        : `${overdueEvents.length} просрочено`
+    )
+  }
+  if (skippedEvents.length) {
+    counterParts.push(
+      skippedEvents.length === 1
+        ? '1 пропущено'
+        : `${skippedEvents.length} пропущено`
+    )
+  }
+  if (pendingCount) {
+    counterParts.push(
+      pendingCount === 1
+        ? '1 растение ждёт полива'
+        : `${pendingCount} ${pluralizePlants(pendingCount)} ждут полива`
+    )
+  }
+
+  const counterLabel = counterParts.join(' · ')
 
   useEffect(() => {
     if (!deleteTarget) return undefined
@@ -146,27 +198,27 @@ function VisionNextPlant({
     onClose?.()
   }
 
-  const renderPlantRow = (plant, {
-    variant,
-    timeLabel,
-    key,
-    wateringLogId
-  }) => {
+  const renderPlantRow = (
+    plant,
+    { variant, timeLabel, scheduledFor, key, wateringLogId }
+  ) => {
     const isOverdue = variant === 'overdue'
+    const isSkipped = variant === 'skipped'
     const isWatered = variant === 'watered'
     const isFutureRow = variant === 'future'
+    const isMissed = isOverdue || isSkipped
+    const isWatering = wateringPlantId === plant.id
 
     return (
-      <li key={key} className='plantsPreview__item' >
+      <li key={key} className='plantsPreview__item'>
         <div className='plantsPreview__photoWrap'>
           <div>
-            <img
+            <PlantPhoto
               src={getPlantPhoto(plant)}
               alt={plant.name}
               className='plantsPreview__photo'
               loading='lazy'
               decoding='async'
-              onError={e => { e.currentTarget.src = plantPlaceholder }}
             />
           </div>
           <div>
@@ -178,10 +230,10 @@ function VisionNextPlant({
                   {plant.species && <p>{plant.species}</p>}
                 </>
               )}
-              {isOverdue && (
+              {isMissed && (
                 <>
                   <p className='descriptionOfplantsPreview__name--overdue'>
-                    Пропущено
+                    {isSkipped ? 'Пропущено' : 'Просрочено'}
                   </p>
                   {plant.species && <p>{plant.species}</p>}
                 </>
@@ -190,8 +242,6 @@ function VisionNextPlant({
                 <>
                   <p>Цикл:</p>
                   <p>{formatWateringCycle(plant.watering_interval_days)}</p>
-                  {/* <span />
-                  <p>{plant.species}</p> */}
                 </>
               )}
             </div>
@@ -202,21 +252,40 @@ function VisionNextPlant({
             className={[
               'classOfgetWateringTime',
               isWatered && 'classOfgetWateringTime--past',
-              isOverdue && 'classOfgetWateringTime--overdue',
-            ].filter(Boolean).join(' ')}
+              isMissed && 'classOfgetWateringTime--overdue'
+            ]
+              .filter(Boolean)
+              .join(' ')}
           >
             {timeLabel}
           </p>
+          {isMissed && (
+            <button
+              type='button'
+              className='plantsPreview__water'
+              disabled={Boolean(wateringPlantId)}
+              aria-busy={isWatering}
+              aria-label={`Отметить полив растения «${plant.name}»`}
+              onClick={() => handleWaterPlant(plant.id, scheduledFor)}
+            >
+              {isWatering && (
+                <span className='plantsPreview__waterSpinner' aria-hidden='true' />
+              )}
+              {isWatering ? 'Поливаем…' : 'Полить'}
+            </button>
+          )}
           {isWatered && Number.isInteger(wateringLogId) && (
             <button
               type='button'
               className='plantsPreview__delete'
               aria-label={`Удалить запись о поливе растения «${plant.name}»`}
-              onClick={() => setDeleteTarget({
-                plantId: plant.id,
-                wateringLogId,
-                plantName: plant.name
-              })}
+              onClick={() =>
+                setDeleteTarget({
+                  plantId: plant.id,
+                  wateringLogId,
+                  plantName: plant.name
+                })
+              }
             >
               Удалить
             </button>
@@ -226,7 +295,7 @@ function VisionNextPlant({
     )
   }
 
-  return (
+  return createPortal(
     <div
       className={`vision-overlay ${active ? 'is-active' : ''}`}
       onClick={handleOverlayClick}
@@ -264,10 +333,14 @@ function VisionNextPlant({
                 <p className='selectDayCheck'>Выберите день</p>
               )}
             </div>
-
+            {waterErrorMessage && (
+              <p className='wateringNote wateringNote--error' role='alert'>
+                {waterErrorMessage}
+              </p>
+            )}
             {day && isEmpty && (
               <div className='selectDayEmpty'>
-                <img
+                <ThemedIcon
                   src={EmptyIcon}
                   alt=''
                   className='headerImgOfselectDayEmpty'
@@ -298,39 +371,49 @@ function VisionNextPlant({
                 )}
               </div>
             )}
-
-            {day && isFuture && futureCount > 0 && (
+            {day && hasRows && (
               <ul className='plantsPreview'>
-                {day.plants.map(p => renderPlantRow(p, {
-                  variant: 'future',
-                  timeLabel: getWateringTime(p.watering_time_of_day),
-                  key: p.id,
-                }))}
-              </ul>
-            )}
-
-            {day && isPast && pastEvents.length > 0 && (
-              <ul className='plantsPreview'>
-                {overdueEvents.map((ev, i) => renderPlantRow(ev.plant, {
-                  variant: 'overdue',
-                  timeLabel: ev.days_late > 0
-                    ? `${ev.days_late} ${pluralizeDays(ev.days_late)}`
-                    : '—',
-                  key: `overdue-${ev.plant.id}-${i}`,
-                }))}
-                {wateredEvents.map((ev, i) => renderPlantRow(ev.plant, {
-                  variant: 'watered',
-                  timeLabel: getPastTime(ev.watered_at),
-                  wateringLogId: ev.id,
-                  key: `watered-${ev.plant.id}-${i}`,
-                }))}
+                {overdueEvents.map((ev, i) =>
+                  renderPlantRow(ev.plant, {
+                    variant: 'overdue',
+                    timeLabel: getMissedTimeLabel(ev),
+                    scheduledFor: ev.scheduled_for ?? day.iso,
+                    key: `overdue-${ev.plant.id}-${i}`
+                  })
+                )}
+                {skippedEvents.map((ev, i) =>
+                  renderPlantRow(ev.plant, {
+                    variant: 'skipped',
+                    timeLabel: getMissedTimeLabel(ev),
+                    scheduledFor: ev.scheduled_for ?? day.iso,
+                    key: `skipped-${ev.plant.id}-${i}`
+                  })
+                )}
+                {pendingPlants.map(p =>
+                  renderPlantRow(p, {
+                    variant: 'future',
+                    timeLabel: getWateringTime(p.watering_time_of_day),
+                    key: `plan-${p.id}`
+                  })
+                )}
+                {wateredEvents.map((ev, i) =>
+                  renderPlantRow(ev.plant, {
+                    variant: 'watered',
+                    timeLabel: getPastTime(ev.watered_at),
+                    wateringLogId: ev.id,
+                    key: `watered-${ev.plant.id}-${i}`
+                  })
+                )}
               </ul>
             )}
           </div>
         </div>
       </div>
       {deleteTarget && (
-        <div className='wateringDeleteDialog' onClick={event => event.stopPropagation()}>
+        <div
+          className='wateringDeleteDialog'
+          onClick={event => event.stopPropagation()}
+        >
           <section
             className='wateringDeleteDialog__card'
             role='dialog'
@@ -338,10 +421,15 @@ function VisionNextPlant({
             aria-labelledby='watering-delete-title'
             aria-describedby='watering-delete-description'
           >
-            <img src={IconCircle} alt='' className='wateringDeleteDialog__icon' />
+            <ThemedIcon
+              src={IconCircle}
+              alt=''
+              className='wateringDeleteDialog__icon'
+            />
             <h2 id='watering-delete-title'>Удалить запись о поливе?</h2>
             <p id='watering-delete-description'>
-              Полив растения «{deleteTarget.plantName}» будет удалён. Это действие нельзя отменить. Полив будет удален.
+              Полив растения «{deleteTarget.plantName}» будет удалён. Это
+              действие нельзя отменить. Полив будет удален.
             </p>
             <div className='wateringDeleteDialog__actions'>
               <button
@@ -364,7 +452,8 @@ function VisionNextPlant({
           </section>
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   )
 }
 

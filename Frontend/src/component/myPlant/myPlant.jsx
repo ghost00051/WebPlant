@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackBtn from '../../assets/BackBtn.svg'
+import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './myPlant.css'
 import './dark-theme.css'
 import search from '../../assets/search.svg'
@@ -209,7 +210,7 @@ function MyPlant() {
                     onClick={() => navigate(-1)}
                     aria-label='Назад'
                 >
-                    <img src={BackBtn} alt='' />
+                    <ThemedIcon src={BackBtn} alt='' />
                 </button>
                 <h1>Мои растения</h1>
             </header>
