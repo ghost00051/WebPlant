@@ -56,3 +56,10 @@ $RECYCLE.BIN/
 *dsa.htmlAnimated-Floating-Tab-bar-/
 Bug-Tracker-WebPlant.csv
 Bug-Tracker-WebPlant.xlsx
+deploy.config.json
+deploy.mjs
+Frontend/htaccess
+DEPLOY.md
+probe-upload-test.html
+upload-dist.ps1
+Frontend/htaccess

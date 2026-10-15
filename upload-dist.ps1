@@ -6,7 +6,8 @@ param(
     [string]$LocalRoot = '',
     [switch]$UseSsl,
     [switch]$Verify,
-    [switch]$ListOnly
+    [switch]$ListOnly,
+    [switch]$ListRemote
 )
 
 $ErrorActionPreference = 'Stop'
@@ -55,6 +56,23 @@ function Ensure-FtpDirectory([string]$Path) {
 if (-not (Test-Path $LocalRoot)) { throw "Local directory not found: $LocalRoot" }
 
 $localFiles = Get-ChildItem -LiteralPath $LocalRoot -Recurse -File
+
+if ($ListRemote) {
+    Write-Host "Remote listing of ftp://$FtpHost$RemoteRoot :"
+    try {
+        $request = New-FtpRequest "ftp://$FtpHost$RemoteRoot" ([System.Net.WebRequestMethods+Ftp]::ListDirectoryDetails)
+        $response = $request.GetResponse()
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+        $lines = $reader.ReadToEnd()
+        $reader.Close()
+        $response.Close()
+        $lines -split "`r?`n" | Where-Object { $_.Trim() } | ForEach-Object { Write-Host "  $_" }
+    } catch {
+        Write-Host "  FAIL: $($_.Exception.Message)"
+        exit 1
+    }
+    exit 0
+}
 
 if ($ListOnly) {
     Write-Host "Files that would be uploaded to ftp://$FtpHost$RemoteRoot :"

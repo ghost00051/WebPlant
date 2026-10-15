@@ -12,6 +12,7 @@ const buildDate = new Date().toISOString().slice(0, 10)
 const HUB_LASTMOD = '2026-10-13'
 const PLANT_LASTMOD = '2026-10-13'
 const HOME_PATH = '/'
+const singleMode = process.argv.includes('--single')
 
 const privateRoutes = {
   login: {

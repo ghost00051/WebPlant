@@ -66,18 +66,20 @@ DirectoryIndex index.html
     RewriteRule ^ / [R=301,L,NE]
 
     RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/(login|register|home|add-plant|edit-profile|my-plants|reset-password)\.html[\s?] [NC]
-    RewriteRule ^ /%1 [R=301,L,NE]
+    RewriteRule ^(login|register|home|add-plant|edit-profile|my-plants|reset-password)\.html$ /$1 [R=301,L,NE]
 
     RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/(plants|care)\.html[\s?] [NC]
-    RewriteRule ^ /%1 [R=301,L,NE]
+    RewriteRule ^(plants|care)\.html$ /$1 [R=301,L,NE]
 
-    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/plants-([a-z0-9-]+)\.html[\s?] [NC]
-    RewriteRule ^ /plants/%1 [R=301,L,NE]
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/plants-[a-z0-9-]+\.html[\s?] [NC]
+    RewriteRule ^plants-([a-z0-9-]+)\.html$ /plants/$1 [R=301,L,NE]
 
-    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/care-([a-z0-9-]+)\.html[\s?] [NC]
-    RewriteRule ^ /care/%1 [R=301,L,NE]
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/care-[a-z0-9-]+\.html[\s?] [NC]
+    RewriteRule ^care-([a-z0-9-]+)\.html$ /care/$1 [R=301,L,NE]
 
-    RewriteCond %{REQUEST_URI} /(?!404\.html$)[^/]*\.html$ [NC]
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/(?!404\.html[\s?])[^?\s]*\.html[\s?] [NC]
+    RewriteCond %{THE_REQUEST} !\s/(login|register|home|add-plant|edit-profile|my-plants|reset-password|plants|care|index)\.html[\s?] [NC]
+    RewriteCond %{THE_REQUEST} !\s/(plants|care)-[a-z0-9-]+\.html[\s?] [NC]
     RewriteRule ^ - [R=404,L]
 
     RewriteRule ^(login|register|home|add-plant|edit-profile|my-plants|reset-password)/?$ $1.html [L]
@@ -90,6 +92,8 @@ DirectoryIndex index.html
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
+
+    RewriteRule ^(plants|plants/[a-z0-9-]+|care|care/[a-z0-9-]+)/?$ index.html [L]
 
     RewriteRule ^ - [R=404,L]
 </IfModule>

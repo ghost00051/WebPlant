@@ -200,7 +200,9 @@ export async function createFileSystem(distDirectory) {
 }
 
 export function resolveRequest(rules, uriPath, options = {}) {
-  const relativePath = uriPath.replace(/^\/+/, '')
+  let relativePath = uriPath.replace(/^\/+/, '')
+  let rewrittenPath = relativePath
+  let rewrittenUri = uriPath.split('?')[0]
   const fileExists = options.fileExists ?? (() => false)
 
   const context = {
@@ -208,44 +210,63 @@ export function resolveRequest(rules, uriPath, options = {}) {
     https: options.https ?? true,
     forwardedProto: options.https === false ? 'http' : 'https',
     theRequest: options.theRequest ?? `GET ${uriPath} HTTP/1.1`,
-    requestUri: options.requestUri ?? uriPath.split('?')[0],
-    fileExists: fileExists(relativePath || uriPath)
+    get requestUri() { return rewrittenUri },
+    get fileExists() { return fileExists(relativePath) }
   }
 
-  for (const rule of rules) {
-    if (!new RegExp(rule.pattern).test(relativePath)) continue
+  for (let pass = 0; pass < 10; pass += 1) {
+    let substituted = false
 
-    const passed = conditionsPass(rule.conditions, context)
-    if (passed === false) continue
+    for (const rule of rules) {
+      if (!new RegExp(rule.pattern).test(relativePath)) continue
 
-    if (rule.flags.includes('R=301')) {
-      const capture = new RegExp(rule.pattern).exec(relativePath)
-      let target = rule.substitution
-      if (target === '^') target = uriPath
-      target = target.replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
-      if (!target.startsWith('http')) {
-        target = `https://checktheplants.ru${target}`
+      const passed = conditionsPass(rule.conditions, context)
+      if (passed === false) continue
+
+      if (rule.flags.includes('R=301')) {
+        const capture = new RegExp(rule.pattern).exec(relativePath)
+        let target = rule.substitution
+        if (target === '^') target = uriPath
+        target = target.replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
+        if (!target.startsWith('http')) {
+          target = `https://checktheplants.ru${target}`
+        }
+        target = target.replace('%{REQUEST_URI}', uriPath)
+        return { status: 301, location: target, description: 'канонический редирект' }
       }
-      target = target.replace('%{REQUEST_URI}', uriPath)
-      return { status: 301, location: target, description: 'канонический редирект' }
+
+      if (rule.flags.includes('R=404')) {
+        return { status: 404, description: 'правило 404: адрес не совпал ни с одним маршрутом' }
+      }
+
+      if (rule.flags.includes('L') && rule.substitution.endsWith('.html')) {
+        const capture = new RegExp(rule.pattern).exec(relativePath)
+        const target = rule.substitution
+          .replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
+
+        if (fileExists(target)) {
+          return {
+            status: 200,
+            description: target === 'index.html'
+              ? 'отдаётся общий index.html приложения'
+              : `отдаётся ${target}`
+          }
+        }
+
+        relativePath = target
+        rewrittenUri = `/${target}`
+        substituted = true
+        break
+      }
+
+      if (rule.substitution === '-') {
+        return fileExists(relativePath)
+          ? { status: 200, description: 'существующий файл отдаётся как есть' }
+          : { status: 404, description: 'файла нет' }
+      }
     }
 
-    if (rule.flags.includes('R=404')) {
-      return { status: 404, description: 'правило 404: адрес не совпал ни с одним маршрутом' }
-    }
-
-    if (rule.flags.includes('L') && rule.substitution.endsWith('.html')) {
-      const capture = new RegExp(rule.pattern).exec(relativePath)
-      const target = rule.substitution
-        .replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
-      return fileExists(target)
-        ? { status: 200, description: `отдаётся ${target}` }
-        : { status: 404, description: `нет файла ${target}` }
-    }
-
-    if (rule.substitution === '-') {
-      return { status: 200, description: 'существующий файл отдаётся как есть' }
-    }
+    if (!substituted) break
   }
 
   return { status: 404, description: 'ни одно правило не совпало' }
