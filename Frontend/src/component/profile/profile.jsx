@@ -24,6 +24,7 @@ import { useTheme } from '../../context/useTheme.js'
 import './dark-theme.css'
 
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
+const AdminMailPanel = lazy(() => import('../adminMail/AdminMailPanel.jsx'))
 
 function Profile () {
   const { theme, themeMode, setThemePreference } = useTheme()
@@ -451,6 +452,7 @@ function Profile () {
           }
         >
           <AdminPushPanel />
+          <AdminMailPanel />
         </Suspense>
       )}
       <div className='settingsNotification'>

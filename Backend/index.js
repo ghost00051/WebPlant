@@ -22,6 +22,8 @@ import "./models/NotificationPreference.js"
 import "./models/Notification.js"
 import "./models/PushBroadcast.js"
 import "./models/PushBroadcastRecipient.js"
+import "./models/MailBroadcast.js"
+import "./models/MailBroadcastRecipient.js"
 import "./models/PasswordResetToken.js"
 import "./models/Plant.js"
 import "./models/PlantPhoto.js"
@@ -34,10 +36,12 @@ import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
 import adminPushRouter from './routes/adminPushRoutes.js'
+import adminMailRouter from './routes/adminMailRoutes.js'
 import adminRouter from './routes/adminRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
+import { startMailBroadcastJob } from './jobs/mailBroadcastJob.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
 import plantRouter from "./routes/plantRoutes.js"
@@ -57,6 +61,8 @@ const MIGRATION_FILES_BY_TABLE = {
     notifications: 'Backend/migrations/20261006_create_notifications.sql',
     push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
     push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    mail_broadcasts: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
+    mail_broadcast_recipients: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
@@ -171,6 +177,7 @@ app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/admin/push", adminPushRouter)
+app.use("/api/admin/mail", adminMailRouter)
 app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
@@ -243,9 +250,9 @@ async function startServer() {
         }
 
         if (isMailConfigured()) {
-            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля будут отправляться`)
+            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля и рассылки из админки будут отправляться`)
         } else {
-            console.warn("⚠️ SMTP не настроен: восстановление пароля вернёт 503 (см. SMTP_USER/SMTP_PASSWORD)")
+            console.warn("⚠️ SMTP не настроен: восстановление пароля и рассылки писем вернут 503 (см. SMTP_USER/SMTP_PASSWORD)")
         }
 
         if (process.env.NODE_ENV === 'production') {
@@ -283,6 +290,7 @@ async function startServer() {
             console.log("⏰ Запущена очистка истекших согласий и auth-данных")
             reminderService.start()
             startPushBroadcastJob()
+            startMailBroadcastJob()
             console.log("📣 Планировщик отложенных рассылок запущен")
         } else {
             console.log("⏸ Фоновые задачи отключены (BACKGROUND_JOBS_ENABLED=false)")

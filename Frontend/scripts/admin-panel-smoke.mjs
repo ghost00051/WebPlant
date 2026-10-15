@@ -308,6 +308,21 @@ const pushPayload = {
     }]
 }
 
+const mailPayload = {
+    mailConfigured: true,
+    mailStatus: 'configured',
+    mailProblems: [],
+    from: 'Лейка <lejka@mail.ru>',
+    users: { total: 12, withEmail: 11, withoutEmail: 1 },
+    broadcasts: { total: 3, pending: 1, sending: 0, sent: 1, failed: 1, canceled: 0 },
+    totals: { sent: 14, failed: 2, skipped: 1 },
+    recent: [{
+        id: 1, subject: 'Как поливать растения в отпуске', status: 'sent', target_mode: 'all',
+        scheduled_for: null, sent_at: new Date().toISOString(), sent_count: 11, failed_count: 0,
+        skipped_count: 0, total_recipients: 11, created_at: new Date().toISOString()
+    }]
+}
+
 const healthPayload = {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -404,6 +419,23 @@ function route(url) {
                 : pushPayload
         }
     }
+    if (path.includes('/admin/mail/overview')) {
+        return {
+            status: 200,
+            data: empty
+                ? {
+                    mailConfigured: false,
+                    mailStatus: 'not-configured',
+                    mailProblems: [],
+                    from: '',
+                    users: { total: 0, withEmail: 0, withoutEmail: 0 },
+                    broadcasts: { total: 0, pending: 0, sending: 0, sent: 0, failed: 0, canceled: 0 },
+                    totals: { sent: 0, failed: 0, skipped: 0 },
+                    recent: []
+                }
+                : mailPayload
+        }
+    }
     if (path.includes('/system/docker-stats')) {
         if (empty) return { status: 503, data: { error: 'Docker недоступен' } }
         return { status: 200, data: dockerPayload }
@@ -464,6 +496,7 @@ const views = await import(new URL('../admin/js/views/overview.js', import.meta.
 const visitors = await import(new URL('../admin/js/views/visitors.js', import.meta.url).href)
 const users = await import(new URL('../admin/js/views/users.js', import.meta.url).href)
 const resources = await import(new URL('../admin/js/views/resources.js', import.meta.url).href)
+const mail = await import(new URL('../admin/js/views/mail.js', import.meta.url).href)
 const system = await import(new URL('../admin/js/views/system.js', import.meta.url).href)
 
 const allViews = [
@@ -474,10 +507,11 @@ const allViews = [
     resources.wateringsView,
     resources.photosView,
     resources.chatView,
+    mail.mailView,
     system.systemView
 ]
 
-check('восемь разделов объявлены', allViews.length === 8)
+check('девять разделов объявлены', allViews.length === 9)
 check('у всех разделов есть id, заголовок и render', allViews.every(view =>
     typeof view.id === 'string' && typeof view.title === 'string' && typeof view.render === 'function'))
 check('идентификаторы уникальны', new Set(allViews.map(view => view.id)).size === allViews.length)

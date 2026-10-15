@@ -5,8 +5,10 @@ import {
     describeMailStatus,
     isMailConfigured,
     readMailConfig,
+    renderBroadcastEmail,
     renderPasswordResetEmail,
-    renderWelcomeEmail
+    renderWelcomeEmail,
+    resolveAbsoluteUrl
 } from './mailService.js'
 
 const baseEnv = {
@@ -150,4 +152,89 @@ test('renderWelcomeEmail экранирует имя получателя в в�
 
     assert.ok(!html.includes('<script>'))
     assert.match(html, /&lt;script&gt;/)
+})
+
+test('resolveAbsoluteUrl достраивает внутренние пути и не трогает внешние', () => {
+    assert.equal(resolveAbsoluteUrl('/home'), 'https://checktheplants.ru/home')
+    assert.equal(resolveAbsoluteUrl('home'), 'https://checktheplants.ru/home')
+    assert.equal(resolveAbsoluteUrl('https://example.com/a?b=1'), 'https://example.com/a?b=1')
+    assert.equal(resolveAbsoluteUrl('http://example.com'), 'http://example.com')
+    assert.equal(resolveAbsoluteUrl('  /my-plants  '), 'https://checktheplants.ru/my-plants')
+    assert.equal(resolveAbsoluteUrl(''), '')
+    assert.equal(resolveAbsoluteUrl(null), '')
+})
+
+test('renderBroadcastEmail: тема, обращение по имени, абзацы и подпись', () => {
+    const { subject, text, html } = renderBroadcastEmail({
+        subject: 'Полив в отпуске',
+        body: 'Первое сообщение.\n\nВторое сообщение.',
+        userName: 'Анна',
+        recipientEmail: 'anna@mail.ru'
+    })
+
+    assert.equal(subject, 'Полив в отпуске')
+    assert.match(text, /^Здравствуйте, Анна!/)
+    assert.match(text, /Первое сообщение\./)
+    assert.match(text, /Второе сообщение\./)
+    assert.match(text, /— Лейка, https:\/\/checktheplants\.ru/)
+    assert.match(text, /Письмо отправлено на anna@mail\.ru\./)
+
+    assert.match(html, /Здравствуйте, Анна!/)
+    assert.equal((html.match(/<p style=/g) || []).length, 2)
+    assert.match(html, /<title>Полив в отпуске<\/title>/)
+    assert.match(html, /<img[^>]+src="https:\/\/checktheplants\.ru\/icons\/icon-192\.png"/)
+})
+
+test('renderBroadcastEmail: кнопка появляется только с подписью и ссылкой', () => {
+    const withoutButton = renderBroadcastEmail({
+        subject: 'Тема',
+        body: 'Текст',
+        ctaLabel: '',
+        ctaUrl: '/home'
+    })
+
+    assert.ok(!withoutButton.html.includes('<a href="https://checktheplants.ru/home"'))
+    assert.ok(!withoutButton.text.includes('/home'))
+
+    const withButton = renderBroadcastEmail({
+        subject: 'Тема',
+        body: 'Текст',
+        ctaLabel: 'Открыть свой сад',
+        ctaUrl: '/home'
+    })
+
+    assert.match(withButton.text, /Открыть свой сад: https:\/\/checktheplants\.ru\/home/)
+    assert.match(withButton.html, /<a href="https:\/\/checktheplants\.ru\/home"/)
+    assert.match(withButton.html, />Открыть свой сад<\/a>/)
+})
+
+test('renderBroadcastEmail: без имени нейтральное обращение, переводы строк сохраняются', () => {
+    const { text, html } = renderBroadcastEmail({
+        subject: 'Тема',
+        body: 'Строка один\nстрока два'
+    })
+
+    assert.match(text, /^Здравствуйте!/)
+    assert.ok(!text.includes('Здравствуйте, !'))
+    assert.match(html, /Строка один<br>строка два/)
+})
+
+test('renderBroadcastEmail экранирует вёрстку и требует тему с текстом', () => {
+    const { html, text } = renderBroadcastEmail({
+        subject: 'Тема',
+        body: '<script>alert(1)</script>',
+        userName: '<b>Анна</b>'
+    })
+
+    assert.ok(!html.includes('<script>'))
+    assert.match(html, /&lt;script&gt;/)
+    assert.match(html, /&lt;b&gt;Анна&lt;\/b&gt;/)
+    assert.ok(text.includes('<script>alert(1)</script>'))
+
+    assert.throws(() => renderBroadcastEmail({ body: 'Текст' }), /subject is required/)
+    assert.throws(() => renderBroadcastEmail({ subject: 'Тема' }), /body is required/)
+    assert.throws(
+        () => renderBroadcastEmail({ subject: '   ', body: 'Текст' }),
+        /subject is required/
+    )
 })

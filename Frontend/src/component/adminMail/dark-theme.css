@@ -1,0 +1,137 @@
+html[data-theme='dark'] .adminMailPanel {
+    background-color: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel :is(h2, p, span, label, legend, li, strong) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel :is(
+    .adminMailStatValue,
+    .adminMailStatLabel,
+    .adminMailFieldLabel,
+    .adminMailCounter,
+    .adminMailHint,
+    .adminMailSelectedCount,
+    .adminMailSelectedTitle,
+    .adminMailRecipientMeta,
+    .adminMailPreviewMeta,
+    .adminMailRecentMeta,
+    .adminMailRecentCounts,
+    .adminMailFrom,
+    .adminMailMessage
+) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailStatValue,
+html[data-theme='dark'] .adminMailPanel .adminMailSelectedCount,
+html[data-theme='dark'] .adminMailPanel .adminMailFrom strong {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel :is(
+    .adminMailStat,
+    .adminMailRecipients,
+    .adminMailPreview,
+    .adminMailRecentItem,
+    .adminMailRecipients input,
+    .adminMailField input,
+    .adminMailField textarea,
+    .adminMailScheduleRow input,
+    .adminMailModeSwitch button,
+    .adminMailSecondaryButton,
+    .adminMailRemoveButton,
+    .adminMailPreviewText
+) {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailRecipient {
+    background-color: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailPreviewFrame {
+    border-color: var(--theme-border);
+    background-color: #ffffff;
+}
+
+html[data-theme='dark'] .adminMailPanel :is(input, textarea)::placeholder {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailModeSwitch button.is-active {
+    border-color: var(--theme-accent);
+    background-color: var(--theme-accent-soft);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailSubmitButton {
+    background-color: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailSubmitButton:disabled {
+    background-color: var(--theme-raised);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminMailPanel :is(.adminMailWarning, .adminMailProblems) {
+    border-color: #6a4a22;
+    background-color: #33260f;
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailError {
+    color: #ff9b9b;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailSuccess {
+    color: #9fd8b4;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailRecipientMail {
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailRecipientNoMail {
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminMailPanel :is(.adminMailRecent, .adminMailSelected) {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailCancelButton {
+    border-color: #6a4a22;
+    background-color: #33260f;
+    color: #f0c184;
+}
+
+html[data-theme='dark'] .adminMailPanel :is(
+    .adminMailStatusPending,
+    .adminMailStatusSending,
+    .adminMailStatusSent,
+    .adminMailStatusFailed,
+    .adminMailStatusCanceled
+) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .adminMailPanel :is(.adminMailStatusPending, .adminMailStatusSending) {
+    color: #8fb8e8;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailStatusSent {
+    color: #9fd8b4;
+}
+
+html[data-theme='dark'] .adminMailPanel .adminMailStatusFailed {
+    color: #ff9b9b;
+}
