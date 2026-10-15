@@ -1,3 +1,5 @@
+import { resolveTimeZone } from './timeZone.js'
+
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
 const HOUR_IN_MILLISECONDS = 60 * 60 * 1000
 export const APP_TIME_ZONE = 'Europe/Moscow'
@@ -79,7 +81,6 @@ export function zonedDayHourAfter(value, days, hour, timeZone = APP_TIME_ZONE) {
     )
 }
 
-/** `days` суток вперёд с сохранением московского времени суток. */
 export function addZonedDays(value, days, timeZone = APP_TIME_ZONE) {
     const date = toValidDate(value)
     if (!date || !Number.isInteger(days)) return null
@@ -295,7 +296,15 @@ export function pickWateringLogForSlot(logs, action, slot) {
         return at !== null && at.getTime() >= range.from.getTime() && at.getTime() <= range.to.getTime()
     }
 
-    const candidates = logs.filter(log => log && log.action === action)
+    const isEarlyWatering = log => {
+        const scheduled = toValidDate(log.scheduled_for)
+        const actionAt = toValidDate(log.action_at)
+        return scheduled !== null && actionAt !== null && scheduled.getTime() > actionAt.getTime()
+    }
+
+    const candidates = logs
+        .filter(log => log && log.action === action)
+        .filter(log => action !== 'watered' || !isEarlyWatering(log))
     const bySlot = candidates.filter(log => inDay(log.scheduled_for))
     const pool = bySlot.length
         ? bySlot
@@ -320,9 +329,12 @@ export function weekdayRestrictionApplies(intervalDays) {
         (intervalDays === 1 || intervalDays % 7 === 0)
 }
 
-export function isReminderWeekday(weekdays, date) {
+export function isReminderWeekday(weekdays, date, timeZone = APP_TIME_ZONE) {
     if (!Array.isArray(weekdays) || weekdays.length === 0) return true
-    const scheduledDate = new Date(date)
-    return Number.isFinite(scheduledDate.getTime()) &&
-        weekdays.includes(scheduledDate.getDay())
+    const scheduledDate = toValidDate(date)
+    if (!scheduledDate) return false
+
+    const parts = zonedParts(scheduledDate, resolveTimeZone(timeZone))
+    const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
+    return weekdays.includes(weekday)
 }

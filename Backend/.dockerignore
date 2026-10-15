@@ -2,8 +2,7 @@ node_modules
 uploads
 npm-debug.log
 .env
-.env.local
-.env.production
+.env.*
 .git
 .gitignore
 .vscode
@@ -17,6 +16,7 @@ docker-compose.yml
 docker-compose.*.yml
 
 k8s
+_notif_smoke.mjs
 
 certbot
 nginx

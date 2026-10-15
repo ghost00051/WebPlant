@@ -134,6 +134,7 @@ export function evaluateCondition(condition, context) {
   else if (variable === '%{HTTP:X-Forwarded-Proto}') actual = context.forwardedProto
   else if (variable === '%{REQUEST_FILENAME}') actual = context.fileExists ? 'exists' : 'missing'
   else if (variable === '%{THE_REQUEST}') actual = context.theRequest
+  else if (variable === '%{REQUEST_URI}') actual = context.requestUri
   else return null
 
   if (operator === '=') return { matched: actual === expected, negated }
@@ -200,13 +201,15 @@ export async function createFileSystem(distDirectory) {
 
 export function resolveRequest(rules, uriPath, options = {}) {
   const relativePath = uriPath.replace(/^\/+/, '')
+  const fileExists = options.fileExists ?? (() => false)
 
   const context = {
     host: options.host ?? 'checktheplants.ru',
     https: options.https ?? true,
     forwardedProto: options.https === false ? 'http' : 'https',
     theRequest: options.theRequest ?? `GET ${uriPath} HTTP/1.1`,
-    fileExists: (options.fileExists ?? (() => false))(relativePath || uriPath)
+    requestUri: options.requestUri ?? uriPath.split('?')[0],
+    fileExists: fileExists(relativePath || uriPath)
   }
 
   for (const rule of rules) {
@@ -216,8 +219,10 @@ export function resolveRequest(rules, uriPath, options = {}) {
     if (passed === false) continue
 
     if (rule.flags.includes('R=301')) {
+      const capture = new RegExp(rule.pattern).exec(relativePath)
       let target = rule.substitution
       if (target === '^') target = uriPath
+      target = target.replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
       if (!target.startsWith('http')) {
         target = `https://checktheplants.ru${target}`
       }
@@ -230,7 +235,12 @@ export function resolveRequest(rules, uriPath, options = {}) {
     }
 
     if (rule.flags.includes('L') && rule.substitution.endsWith('.html')) {
-      return { status: 200, description: `отдаётся ${rule.substitution}` }
+      const capture = new RegExp(rule.pattern).exec(relativePath)
+      const target = rule.substitution
+        .replace(/\$(\d)/g, (match, index) => capture?.[Number(index)] ?? '')
+      return fileExists(target)
+        ? { status: 200, description: `отдаётся ${target}` }
+        : { status: 404, description: `нет файла ${target}` }
     }
 
     if (rule.substitution === '-') {

@@ -45,7 +45,7 @@ function NotificationPrompt({ onClose }) {
       console.log('✅ Подписка сохранена на сервере')
       onClose()
     } catch (err) {
-      markPushPromptAnswered('accepted')
+      markPushPromptAnswered('declined')
       console.error('❌ Ошибка подписки:', err)
       setError(err.message || 'Не удалось включить уведомления')
     } finally {

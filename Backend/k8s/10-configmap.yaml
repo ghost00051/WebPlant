@@ -5,6 +5,20 @@ metadata:
   namespace: webplant
   labels:
     app.kubernetes.io/name: webplant
+  annotations:
+    webplant.io/background-jobs-safety: >-
+      BACKGROUND_JOBS_ENABLED=true is safe with more than one backend replica: every cron
+      entry point runs inside withDistributedLock (Backend/utils/distributedLock.js), a Redis
+      SET NX PX lock with a per-instance token, token-checked Lua release and TTL renewal
+      while the task runs. Lock keys: job:reminder-tick (reminderService.runTick),
+      job:cleanup-expired (startCleanupJob), job:push-broadcast (startPushBroadcastJob) and
+      job:morning-summary:<userId>:<date> per user and day. All replicas share the cluster
+      Redis service redis:6379 (30-redis.yaml), so exactly one replica acts per tick.
+      Boundaries: single execution holds only while Redis is reachable - acquireLock degrades
+      to acquire-always when Redis is down, so then every replica runs the job; and the lock
+      dedupes replicas of this cluster only, not a separate compose stack with its own Redis.
+      deploy.ps1 patches this key right after kubectl apply (k8s/scripts/deploy.ps1), so the
+      cluster value must be confirmed afterwards or the deploy run with -EnableBackgroundJobs.
 data:
   NODE_ENV: production
   PORT: "5000"
@@ -27,6 +41,6 @@ data:
   AI_CACHE_TTL_SECONDS: "604800"
   AI_CHAT_CACHE_TTL_SECONDS: "600"
 
-  BACKGROUND_JOBS_ENABLED: "false"
+  BACKGROUND_JOBS_ENABLED: "true"
 
   DOCKER_STATS_ENABLED: "false"

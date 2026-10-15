@@ -40,7 +40,8 @@ const SCHEDULE_DAYS_AHEAD = 90
 function computeHoursLate(scheduledFor, actionAt) {
     if (!scheduledFor) return null
     const diff = (new Date(actionAt) - new Date(scheduledFor)) / (60 * 60 * 1000)
-    return Math.round(diff)
+    if (!Number.isFinite(diff)) return null
+    return Math.max(0, Math.round(diff))
 }
 
 function computeNextWatering(from, days, timeOfDay = 'morning', timeZone) {
@@ -341,8 +342,6 @@ class PlantController {
                         next_watering_at: dt,
                         watering_interval_days: intervalDays,
                         watering_time_of_day: p.watering_time_of_day,
-                        // Готовый признак просрочки: фронтенд не пересчитывает
-                        // правило по часам устройства, а берёт решение сервера.
                         is_missed: missed
                     })
                 }
@@ -933,7 +932,7 @@ class PlantController {
 
             transaction = await sequelize.transaction()
             const plant = await Plant.findOne({
-                where: { id: req.params.id, user_id: userId },
+                where: { id: req.params.id, user_id: userId, is_active: true },
                 transaction,
                 lock: transaction.LOCK.UPDATE
             })
@@ -991,6 +990,7 @@ class PlantController {
                 }
 
                 const skippedLog = pickWateringLogForSlot(slotLogs, 'skipped', slot)
+                const prevNextWateringAt = plant.next_watering_at
 
                 if (skippedLog) {
 
@@ -999,7 +999,17 @@ class PlantController {
                         action_at: plan.actionAt,
                         scheduled_for: plan.scheduledFor,
                         hours_late: plan.hoursLate,
-                        note: note || null
+                        note: note || null,
+                        metadata: {
+                            ...(skippedLog.metadata || {}),
+                            prev_next_watering_at: prevNextWateringAt,
+                            converted_from_skip: {
+                                action_at: skippedLog.action_at,
+                                scheduled_for: skippedLog.scheduled_for,
+                                hours_late: skippedLog.hours_late,
+                                note: skippedLog.note
+                            }
+                        }
                     }, { transaction })
                 } else {
                     await WateringLog.create({
@@ -1009,7 +1019,8 @@ class PlantController {
                         action_at: plan.actionAt,
                         scheduled_for: plan.scheduledFor,
                         hours_late: plan.hoursLate,
-                        note: note || null
+                        note: note || null,
+                        metadata: { prev_next_watering_at: prevNextWateringAt }
                     }, { transaction })
                 }
 
@@ -1063,7 +1074,8 @@ class PlantController {
                 action_at: now,
                 scheduled_for: scheduledFor,
                 hours_late: computeHoursLate(scheduledFor, now),
-                note: note || null
+                note: note || null,
+                metadata: { prev_next_watering_at: scheduledFor }
             }, { transaction })
             await transaction.commit()
 
@@ -1121,7 +1133,26 @@ class PlantController {
             })
             const isLatestAction = latestAction?.id === log.id
 
-            await log.destroy({ transaction })
+            const hasPrevPlan = Boolean(log.metadata) &&
+                Object.hasOwn(log.metadata, 'prev_next_watering_at')
+            const previousPlan = hasPrevPlan
+                ? log.metadata.prev_next_watering_at
+                : log.scheduled_for ?? log.action_at
+
+            const restoredSkip = isLatestAction ? log.metadata?.converted_from_skip : null
+
+            if (restoredSkip) {
+                await log.update({
+                    action: 'skipped',
+                    action_at: restoredSkip.action_at,
+                    scheduled_for: restoredSkip.scheduled_for,
+                    hours_late: restoredSkip.hours_late,
+                    note: restoredSkip.note,
+                    metadata: { ...(log.metadata || {}), converted_from_skip: null }
+                }, { transaction })
+            } else {
+                await log.destroy({ transaction })
+            }
 
             if (isLatestAction) {
                 const latestWatering = await WateringLog.findOne({
@@ -1137,7 +1168,7 @@ class PlantController {
 
                 await plant.update({
                     last_watered_at: latestWatering?.action_at ?? null,
-                    next_watering_at: log.scheduled_for ?? log.action_at
+                    next_watering_at: previousPlan
                 }, { transaction })
             }
 
@@ -1147,8 +1178,9 @@ class PlantController {
             return res.json({
                 message: 'Запись о поливе удалена',
                 scheduleRestored: isLatestAction,
+                restored_skip: Boolean(restoredSkip),
                 next_watering_at: isLatestAction
-                    ? log.scheduled_for ?? log.action_at
+                    ? previousPlan
                     : plant.next_watering_at
             })
         } catch (error) {
@@ -1215,7 +1247,8 @@ class PlantController {
                 action_at: now,
                 scheduled_for: scheduledFor,
                 hours_late: computeHoursLate(scheduledFor, now),
-                note: note || null
+                note: note || null,
+                metadata: { prev_next_watering_at: scheduledFor }
             }, { transaction })
             await transaction.commit()
 

@@ -58,6 +58,19 @@ async function isUsernameTaken(normalized, excludeUserId = null) {
     return true
 }
 
+async function isEmailTaken(normalized, excludeUserId = null) {
+    const candidate = await User.findOne({
+        where: sequelize.where(
+            sequelize.fn('LOWER', sequelize.col('email')),
+            normalized
+        ),
+        attributes: ['id']
+    })
+    if (!candidate) return false
+    if (excludeUserId && candidate.id === excludeUserId) return false
+    return true
+}
+
 function randomSuffix(len = 4) {
     const chars = 'abcdefghijklmnopqrstuvwxyz0123456789'
     let out = ''
@@ -366,7 +379,7 @@ class UserController {
                 return res.status(404).json({ message: "Пользователь не найден" })
             }
 
-            const { name, username, phone, bio, timezone } = req.body || {}
+            const { name, username, email, phone, bio, timezone } = req.body || {}
             const updates = {}
 
             if (timezone !== undefined) {
@@ -409,6 +422,25 @@ class UserController {
                 }
             }
 
+            if (email !== undefined) {
+                if (email === null || email === '') {
+                    return res.status(400).json({ message: "Email обязателен" })
+                }
+                if (!isValidEmail(email)) {
+                    return res.status(400).json({ message: "Некорректный email" })
+                }
+                const normalizedEmail = normalizeEmail(email)
+                if (normalizedEmail !== String(user.email).toLowerCase()) {
+                    const taken = await isEmailTaken(normalizedEmail, user.id)
+                    if (taken) {
+                        return res.status(409).json({
+                            message: "Этот email уже зарегистрирован"
+                        })
+                    }
+                }
+                updates.email = normalizedEmail
+            }
+
             if (phone !== undefined) {
                 if (phone !== null && phone !== '' && !isValidPhone(phone)) {
                     return res.status(400).json({ message: "Некорректный телефон" })
@@ -435,7 +467,7 @@ class UserController {
         } catch (e) {
             if (e instanceof UniqueConstraintError) {
                 return res.status(409).json({
-                    message: "Такое имя пользователя уже занято"
+                    message: "Такое имя пользователя или email уже занято"
                 })
             }
             console.error("❌ Ошибка обновления профиля:", e)

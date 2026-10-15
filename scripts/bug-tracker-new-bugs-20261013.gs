@@ -1,8 +1,3 @@
-// Добавление новых багов в лист «Реестр багов» (Google Sheets).
-// Запуск: Расширения → Apps Script → функция appendNewBugs20261013.
-// Функция добавляет BUG-020 и BUG-021, если таких ID в листе ещё нет,
-// и не трогает существующие строки.
-
 var SHEET_NAME = 'Реестр багов';
 
 var NEW_BUGS_20261013 = [
@@ -88,8 +83,6 @@ function appendNewBugs20261013() {
   NEW_BUGS_20261013.forEach(function (bug) {
     if (existingIds.indexOf(bug.id) !== -1) return;
 
-    // 25 колонок A..Y. Формульные колонки R (18) и X (24) остаются пустыми:
-    // если в листе они заданы на каждую строку, протяните формулы на новые строки.
     var row = new Array(25).fill('');
     row[0] = bug.id;
     row[1] = bug.discoveredAt;

@@ -40,7 +40,7 @@ metadata:
   labels:
     app: webplant-backend
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -93,7 +93,7 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
+              path: /livez
               port: http
             periodSeconds: 20
             timeoutSeconds: 5
@@ -121,7 +121,7 @@ metadata:
   name: backend
   namespace: webplant
 spec:
-  minAvailable: 1
+  maxUnavailable: 1
   selector:
     matchLabels:
       app: webplant-backend

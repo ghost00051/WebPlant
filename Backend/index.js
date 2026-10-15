@@ -10,7 +10,7 @@ import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
 import { plantThumbRequestHandler } from './utils/plantPhotoThumb.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
 import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
-import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
+import { closeRedis, describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
 import { getAiCacheStats } from './utils/aiCache.js'
 import sequelize from "./db.js"
 
@@ -125,6 +125,11 @@ function validateProductionConfig() {
 
 app.set('trust proxy', 1)
 
+app.use((req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+    next()
+})
+
 app.use(cors({
     origin: (origin, callback) => {
         callback(null, isAllowedOrigin(origin))
@@ -173,6 +178,10 @@ app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
 app.use('/api/chat', getGuestToken, chatRouter)
 
+app.get('/livez', (req, res) => {
+    return res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
 app.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate()
@@ -193,11 +202,6 @@ app.get('/health', async (req, res) => {
 
 app.get('/robots.txt', (req, res) => {
     res.type('text/plain').send('User-agent: *\nDisallow: /\n')
-})
-
-app.use((req, res, next) => {
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
-    next()
 })
 
 app.use((req, res) => {
@@ -284,10 +288,36 @@ async function startServer() {
             console.log("⏸ Фоновые задачи отключены (BACKGROUND_JOBS_ENABLED=false)")
         }
 
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)
             console.log(`🌐 http://localhost:${PORT}`)
         })
+
+        let shuttingDown = false
+        const shutdown = signal => {
+            if (shuttingDown) return
+            shuttingDown = true
+            console.log(`⏹ Получен ${signal}: останавливаю приём новых запросов`)
+
+            const forceExit = setTimeout(() => {
+                console.error('⚠️ Соединения не завершились за 20 секунд, принудительный выход')
+                process.exit(1)
+            }, 20_000)
+            forceExit.unref()
+
+            server.close(async () => {
+                try {
+                    await closeRedis()
+                } catch (error) {
+                    console.error('❌ Ошибка закрытия Redis:', error)
+                }
+                clearTimeout(forceExit)
+                process.exit(0)
+            })
+        }
+
+        process.on('SIGTERM', () => shutdown('SIGTERM'))
+        process.on('SIGINT', () => shutdown('SIGINT'))
     } catch (error) {
         console.error("❌ Ошибка при запуске сервера:", error)
         process.exit(1)

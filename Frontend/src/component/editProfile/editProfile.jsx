@@ -47,6 +47,13 @@ function EditProfile() {
         event.preventDefault()
         setError(null)
         setSuccessMessage('')
+
+        const email = rendEmail.trim().toLowerCase()
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            setError('Укажите корректный email')
+            return
+        }
+
         setSubmitting(true)
 
         try {
@@ -59,6 +66,7 @@ function EditProfile() {
                     body: JSON.stringify({
                         name: rendName,
                         username: rendNamePtofile,
+                        email,
                         bio,
                         phone: normalizePhone(phone)
                     })

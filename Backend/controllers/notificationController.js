@@ -1,3 +1,4 @@
+import { Op } from 'sequelize'
 import Notification from '../models/Notification.js'
 
 const LIST_ATTRIBUTES = [
@@ -14,6 +15,12 @@ const LIST_ATTRIBUTES = [
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
 const MAX_OFFSET = 1_000_000
+const DEFAULT_STATUS = 'all'
+const STATUS_FILTERS = {
+    all: () => ({}),
+    unread: () => ({ read_at: null }),
+    read: () => ({ read_at: { [Op.ne]: null } })
+}
 
 function parsePagination(query) {
     const rawLimit = query.limit
@@ -40,6 +47,18 @@ function parseNotificationId(value) {
     return Number.isSafeInteger(id) ? id : null
 }
 
+function parseStatus(value) {
+    if (value === undefined) return DEFAULT_STATUS
+    if (typeof value !== 'string' || !Object.hasOwn(STATUS_FILTERS, value)) return null
+    return value
+}
+
+async function countUnread(userId) {
+    return Notification.count({
+        where: { user_id: userId, read_at: null }
+    })
+}
+
 class NotificationController {
     async list(req, res) {
         try {
@@ -50,7 +69,14 @@ class NotificationController {
                 })
             }
 
-            const where = { user_id: req.user.id }
+            const status = parseStatus(req.query.status)
+            if (!status) {
+                return res.status(400).json({
+                    message: 'Параметр status должен принимать значение all, unread или read'
+                })
+            }
+
+            const where = { user_id: req.user.id, ...STATUS_FILTERS[status]() }
             const [result, unreadCount] = await Promise.all([
                 Notification.findAndCountAll({
                     where,
@@ -60,7 +86,7 @@ class NotificationController {
                     offset: pagination.offset
                 }),
                 Notification.count({
-                    where: { ...where, read_at: null }
+                    where: { user_id: req.user.id, read_at: null }
                 })
             ])
 
@@ -71,6 +97,7 @@ class NotificationController {
                 items,
                 total: result.count,
                 unreadCount,
+                status,
                 limit: pagination.limit,
                 offset: pagination.offset,
                 nextOffset: nextOffset < result.count ? nextOffset : null
@@ -83,9 +110,7 @@ class NotificationController {
 
     async unreadCount(req, res) {
         try {
-            const count = await Notification.count({
-                where: { user_id: req.user.id, read_at: null }
-            })
+            const count = await countUnread(req.user.id)
             return res.json({ unreadCount: count })
         } catch (error) {
             console.error('❌ Ошибка подсчёта непрочитанных уведомлений:', error)
@@ -120,7 +145,8 @@ class NotificationController {
 
             return res.json({
                 item: notification.toJSON(),
-                changed: updatedCount > 0
+                changed: updatedCount > 0,
+                unreadCount: await countUnread(req.user.id)
             })
         } catch (error) {
             console.error('❌ Ошибка отметки уведомления:', error)
@@ -139,7 +165,10 @@ class NotificationController {
                     }
                 }
             )
-            return res.json({ updatedCount })
+            return res.json({
+                updatedCount,
+                unreadCount: await countUnread(req.user.id)
+            })
         } catch (error) {
             console.error('❌ Ошибка отметки всех уведомлений:', error)
             return res.status(500).json({ message: 'Не удалось обновить уведомления' })

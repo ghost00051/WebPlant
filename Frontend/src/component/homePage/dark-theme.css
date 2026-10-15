@@ -10,3 +10,40 @@ html[data-theme='dark'] .godOfplantSoffSchedule {
     background: var(--theme-surface);
     border-color: var(--theme-border);
 }
+
+html[data-theme='dark'] .checkPlantSoffScheduleoverlay {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='dark'] .checkPlantSoffSchedule {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme='dark'] .godOfplantSoffSchedule .checkPlantSoffSchedule p:first-child {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .godOfplantSoffSchedule .checkPlantSoffSchedule p:nth-child(2) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .godOfplantSoffSchedule .checkPlantSoffScheduleNo {
+    background-color: rgba(255, 255, 255, 0.08);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .godOfplantSoffSchedule .checkPlantSoffScheduleNo:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme='dark'] .offScheduleToggle {
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .offScheduleToggle:hover {
+    background: var(--theme-raised);
+    border-color: #4a4d55;
+}

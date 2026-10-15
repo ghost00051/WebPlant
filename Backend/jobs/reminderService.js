@@ -13,7 +13,9 @@ import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
 const HOUR = 60 * 60 * 1000
 const SUMMARY_HOUR = 9
 const TICK_LOCK = 'job:reminder-tick'
-const TICK_LOCK_TTL_MS = 9 * 60 * 1000
+const TICK_INTERVAL_MINUTES = 10
+const TICK_CRON = `*/${TICK_INTERVAL_MINUTES} * * * *`
+const TICK_LOCK_TTL_MS = TICK_INTERVAL_MINUTES * 60 * 1000
 const SUMMARY_LOCK_TTL_MS = 30 * 60 * 1000
 
 function getDateParts(date, timeZone) {
@@ -78,7 +80,7 @@ async function loadTimeZones(userIds) {
 
 class ReminderService {
     start() {
-        cron.schedule('*/10 * * * *', () => this.runTick(), {
+        cron.schedule(TICK_CRON, () => this.runTick(), {
             timezone: 'UTC'
         })
         console.log('⏰ ReminderService запущен (каждые 10 минут, распределённый лок Redis)')
@@ -104,12 +106,11 @@ class ReminderService {
         })
 
         for (const candidate of plants) {
-            const transaction = await Plant.sequelize.transaction()
-            let plant
-            let hoursLate
-            let nextWatering
+            let transaction
             try {
-                plant = await Plant.findOne({
+                transaction = await Plant.sequelize.transaction()
+
+                const plant = await Plant.findOne({
                     where: {
                         id: candidate.id,
                         is_active: true,
@@ -124,7 +125,7 @@ class ReminderService {
                 }
 
                 const scheduledFor = new Date(plant.next_watering_at)
-                hoursLate = Math.round(
+                const hoursLate = Math.round(
                     (now - scheduledFor) / (60 * 60 * 1000)
                 )
 
@@ -134,7 +135,7 @@ class ReminderService {
                     : 7
                 const intervalMs = intervalDays * 24 * HOUR
                 const periodsToAdvance = Math.floor((now - scheduledFor) / intervalMs) + 1
-                nextWatering = new Date(
+                const nextWatering = new Date(
                     scheduledFor.getTime() + periodsToAdvance * intervalMs
                 )
 
@@ -156,15 +157,18 @@ class ReminderService {
                     note: 'Автоматический пропуск (просрочено > 24ч)'
                 }, { transaction })
                 await transaction.commit()
-            } catch (error) {
-                if (!transaction.finished) await transaction.rollback()
-                throw error
-            }
 
-            console.log(
-                `⏭ plant#${plant.id} «${plant.name}»: пропущен ` +
-                `(просрочен на ${hoursLate}ч), сдвинут на ${nextWatering.toISOString()}`
-            )
+                console.log(
+                    `⏭ plant#${plant.id} «${plant.name}»: пропущен ` +
+                    `(просрочен на ${hoursLate}ч), сдвинут на ${nextWatering.toISOString()}`
+                )
+            } catch (error) {
+                if (transaction && !transaction.finished) await transaction.rollback()
+                console.error(
+                    `❌ autoSkipOverdue: plant#${candidate.id} — пропуск не выполнен:`,
+                    error
+                )
+            }
         }
     }
 
@@ -227,7 +231,7 @@ class ReminderService {
             const body = plants.length
                 ? `Сегодня полить: ${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
                 : 'На сегодня полив не запланирован 🌱'
-            await storeNotification({
+            const { notification } = await storeNotification({
                 userId: preference.user_id,
                 type: 'morning_summary',
                 title: '🌿 Утренняя сводка',
@@ -239,7 +243,7 @@ class ReminderService {
                 '🌿 Утренняя сводка',
                 body,
                 '/icons/icon-192.png',
-                { url: '/home', tag: 'morning-summary' }
+                { url: '/home', tag: 'morning-summary', notificationId: notification.id }
             )
 
             if (result.sent > 0) {
@@ -265,8 +269,11 @@ class ReminderService {
             }
         })
 
+        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+
         for (const plant of plants) {
-            if (!this.matchesWeekday(plant)) continue
+            const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+            if (!this.matchesWeekday(plant, timeZone)) continue
             if (this.alreadyNotified(plant, 'day_before', now)) continue
 
             const result = await this.notify(plant, {
@@ -294,8 +301,11 @@ class ReminderService {
             }
         })
 
+        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+
         for (const plant of plants) {
-            if (!this.matchesWeekday(plant)) continue
+            const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+            if (!this.matchesWeekday(plant, timeZone)) continue
             if (this.alreadyNotified(plant, 'on_day', now)) continue
 
             const result = await this.notify(plant, {
@@ -311,11 +321,11 @@ class ReminderService {
         }
     }
 
-    matchesWeekday(plant) {
+    matchesWeekday(plant, timeZone = DEFAULT_TIME_ZONE) {
 
         if (!weekdayRestrictionApplies(plant.watering_interval_days)) return true
 
-        return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at)
+        return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at, timeZone)
     }
 
     alreadyNotified(plant, key, now) {
@@ -337,7 +347,7 @@ class ReminderService {
 
     async notify(plant, { title, body, tag, type }) {
         const scheduledFor = new Date(plant.next_watering_at)
-        await storeNotification({
+        const { notification } = await storeNotification({
             userId: plant.user_id,
             plantId: plant.id,
             type,
@@ -347,12 +357,18 @@ class ReminderService {
             dedupeKey: `plant:${plant.id}:${tag}:${scheduledFor.toISOString()}`,
             scheduledFor
         })
+
         return pushService.sendToUser(
             plant.user_id,
             title,
             body,
             '/icons/icon-192.png',
-            { plantId: plant.id, url: '/home', tag }
+            {
+                plantId: plant.id,
+                url: '/home',
+                tag,
+                notificationId: notification.id
+            }
         )
     }
 }

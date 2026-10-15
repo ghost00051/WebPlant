@@ -8,19 +8,15 @@ const DEFAULT_SMTP_PORT = 465
 const DEFAULT_TIMEOUT_MS = 10000
 const DEFAULT_SOCKET_TIMEOUT_MS = 20000
 const PRODUCT_NAME = 'Лейка'
-// Падежные формы для писем: «Лейка» / разработчик «Лейки» / «Лейку» / в «Лейке».
 const PRODUCT_NAME_CASES = {
     nom: 'Лейка',
     gen: 'Лейки',
     acc: 'Лейку',
     pre: 'Лейке'
 }
-// Предложный падеж для фраз «сброс пароля в „Лейке"».
 const PRODUCT_NAME_IN = PRODUCT_NAME_CASES.pre
 const PRODUCT_URL = 'https://checktheplants.ru'
-// Логотип в письмах. Картинку отдаёт сайт, поэтому вложение не нужно.
 const DEFAULT_LOGO_URL = 'https://checktheplants.ru/icons/icon-192.png'
-// Разработчик — подпись в приветственном письме.
 const DEVELOPER_NAME = 'Иван Никитин'
 const APP_HOME_URL = `${PRODUCT_URL}/home`
 
@@ -70,8 +66,6 @@ export function describeMailStatus(env = process.env) {
     return Boolean(config.host && config.user && config.password) ? 'configured' : 'not-configured'
 }
 
-// Подсказки для лога при старте и для диагностики деплоя: типичные причины,
-// из-за которых mail.ru отказывается принимать письма.
 export function describeMailConfigProblems(env = process.env) {
     const config = readMailConfig(env)
     const problems = []

@@ -120,7 +120,7 @@ class PushBroadcastService {
             failed_count: result.failed ?? 0,
             removed_count: result.removed ?? 0,
             sent_at: now,
-            status: (result.sent ?? 0) > 0 ? 'sent' : 'failed'
+            status: subscriptions.length === 0 || (result.sent ?? 0) > 0 ? 'sent' : 'failed'
         }
 
         await PushBroadcast.update(updates, { where: { id: broadcast.id } })

@@ -2,8 +2,45 @@ import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
-import { getPlantBySlug, PLANTS } from '../../data/plants.js'
-import { PLANTS_PATH, plantPath } from '../../data/siteMap.js'
+import { getPlantBySlug } from '../../data/plants.js'
+import {
+    PLANTS_PATH,
+    plantPath,
+    articlePath,
+    getPlantArticles,
+    getRelatedPlants
+} from '../../data/siteMap.js'
+
+function textOf(value) {
+    if (typeof value === 'string') return value
+    if (value && typeof value === 'object' && !Array.isArray(value) && typeof value.text === 'string') {
+        return value.text
+    }
+    return null
+}
+
+function listOf(value) {
+    if (!Array.isArray(value)) return []
+    return value.map(textOf).filter(Boolean)
+}
+
+function PlantFieldSection({ id, title, value }) {
+    const text = textOf(value)
+    const items = listOf(value)
+    if (!text && items.length === 0) return null
+
+    return (
+        <section className='contentSection' aria-labelledby={id}>
+            <h2 id={id}>{title}</h2>
+            {text && <p>{text}</p>}
+            {items.length > 0 && (
+                <ul>
+                    {items.map(item => <li key={item.slice(0, 32)}>{item}</li>)}
+                </ul>
+            )}
+        </section>
+    )
+}
 
 function PlantsDetailPage({ slug }) {
     const plant = getPlantBySlug(slug)
@@ -20,7 +57,12 @@ function PlantsDetailPage({ slug }) {
         )
     }
 
-    const others = PLANTS.filter(item => item.slug !== plant.slug).slice(0, 4)
+    const relatedPlants = getRelatedPlants(plant.slug, 3)
+    const relatedArticles = getPlantArticles(plant.slug, 3)
+    const problems = Array.isArray(plant.problems) ? plant.problems : []
+    const faq = Array.isArray(plant.faq)
+        ? plant.faq.filter(item => item && item.question && item.answer)
+        : []
 
     return (
         <ContentPage activePath={PLANTS_PATH}>
@@ -34,6 +76,18 @@ function PlantsDetailPage({ slug }) {
             <div className='contentHero'>
                 <h1>{plant.name}: полив и уход</h1>
                 <p className='contentLead'>{plant.latin}</p>
+                {plant.image && (
+                    <img
+                        className='contentLead'
+                        src={plant.image}
+                        alt={plant.imageAlt || plant.name}
+                        width={720}
+                        height={480}
+                        loading='lazy'
+                        decoding='async'
+                        style={{ maxWidth: '100%', height: 'auto', filter: 'none' }}
+                    />
+                )}
             </div>
 
             <section className='contentSection' aria-labelledby='plantFactsTitle'>
@@ -64,39 +118,82 @@ function PlantsDetailPage({ slug }) {
                 <p>{plant.watering}</p>
             </section>
 
-            <section className='contentSection' aria-labelledby='plantProblemsTitle'>
-                <h2 id='plantProblemsTitle'>Частые проблемы</h2>
-                {plant.problems.map(problem => (
-                    <div className='contentProblem' key={problem.title}>
-                        <h3>{problem.title}</h3>
-                        <dl>
-                            <dt>Причина</dt>
-                            <dd>{problem.reason}</dd>
-                            <dt>Что делать</dt>
-                            <dd>{problem.action}</dd>
-                        </dl>
-                    </div>
-                ))}
-            </section>
+            <PlantFieldSection id='plantSoilTitle' title='Грунт' value={plant.soil} />
 
-            <section className='contentSection' aria-labelledby='plantOthersTitle'>
-                <h2 id='plantOthersTitle'>Другие растения</h2>
-                <ul className='contentCardGrid'>
-                    {others.map(item => (
-                        <li className='contentCard' key={item.slug}>
-                            <h3><Link to={plantPath(item.slug)}>{item.name}</Link></h3>
-                            <p className='contentCardLatin'>{item.latin}</p>
-                            <ul className='contentCardFacts'>
-                                <li><strong>Полив:</strong> {item.intervalLabel}</li>
-                            </ul>
-                        </li>
+            <PlantFieldSection id='plantSeasonalTitle' title='Сезонный уход' value={plant.seasonal} />
+
+            <PlantFieldSection id='plantPestsTitle' title='Вредители и болезни' value={plant.pests} />
+
+            {problems.length > 0 && (
+                <section className='contentSection' aria-labelledby='plantProblemsTitle'>
+                    <h2 id='plantProblemsTitle'>Частые проблемы</h2>
+                    {problems.map(problem => (
+                        <div className='contentProblem' key={problem.title}>
+                            <h3>{problem.title}</h3>
+                            <dl>
+                                <dt>Причина</dt>
+                                <dd>{problem.reason}</dd>
+                                <dt>Что делать</dt>
+                                <dd>{problem.action}</dd>
+                            </dl>
+                        </div>
                     ))}
-                </ul>
-            </section>
+                </section>
+            )}
+
+            <PlantFieldSection id='plantNoteTitle' title='На заметку' value={plant.note} />
+
+            {faq.length > 0 && (
+                <section className='contentSection' aria-labelledby='plantFaqTitle'>
+                    <h2 id='plantFaqTitle'>Частые вопросы</h2>
+                    <ul className='contentFaq'>
+                        {faq.map(item => (
+                            <li key={item.question}>
+                                <details>
+                                    <summary>{item.question}</summary>
+                                    <p>{item.answer}</p>
+                                </details>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
+            {relatedPlants.length > 0 && (
+                <section className='contentSection' aria-labelledby='plantOthersTitle'>
+                    <h2 id='plantOthersTitle'>Другие растения</h2>
+                    <ul className='contentCardGrid'>
+                        {relatedPlants.map(item => (
+                            <li className='contentCard' key={item.slug}>
+                                <h3><Link to={plantPath(item.slug)}>{item.name}</Link></h3>
+                                <p className='contentCardLatin'>{item.latin}</p>
+                                <ul className='contentCardFacts'>
+                                    <li><strong>Полив:</strong> {item.intervalLabel}</li>
+                                    {item.light && <li><strong>Свет:</strong> {item.light}</li>}
+                                </ul>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
+            {relatedArticles.length > 0 && (
+                <section className='contentSection' aria-labelledby='plantArticlesTitle'>
+                    <h2 id='plantArticlesTitle'>Статьи по теме</h2>
+                    <ul>
+                        {relatedArticles.map(item => (
+                            <li key={item.slug}>
+                                <Link to={articlePath(item.slug)}>{item.title}</Link>
+                                {item.description ? ` — ${item.description}` : ''}
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
 
             <div className='contentCta'>
                 <p>
-                    Добавьте {plant.name.toLowerCase()} в «Лейку» — приложение подскажет,
+                    Добавьте в «Лейку»: {plant.name} — приложение подскажет,
                     когда пора поливать, и напомнит об уходе.
                 </p>
                 <Link to='/register'>Создать аккаунт</Link>

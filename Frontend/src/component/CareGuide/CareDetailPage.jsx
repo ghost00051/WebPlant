@@ -2,8 +2,14 @@ import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
-import { ARTICLES, getArticleBySlug } from '../../data/careArticles.js'
-import { CARE_PATH, articlePath } from '../../data/siteMap.js'
+import { getArticleBySlug } from '../../data/careArticles.js'
+import {
+    CARE_PATH,
+    articlePath,
+    plantPath,
+    getRelatedArticles,
+    getArticlePlants
+} from '../../data/siteMap.js'
 
 const MONTHS_GENITIVE = [
     'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -34,7 +40,12 @@ function CareDetailPage({ slug }) {
     }
 
     const updated = formatUpdated(article.updated)
-    const related = ARTICLES.filter(item => item.slug !== article.slug).slice(0, 3)
+    const related = getRelatedArticles(article.slug, 3)
+    const relatedPlants = getArticlePlants(article.slug, 3)
+    const sections = Array.isArray(article.sections) ? article.sections : []
+    const faq = Array.isArray(article.faq)
+        ? article.faq.filter(item => item && item.question && item.answer)
+        : []
 
     return (
         <ContentPage activePath={CARE_PATH}>
@@ -47,11 +58,13 @@ function CareDetailPage({ slug }) {
 
             <div className='contentHero'>
                 <h1>{article.title}</h1>
-                {updated && <p className='contentUpdated'>Обновлено {updated}</p>}
+                <p className='contentUpdated'>
+                    Автор: Никитин Иван Сергеевич{updated ? ` · Обновлено ${updated}` : ''}
+                </p>
                 <p className='contentLead'>{article.intro}</p>
             </div>
 
-            {article.sections.map(section => (
+            {sections.map(section => (
                 <section className='contentSection' key={section.heading}>
                     <h2>{section.heading}</h2>
                     {section.paragraphs?.map(paragraph => (
@@ -65,11 +78,11 @@ function CareDetailPage({ slug }) {
                 </section>
             ))}
 
-            {article.faq?.length > 0 && (
+            {faq.length > 0 && (
                 <section className='contentSection' aria-labelledby='articleFaqTitle'>
                     <h2 id='articleFaqTitle'>Частые вопросы</h2>
                     <ul className='contentFaq'>
-                        {article.faq.map(item => (
+                        {faq.map(item => (
                             <li key={item.question}>
                                 <details>
                                     <summary>{item.question}</summary>
@@ -81,17 +94,37 @@ function CareDetailPage({ slug }) {
                 </section>
             )}
 
-            <section className='contentSection' aria-labelledby='articleRelatedTitle'>
-                <h2 id='articleRelatedTitle'>Читайте также</h2>
-                <ul className='contentCardGrid'>
-                    {related.map(item => (
-                        <li className='contentCard' key={item.slug}>
-                            <h3><Link to={articlePath(item.slug)}>{item.title}</Link></h3>
-                            <p>{item.description}</p>
-                        </li>
-                    ))}
-                </ul>
-            </section>
+            {relatedPlants.length > 0 && (
+                <section className='contentSection' aria-labelledby='articlePlantsTitle'>
+                    <h2 id='articlePlantsTitle'>Растения из статьи</h2>
+                    <ul className='contentCardGrid'>
+                        {relatedPlants.map(item => (
+                            <li className='contentCard' key={item.slug}>
+                                <h3><Link to={plantPath(item.slug)}>{item.name}</Link></h3>
+                                <p className='contentCardLatin'>{item.latin}</p>
+                                <ul className='contentCardFacts'>
+                                    <li><strong>Полив:</strong> {item.intervalLabel}</li>
+                                    {item.light && <li><strong>Свет:</strong> {item.light}</li>}
+                                </ul>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
+            {related.length > 0 && (
+                <section className='contentSection' aria-labelledby='articleRelatedTitle'>
+                    <h2 id='articleRelatedTitle'>Читайте также</h2>
+                    <ul className='contentCardGrid'>
+                        {related.map(item => (
+                            <li className='contentCard' key={item.slug}>
+                                <h3><Link to={articlePath(item.slug)}>{item.title}</Link></h3>
+                                <p>{item.description}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
 
             <div className='contentCta'>
                 <p>

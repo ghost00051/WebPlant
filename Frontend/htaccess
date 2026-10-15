@@ -36,10 +36,17 @@ DirectoryIndex index.html
     </FilesMatch>
     Header always set X-Content-Type-Options "nosniff"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Strict-Transport-Security "max-age=31536000"
+</IfModule>
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "^\.(?!well-known)">
+        Require all denied
+    </FilesMatch>
 </IfModule>
 
 <IfModule mod_mime.c>
-    AddType application/manifest+json .webmanifest .json
+    AddType application/manifest+json .webmanifest
     AddType application/xml .xml
     AddType image/x-icon .ico
 </IfModule>
@@ -57,6 +64,21 @@ DirectoryIndex index.html
 
     RewriteCond %{THE_REQUEST} ^\S+\s+/index\.html[\s?] [NC]
     RewriteRule ^ / [R=301,L,NE]
+
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/(login|register|home|add-plant|edit-profile|my-plants|reset-password)\.html[\s?] [NC]
+    RewriteRule ^ /%1 [R=301,L,NE]
+
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/(plants|care)\.html[\s?] [NC]
+    RewriteRule ^ /%1 [R=301,L,NE]
+
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/plants-([a-z0-9-]+)\.html[\s?] [NC]
+    RewriteRule ^ /plants/%1 [R=301,L,NE]
+
+    RewriteCond %{THE_REQUEST} ^[A-Z]+\s+/care-([a-z0-9-]+)\.html[\s?] [NC]
+    RewriteRule ^ /care/%1 [R=301,L,NE]
+
+    RewriteCond %{REQUEST_URI} /(?!404\.html$)[^/]*\.html$ [NC]
+    RewriteRule ^ - [R=404,L]
 
     RewriteRule ^(login|register|home|add-plant|edit-profile|my-plants|reset-password)/?$ $1.html [L]
 

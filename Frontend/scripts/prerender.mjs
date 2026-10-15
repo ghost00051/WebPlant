@@ -9,6 +9,9 @@ const root = resolve(import.meta.dirname, '..')
 const outputDirectory = resolve(root, 'dist')
 const siteUrl = 'https://checktheplants.ru'
 const buildDate = new Date().toISOString().slice(0, 10)
+const HUB_LASTMOD = '2026-10-13'
+const PLANT_LASTMOD = '2026-10-13'
+const HOME_PATH = '/'
 
 const privateRoutes = {
   login: {
@@ -69,7 +72,15 @@ function replaceCanonical(html, url) {
   return html.replace(matcher, tag)
 }
 
-function setPageMetadata(html, { title, description, canonical, indexable, structuredData }) {
+function buildWebApplication(html) {
+  const block = /<script\s+type="application\/ld\+json">([\s\S]*?)<\/script>/i.exec(html)
+  if (!block) {
+    throw new Error('В index.html не найден блок WebApplication JSON-LD')
+  }
+  return JSON.parse(block[1])
+}
+
+function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false }) {
   let page = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
   page = replaceMeta(page, 'name', 'description', description)
   page = replaceMeta(
@@ -87,16 +98,21 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
   page = replaceMeta(page, 'name', 'twitter:description', description)
   page = replaceCanonical(page, canonical)
 
-  if (!indexable) {
-    page = page.replace(
-      /\s*<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/i,
-      ''
-    )
-    return page
-  }
+  const templateStructuredData = keepTemplateStructuredData ? buildWebApplication(html) : null
+  page = page.replace(
+    /\s*<script\s+type="application\/ld\+json">[\s\S]*?<\/script>/gi,
+    ''
+  )
 
-  if (structuredData) {
-    const json = JSON.stringify(structuredData, null, 2).replaceAll('<', '\\u003c')
+  if (!indexable) return page
+
+  const blocks = [
+    ...(templateStructuredData ? [templateStructuredData] : []),
+    ...(Array.isArray(structuredData) ? structuredData : structuredData ? [structuredData] : [])
+  ]
+
+  if (blocks.length) {
+    const json = JSON.stringify(blocks, null, 2).replaceAll('<', '\\u003c')
     page = page.replace(
       '</head>',
       `  <script type="application/ld+json">\n${json}\n  </script>\n</head>`
@@ -107,10 +123,11 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
 }
 
 function buildBreadcrumbs(items) {
+  const trail = [{ label: 'Главная', path: HOME_PATH }, ...items]
   return {
     '@context': 'https://schema.org',
     '@type': 'BreadcrumbList',
-    itemListElement: items.map((item, index) => ({
+    itemListElement: trail.map((item, index) => ({
       '@type': 'ListItem',
       position: index + 1,
       name: item.label,
@@ -210,7 +227,8 @@ try {
         'Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».',
       canonical: `${siteUrl}/`,
       indexable: true,
-      structuredData: buildFaqPage([
+      keepTemplateStructuredData: true,
+      structuredData: [buildFaqPage([
         {
           question: 'Как не забывать поливать комнатные растения?',
           answer:
@@ -226,10 +244,10 @@ try {
           answer:
             'Спросите ИИ-помощника «Лейки»: он подскажет ориентировочный график ухода, который можно настроить под условия дома.'
         }
-      ])
+      ])]
     })
     await writeFile(resolve(outputDirectory, 'index.html'), page)
-    sitemapEntries.push({ path: '/', lastmod: buildDate, changefreq: 'weekly', priority: '1.0' })
+    sitemapEntries.push({ path: '/', lastmod: HUB_LASTMOD, changefreq: 'weekly', priority: '1.0' })
   }
 
   {
@@ -257,7 +275,7 @@ try {
     await writeFile(resolve(outputDirectory, 'plants.html'), page)
     sitemapEntries.push({
       path: PLANTS_PATH,
-      lastmod: buildDate,
+      lastmod: HUB_LASTMOD,
       changefreq: 'monthly',
       priority: '0.9'
     })
@@ -271,6 +289,36 @@ try {
         `Нет метаданных для растения «${plant.slug}». Запустите: node scripts/generate-seo-meta.mjs`
       )
     }
+    const structuredData = [
+      buildBreadcrumbs([
+        { label: 'Справочник растений', path: PLANTS_PATH },
+        { label: plant.name, path }
+      ]),
+      {
+        '@context': 'https://schema.org',
+        '@type': 'Article',
+        headline: `${plant.name}: полив и уход`,
+        description: meta.description,
+        inLanguage: 'ru',
+        dateModified: plant.updated || PLANT_LASTMOD,
+        image: [plant.image ? `${siteUrl}${plant.image}` : `${siteUrl}/og-image.png`],
+        mainEntityOfPage: `${siteUrl}${path}`,
+        author: {
+          '@type': 'Person',
+          name: 'Никитин Иван Сергеевич'
+        },
+        publisher: {
+          '@type': 'Organization',
+          name: 'Лейка',
+          url: `${siteUrl}/`
+        }
+      }
+    ]
+
+    if (plant.faq?.length) {
+      structuredData.push(buildFaqPage(plant.faq))
+    }
+
     const page = setPageMetadata(
       renderPage(createElement(PlantsDetailPage, { slug: plant.slug }), path),
       {
@@ -278,14 +326,16 @@ try {
         description: meta.description,
         canonical: `${siteUrl}${path}`,
         indexable: true,
-        structuredData: buildBreadcrumbs([
-          { label: 'Справочник растений', path: PLANTS_PATH },
-          { label: plant.name, path }
-        ])
+        structuredData
       }
     )
     await writeFile(resolve(outputDirectory, `plants-${plant.slug}.html`), page)
-    sitemapEntries.push({ path, lastmod: buildDate, changefreq: 'monthly', priority: '0.8' })
+    sitemapEntries.push({
+      path,
+      lastmod: plant.updated || PLANT_LASTMOD,
+      changefreq: 'monthly',
+      priority: '0.8'
+    })
   }
 
   {
@@ -313,7 +363,7 @@ try {
     await writeFile(resolve(outputDirectory, 'care.html'), page)
     sitemapEntries.push({
       path: CARE_PATH,
-      lastmod: buildDate,
+      lastmod: HUB_LASTMOD,
       changefreq: 'weekly',
       priority: '0.9'
     })
@@ -335,6 +385,7 @@ try {
         inLanguage: 'ru',
         datePublished: lastmod,
         dateModified: lastmod,
+        image: [`${siteUrl}/og-image.png`],
         mainEntityOfPage: `${siteUrl}${path}`,
         author: {
           '@type': 'Person',

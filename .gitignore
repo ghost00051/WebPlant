@@ -21,8 +21,8 @@ out/
 .nuxt
 
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 .k8s-images/
 
@@ -54,3 +54,5 @@ $RECYCLE.BIN/
 
 *.vsix
 *dsa.htmlAnimated-Floating-Tab-bar-/
+Bug-Tracker-WebPlant.csv
+Bug-Tracker-WebPlant.xlsx

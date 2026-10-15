@@ -86,7 +86,7 @@ export function isAllowedOrigin(origin, {
             return configuredOrigin.replace(/\/$/, '') === origin
         }
     })) return true
-    if (parseLocalDevOrigins(localDevOrigins).includes(origin)) return true
+    if (nodeEnv !== 'production' && parseLocalDevOrigins(localDevOrigins).includes(origin)) return true
     if (nodeEnv === 'production') return false
     if (DEVELOPMENT_ORIGINS.includes(origin)) return true
 

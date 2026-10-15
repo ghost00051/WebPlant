@@ -7,7 +7,7 @@ param(
     [switch]$RestoreData,
     [switch]$EnableBackgroundJobs,
     [switch]$DisableBackgroundJobs,
-    [int]$Replicas = 2,
+    [int]$Replicas = 1,
     [int]$ImageLoadTimeoutMinutes = 30,
     [switch]$SkipGateway
 )
@@ -26,8 +26,6 @@ $GatewayPort = 8090
 $ComposeProjectNetwork = 'backend_ctp_network'
 $NodePort = 30080
 
-# Каталоги, исключённые в Backend/.dockerignore: docker их не читает,
-# поэтому облачные заглушки Yandex.Disk внутри них сборке не мешают.
 $BuildIgnoreDirs = @(
     'node_modules', 'uploads', 'backups', 'logs',
     'certbot', 'nginx', 'k8s', 'coverage', '.vscode', '.idea'
@@ -163,9 +161,7 @@ function Test-DockerContainer([string]$Name) {
     return [bool]($found | Where-Object { $_ -eq $Name })
 }
 
-# Ищет файлы-заглушки Yandex.Disk (online-only) в контексте сборки.
-# Их чтение висит (облако не отдаёт данные), поэтому docker build и git status
-# встают намертво. Каталоги из .dockerignore пропускаем — docker их не читает.
+
 function Get-CloudPlaceholderFiles {
     param(
         [Parameter(Mandatory)][string]$ContextDir,
@@ -183,8 +179,6 @@ function Get-CloudPlaceholderFiles {
     return @($found)
 }
 
-# Готовит копию контекста сборки на локальном диске (вне Yandex.Disk),
-# чтобы docker вообще не читал облачную папку.
 function New-LocalBuildContext {
     param(
         [Parameter(Mandatory)][string]$ContextDir,
@@ -204,11 +198,21 @@ function New-LocalBuildContext {
         '/NJH', '/NJS', '/NDL', '/NP'
     )
     foreach ($dir in $ExcludeDirs) { $roboArgs += @('/XD', (Join-Path $ContextDir $dir)) }
+    $roboArgs += @('/XF', '.env*')
 
     $result = Invoke-Native -Action { robocopy @roboArgs }
     if ($result.ExitCode -ge 8) {
         Write-Lines $result.Output
         throw "Не удалось подготовить локальный контекст сборки (robocopy код $($result.ExitCode))"
+    }
+
+    foreach ($secretFile in @(Get-ChildItem -LiteralPath $stagingRoot -Recurse -File -Force -Filter '.env*' -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $secretFile.FullName -Force
+    }
+    $leftoverSecrets = @(Get-ChildItem -LiteralPath $stagingRoot -Recurse -File -Force -Filter '.env*' -ErrorAction SilentlyContinue)
+    if ($leftoverSecrets.Count -gt 0) {
+        Write-Lines ($leftoverSecrets | ForEach-Object { $_.FullName })
+        throw "В контексте сборки остались файлы с секретами: $($leftoverSecrets.Count)"
     }
 
     return $stagingRoot
@@ -424,9 +428,9 @@ if (-not $SkipImageLoad) {
         } | Out-Null
     }
     Invoke-Checked 'Не удалось запустить сервер образов (порт 8099 занят?)' {
-        docker run -d --name $ImageServerName --restart unless-stopped `
+        docker run -d --name $ImageServerName --rm `
             -p "${ImageServerPort}:80" `
-            -v "${StagingDir}:/usr/share/nginx/html:ro" `
+            -v "${StagingDir}/${imageTar}:/usr/share/nginx/html/${imageTar}:ro" `
             nginx:alpine
     } | Out-Null
     Write-Ok "Сервер образов слушает http://localhost:$ImageServerPort (из подов — host.docker.internal:$ImageServerPort)"
@@ -493,6 +497,10 @@ if (-not $SkipImageLoad) {
 
     Invoke-Checked 'Не удалось удалить image-loader' {
         kubectl delete daemonset image-loader -n $Namespace --ignore-not-found
+    } | Out-Null
+
+    Invoke-Checked 'Не удалось удалить сервер образов' {
+        docker rm -f $ImageServerName
     } | Out-Null
 }
 

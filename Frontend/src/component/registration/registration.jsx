@@ -339,7 +339,7 @@ function Registration ({ initialMode = 'login' }) {
                   </label>
                   <button
                     className='resetPassword'
-                    type=''
+                    type='button'
                     onClick={() => navigate('/reset-password')}
                   >
                     Забыли пароль?

@@ -1,5 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import './profile.css'
 import Pencil from '../../assets/pencil.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
@@ -18,6 +18,7 @@ import {
   unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
 import { API_URL } from '../../utils/api.js'
+import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
 import './dark-theme.css'
@@ -45,6 +46,8 @@ function Profile () {
   const [summaryError, setSummaryError] = useState('')
   const [themeError, setThemeError] = useState('')
   const [themeChanging, setThemeChanging] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+  const navigate = useNavigate()
 
   const getProfile = useCallback(async () => {
     try {
@@ -323,6 +326,26 @@ function Profile () {
       setIsRegisteringPasskey(false)
     }
   }
+  const exitOfProduct = async () => {
+    setLogoutError('')
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        throw new Error(`Не удалось выйти из аккаунта: HTTP ${response.status}`)
+      }
+    } catch (error) {
+      console.error('Ошибка выхода:', error)
+      setLogoutError(
+        error.message || 'Не удалось выйти из аккаунта. Попробуйте ещё раз.'
+      )
+      return
+    }
+    navigate('/login')
+  }
+
 
   if (!profile) {
     return <p>Загрузка...</p>
@@ -534,7 +557,12 @@ function Profile () {
         </p>
       </div>
       <div className='exitButton'>
-        <button>Выйти</button>
+        {logoutError && (
+          <p className='themePreferenceError' role='alert'>
+            {logoutError}
+          </p>
+        )}
+        <button onClick={() => exitOfProduct()}>Выйти</button>
       </div>
       <footer className='profileAppVersion'>
         <p>Версия приложения {import.meta.env.VITE_APP_VERSION}</p>

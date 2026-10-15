@@ -3,11 +3,6 @@ import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import plantPlaceholder from '../../assets/PlantTile.svg'
 import { plantThumbUrl } from '../../utils/photo.js'
 
-/**
- * Фото растения для компактных превью: сначала миниатюра, затем оригинал,
- * затем заглушка. Миниатюры могут быть ещё не сгенерированы для старых
- * загрузок — тогда браузер просто возьмёт оригинал.
- */
 function PlantPhoto({ src, alt = '', fallback = plantPlaceholder, ...rest }) {
   const { primary, backup } = useMemo(() => {
     const thumb = plantThumbUrl(src)

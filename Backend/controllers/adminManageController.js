@@ -830,10 +830,24 @@ class AdminManageController {
                     lock: transaction.LOCK.UPDATE
                 })
                 const isLatestAction = latest?.id === log.id
+                const originalAction = log.action
+                const restoredSkip = isLatestAction ? log.metadata?.converted_from_skip : null
 
-                await log.destroy({ transaction })
+                if (restoredSkip) {
+                    await log.update({
+                        action: 'skipped',
+                        action_at: restoredSkip.action_at,
+                        scheduled_for: restoredSkip.scheduled_for,
+                        hours_late: restoredSkip.hours_late,
+                        note: restoredSkip.note,
+                        metadata: { ...(log.metadata || {}), converted_from_skip: null }
+                    }, { transaction })
+                } else {
+                    await log.destroy({ transaction })
+                }
 
                 let scheduleRestored = false
+                let restoredNextWateringAt = null
                 if (plant && isLatestAction) {
                     const lastWatering = await WateringLog.findOne({
                         where: { plant_id: log.plant_id, action: 'watered' },
@@ -845,21 +859,27 @@ class AdminManageController {
                     const updates = {
                         last_watered_at: lastWatering?.action_at ?? null
                     }
-                    if (log.action === 'watered' || log.scheduled_for) {
+                    const hasPrevPlan = Boolean(log.metadata) &&
+                        Object.hasOwn(log.metadata, 'prev_next_watering_at')
+                    if (hasPrevPlan) {
+                        updates.next_watering_at = log.metadata.prev_next_watering_at
+                    } else if (originalAction === 'watered' || log.scheduled_for) {
                         updates.next_watering_at = log.scheduled_for ?? log.action_at
                     }
                     await plant.update(updates, { transaction })
+                    restoredNextWateringAt = updates.next_watering_at ?? null
                     scheduleRestored = true
                 }
 
                 return {
                     isLatestAction,
                     scheduleRestored,
+                    restoredSkip: Boolean(restoredSkip),
                     plantId: log.plant_id,
                     plantName: plant?.name ?? null,
                     ownerId: plant?.user_id ?? log.user_id,
-                    action: log.action,
-                    nextWateringAt: plant?.next_watering_at ?? null
+                    action: originalAction,
+                    nextWateringAt: (isLatestAction ? restoredNextWateringAt : null) ?? plant?.next_watering_at ?? null
                 }
             })
 

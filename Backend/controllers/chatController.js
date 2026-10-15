@@ -1,18 +1,10 @@
-import jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
 import Plant from '../models/Plant.js'
 import ChatLog from '../models/ChatLog.js'
 import { askAi } from '../services/aiService.js'
 
 function getUserId(req) {
-    const token = req.cookies?.token
-    if (!token) return null
-    try {
-        const decoded = jwt.verify(token, process.env.SECRET_KEY)
-        return decoded.id
-    } catch {
-        return null
-    }
+    return req.user?.id ?? null
 }
 
 function getSessionOwner(userId, guestToken) {

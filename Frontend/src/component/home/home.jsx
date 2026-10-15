@@ -56,8 +56,6 @@ function Home() {
                 const userData = await res.json()
                 setUser(userData)
 
-                // Часовой пояс устройства: в нём сервер считает время полива
-                // и сутки для просрочки (Владивосток ≠ Москва).
                 void syncUserTimeZone(userData.timezone).then(timeZone => {
                     if (timeZone && timeZone !== userData.timezone) {
                         setUser(current => (current ? { ...current, timezone: timeZone } : current))

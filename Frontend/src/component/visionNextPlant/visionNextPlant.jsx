@@ -227,7 +227,6 @@ function VisionNextPlant ({
               {isWatered && (
                 <>
                   <p>Полито</p>
-                  {plant.species && <p>{plant.species}</p>}
                 </>
               )}
               {isMissed && (

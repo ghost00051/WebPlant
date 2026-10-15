@@ -1,9 +1,12 @@
 import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import chatController from '../controllers/chatController.js'
+import { optionalAuth } from '../middleware/auth.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
+
+router.use(optionalAuth)
 
 const chatLimiter = rateLimit({
     windowMs: 60 * 1000,
