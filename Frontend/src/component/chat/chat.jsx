@@ -9,6 +9,9 @@ import IconMic from '../../assets/IconMic.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 
+const CHAT_TIMEOUT_MS = 30000
+const HISTORY_LIMIT = 50
+
 const GREETING = 'Привет! Я Алиса 💚 Помогу с поливом и уходом за растениями. Спроси: «Что полить?», «Покажи график» или «Сколько у меня растений?»'
 
 function Chat() {
@@ -23,6 +26,7 @@ function Chat() {
     ])
     const [input, setInput] = useState('')
     const [isTyping, setIsTyping] = useState(false)
+    const [sessionId, setSessionId] = useState(null)
 
     const listRef = useRef(null)
     const inputRef = useRef(null)
@@ -77,6 +81,57 @@ function Chat() {
         }
     }, [])
 
+    useEffect(() => {
+        let cancelled = false
+        const controller = new AbortController()
+        const timer = window.setTimeout(() => controller.abort(), 15000)
+
+        const loadHistory = async () => {
+            try {
+                const res = await fetch(`${API_URL}/chat/history?limit=${HISTORY_LIMIT}`, {
+                    credentials: 'include',
+                    signal: controller.signal
+                })
+                if (!res.ok) return
+
+                const data = await res.json()
+                if (cancelled) return
+
+                if (data?.sessionId) setSessionId(data.sessionId)
+
+                const items = Array.isArray(data?.items) ? data.items : []
+                if (!items.length) return
+
+                setMessages([
+                    {
+                        id: 'greeting',
+                        role: 'assistant',
+                        text: GREETING,
+                        createdAt: new Date().toISOString(),
+                    },
+                    ...items.map(item => ({
+                        id: `h-${item.id}`,
+                        role: item.role === 'user' ? 'user' : 'assistant',
+                        text: item.text,
+                        createdAt: item.createdAt,
+                    })),
+                ])
+            } catch (error) {
+                if (error?.name !== 'AbortError') console.error('Chat history error:', error)
+            } finally {
+                window.clearTimeout(timer)
+            }
+        }
+
+        loadHistory()
+
+        return () => {
+            cancelled = true
+            window.clearTimeout(timer)
+            controller.abort()
+        }
+    }, [])
+
     const sendMessage = async (rawText) => {
         const text = (rawText ?? input).trim()
         if (!text || isTyping) return
@@ -92,12 +147,16 @@ function Chat() {
         setInput('')
         setIsTyping(true)
 
+        const controller = new AbortController()
+        const timer = window.setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS)
+
         try {
             const res = await fetch(`${API_URL}/chat/chat`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({ message: text })
+                signal: controller.signal,
+                body: JSON.stringify({ message: text, sessionId: sessionId || undefined })
             })
 
             if (!res.ok) {
@@ -106,6 +165,7 @@ function Chat() {
             }
 
             const data = await res.json()
+            if (data?.sessionId) setSessionId(data.sessionId)
 
             setMessages((prev) => [
                 ...prev,
@@ -117,18 +177,59 @@ function Chat() {
                 },
             ])
         } catch (e) {
+            const timedOut = e?.name === 'AbortError'
             console.error('Chat error:', e)
             setMessages((prev) => [
                 ...prev,
                 {
                     id: `e-${Date.now()}`,
                     role: 'assistant',
-                    text: '⚠️ Что-то пошло не так. Попробуй ещё раз.',
+                    text: timedOut
+                        ? '⏳ Алиса не успела ответить. Попробуйте ещё раз — я на связи.'
+                        : (e?.message && e.message !== 'Failed to fetch'
+                            ? `⚠️ ${e.message}`
+                            : '⚠️ Что-то пошло не так. Попробуй ещё раз.'),
                     createdAt: new Date().toISOString(),
                 },
             ])
         } finally {
+            window.clearTimeout(timer)
             setIsTyping(false)
+        }
+    }
+
+    const clearHistory = async () => {
+        if (isTyping) return
+
+        if (!sessionId) {
+            setMessages((prev) => prev.filter((message) => message.id === 'greeting'))
+            return
+        }
+        if (!window.confirm('Очистить историю чата?')) return
+
+        try {
+            const res = await fetch(`${API_URL}/chat/history`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({ sessionId })
+            })
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}))
+                throw new Error(err.message || `HTTP ${res.status}`)
+            }
+
+            setSessionId(null)
+            setMessages([
+                {
+                    id: 'greeting',
+                    role: 'assistant',
+                    text: GREETING,
+                    createdAt: new Date().toISOString(),
+                },
+            ])
+        } catch (error) {
+            console.error('Clear chat error:', error)
         }
     }
 
@@ -148,10 +249,16 @@ function Chat() {
                     </div>
                     <div>
                         <p className='chatHeaderTitle'>ИИ-помощник Лейка</p>
-                        <p className='chatHeaderSubtitle'>Онлайн • знает 12 ваших растений</p>
+                        <p className='chatHeaderSubtitle'>Онлайн • помогу с поливом и уходом</p>
                     </div>
                 </div>
-                <button className='chatMenuBtn' aria-label='Меню'>
+                <button
+                    className='chatMenuBtn'
+                    type='button'
+                    aria-label='Очистить историю'
+                    title='Очистить историю'
+                    onClick={clearHistory}
+                >
                     <ThemedIcon src={IconMenu} alt="" />
                 </button>
             </div>

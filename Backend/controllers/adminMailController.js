@@ -12,6 +12,12 @@ import {
 } from '../services/mailService.js'
 import { getFirstName } from '../utils/personName.js'
 import {
+    findIdempotentBroadcast,
+    formatBroadcastMoment,
+    normalizeIdempotencyKey,
+    rememberIdempotentBroadcast
+} from '../utils/broadcastIdempotency.js'
+import {
     isValidBroadcastId,
     validateMailBroadcastInput
 } from '../utils/mailBroadcastValidation.js'
@@ -243,29 +249,60 @@ class AdminMailController {
                 return res.status(503).json({ message: 'Почта не настроена на сервере' })
             }
 
-            const { broadcast, recipients } = await mailBroadcastService.createBroadcast({
-                adminId: req.user?.id ?? null,
-                payload
-            })
+            const adminId = req.user?.id ?? null
+            const idempotencyKey = normalizeIdempotencyKey(req.get?.('Idempotency-Key'))
 
-            if (broadcast.status !== 'sending') {
-                return res.status(201).json({
-                    broadcast: toPlain(broadcast),
-                    recipientsCount: recipients.length,
-                    sentResult: null,
-                    queued: false
+            if (idempotencyKey) {
+                const existingId = await findIdempotentBroadcast('mail', idempotencyKey)
+                if (existingId) {
+                    const existing = await MailBroadcast.findByPk(existingId)
+                    if (existing) {
+                        return res.status(200).json({
+                            broadcast: toPlain(existing),
+                            recipientsCount: existing.total_recipients,
+                            sentResult: null,
+                            queued: true,
+                            deduplicated: true
+                        })
+                    }
+                }
+            }
+
+            const duplicate = await mailBroadcastService.findRecentDuplicate({
+                subject: validation.value.subject,
+                body: validation.value.body,
+                ctaLabel: validation.value.ctaLabel,
+                ctaUrl: validation.value.ctaUrl,
+                targetMode: validation.value.targetMode,
+                adminId,
+                windowMs: readMailBroadcastSettings().dedupeWindowMs
+            })
+            if (duplicate) {
+                const moment = formatBroadcastMoment(duplicate.created_at)
+                return res.status(409).json({
+                    message: `Такая рассылка уже создана${moment ? ` ${moment}` : ''} (№${duplicate.id}). ` +
+                        'Повторная отправка заблокирована, чтобы письма не ушли дважды. ' +
+                        'Если нужно отправить снова — измените текст письма.',
+                    broadcast: toPlain(duplicate),
+                    duplicated: true
                 })
             }
 
-            const delivery = await mailBroadcastService.deliverBroadcast(broadcast.id, {
-                batchSize: readMailBroadcastSettings().syncBatchSize
+            const { broadcast, recipients } = await mailBroadcastService.createBroadcast({
+                adminId,
+                payload,
+                deferDelivery: true
             })
 
+            if (idempotencyKey) {
+                await rememberIdempotentBroadcast('mail', idempotencyKey, broadcast.id)
+            }
+
             return res.status(201).json({
-                broadcast: toPlain(delivery.broadcast) || toPlain(broadcast),
-                recipientsCount: recipients.length,
-                sentResult: delivery.result,
-                queued: delivery.queued
+                broadcast: toPlain(broadcast),
+                recipientsCount: recipients.length > 0 ? recipients.length : broadcast.total_recipients,
+                sentResult: null,
+                queued: true
             })
         } catch (error) {
             if (error?.statusCode === 400) {

@@ -1,0 +1,132 @@
+#!/bin/sh
+# Хук WebPlant: при push автоматически ставит тег v<version> из Frontend/package.json
+# на отправляемый коммит и отправляет его в тот же remote, чтобы тег всегда
+# соответствовал версии в package.json.
+#
+# Установка:      node scripts/install-git-hooks.mjs
+# Состояние:      node scripts/install-git-hooks.mjs --status
+# Выключить:      node scripts/install-git-hooks.mjs --uninstall
+# Разово пропустить:  WEBPLANT_SKIP_AUTOTAG=1 git push ...
+# Падать при ошибке тега:  WEBPLANT_AUTOTAG_STRICT=1 git push ...
+# Другой файл версии:  WEBPLANT_VERSION_FILE=Backend/package.json git push ...
+# Проверять remote даже для уже выпущенной версии:  WEBPLANT_AUTOTAG_CHECK_REMOTE=1
+# Подробный вывод:     WEBPLANT_AUTOTAG_VERBOSE=1 git push ...
+#
+# Подробности: .githooks/README.md
+
+set -u
+
+prefix="v"
+version_file="${WEBPLANT_VERSION_FILE:-Frontend/package.json}"
+remote_name="${1:-origin}"
+verbose="${WEBPLANT_AUTOTAG_VERBOSE:-0}"
+
+say() { echo "pre-push[autotag]: $*" >&2; }
+note() { if [ "$verbose" = "1" ]; then say "$@"; fi; return 0; }
+
+fail() {
+  say "ВНИМАНИЕ: $*"
+  if [ "${WEBPLANT_AUTOTAG_STRICT:-0}" = "1" ]; then
+    say "строгий режим (WEBPLANT_AUTOTAG_STRICT=1): push отменён"
+    exit 1
+  fi
+  say "push продолжится без тега — исправьте причину и повторите push"
+  exit 0
+}
+
+if [ "${WEBPLANT_SKIP_AUTOTAG:-0}" = "1" ]; then
+  note "пропущено: WEBPLANT_SKIP_AUTOTAG=1"
+  exit 0
+fi
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || fail "не удалось определить корень репозитория"
+cd "$root" || fail "не удалось перейти в каталог $root"
+
+head_sha=$(git rev-parse --verify -q HEAD 2>/dev/null)
+[ -n "$head_sha" ] || fail "HEAD не указывает на коммит"
+
+# stdin pre-push: "<local ref> <local sha> <remote ref> <remote sha>" на каждую ссылку
+pushing_head=0
+branch_refs=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_ref:-}" ] || continue
+  case "$local_ref" in
+    refs/heads/*) ;;
+    *) continue ;;
+  esac
+  case "$local_sha" in
+    ""|0000000000000000000000000000000000000000) continue ;;
+  esac
+  branch_refs="$branch_refs $local_ref"
+  [ "$local_sha" = "$head_sha" ] && pushing_head=1
+done
+
+# push тегов или удаление ветки: тегировать нечего
+[ -n "$branch_refs" ] || exit 0
+
+if [ "$pushing_head" != "1" ]; then
+  note "HEAD ($(git log -1 --format=%h "$head_sha")) не входит в push:$branch_refs — тег не создаётся"
+  exit 0
+fi
+
+# Версию берём из отправляемого коммита (а не из рабочего каталога), чтобы тег
+# соответствовал именно тем файлам, которые уходят в remote.
+version_src="$version_file в коммите $(git log -1 --format=%h "$head_sha")"
+if ! version_raw=$(git show "$head_sha:$version_file" 2>/dev/null); then
+  version_src="$version_file в рабочем каталоге"
+  version_raw=$(cat "$version_file" 2>/dev/null) || version_raw=""
+fi
+[ -n "$version_raw" ] || fail "не найден $version_file (ни в коммите, ни в рабочем каталоге)"
+
+version=$(printf '%s\n' "$version_raw" | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+[ -n "$version" ] || fail "в $version_file нет поля \"version\" ($version_src)"
+case "$version" in
+  *[!0-9A-Za-z.+-]*) fail "некорректная версия \"$version\" в $version_file" ;;
+esac
+case "$version" in
+  [vV][0-9]*.[0-9]*.[0-9]*) version=${version#?} ;;
+esac
+case "$version" in
+  [0-9]*.[0-9]*.[0-9]*) ;;
+  *) fail "версия \"$version\" в $version_file не похожа на semver (ожидается X.Y.Z)" ;;
+esac
+
+tag="$prefix$version"
+check_remote="${WEBPLANT_AUTOTAG_CHECK_REMOTE:-0}"
+tag_commit=""
+
+if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+  tag_commit=$(git rev-list -n 1 "refs/tags/$tag")
+  if [ "$tag_commit" = "$head_sha" ]; then
+    note "тег $tag уже стоит на HEAD"
+  elif git merge-base --is-ancestor "$tag_commit" "$head_sha" 2>/dev/null; then
+    # Версия уже выпущена раньше: тег не переносим и не дублируем.
+    if [ "$check_remote" != "1" ]; then
+      note "версия $version уже отмечена тегом $tag ($(git log -1 --format=%h "$tag_commit")) — нового тега не будет"
+      exit 0
+    fi
+    note "версия $version уже отмечена тегом $tag ($(git log -1 --format=%h "$tag_commit")) — проверяю remote"
+  else
+    fail "тег $tag указывает на $(git log -1 --format='%h %s' "$tag_commit" 2>/dev/null), который не является предком HEAD ($(git log -1 --format=%h "$head_sha")); поднимите \"version\" в $version_file"
+  fi
+else
+  git tag -a "$tag" "$head_sha" -m "Версия $version" || fail "не удалось создать тег $tag"
+  say "создан тег $tag на $(git log -1 --format=%h "$head_sha")"
+  tag_commit="$head_sha"
+fi
+
+# Тег уже на remote? Спрашиваем remote, только когда тег указывает точно на HEAD
+# (повторный push) либо когда проверка включена явно; иначе лишний сетевой запрос.
+if [ "$check_remote" = "1" ] || [ "$tag_commit" = "$head_sha" ]; then
+  if git ls-remote --tags "$remote_name" "refs/tags/$tag" 2>/dev/null | grep -q .; then
+    note "тег $tag уже есть в $remote_name"
+    exit 0
+  fi
+fi
+
+# --no-verify: вложенный push не должен снова вызывать этот хук
+if git push --no-verify "$remote_name" "refs/tags/$tag"; then
+  say "тег $tag отправлен в $remote_name"
+else
+  fail "не удалось отправить тег $tag в $remote_name (тег создан локально)"
+fi

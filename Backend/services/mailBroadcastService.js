@@ -20,6 +20,9 @@ const DEFAULT_BATCH_SIZE = 100
 const DEFAULT_SYNC_BATCH_SIZE = 25
 const MAX_BATCH_SIZE = 1000
 
+const DEFAULT_DEDUPE_WINDOW_MS = 10 * 60 * 1000
+const DEDUPE_STATUSES = ['pending', 'sending', 'sent']
+
 export const MAIL_BROADCAST_LOCK = 'job:mail-broadcast'
 export const MAIL_BROADCAST_LOCK_TTL_MS = 3 * 60 * 1000
 
@@ -39,6 +42,10 @@ export function readMailBroadcastSettings(env = process.env) {
             env.MAIL_BROADCAST_SYNC_BATCH,
             DEFAULT_SYNC_BATCH_SIZE,
             MAX_BATCH_SIZE
+        ),
+        dedupeWindowMs: parsePositiveInt(
+            env.MAIL_BROADCAST_DEDUPE_WINDOW_MS,
+            DEFAULT_DEDUPE_WINDOW_MS
         )
     }
 }
@@ -80,7 +87,7 @@ class MailBroadcastService {
         return {}
     }
 
-    async createBroadcast({ adminId = null, payload, now = new Date() } = {}) {
+    async createBroadcast({ adminId = null, payload, now = new Date(), deferDelivery = false } = {}) {
         const validation = validateMailBroadcastInput(payload)
         if (!validation.ok) {
             const error = new Error(validation.message)
@@ -90,7 +97,9 @@ class MailBroadcastService {
 
         const value = validation.value
         const scheduledFor = value.scheduledFor ? new Date(value.scheduledFor) : null
-        const status = resolveScheduledStatus(value.scheduledFor, now)
+        // deferDelivery: немедленную рассылку не отправляем внутри HTTP-запроса,
+        // а оставляем в статусе 'pending' — её заберёт mailBroadcastJob (раз в минуту).
+        const status = deferDelivery ? 'pending' : resolveScheduledStatus(value.scheduledFor, now)
         const recipientWhere = this.buildRecipientWhere({
             targetMode: value.targetMode,
             userIds: value.userIds
@@ -130,6 +139,37 @@ class MailBroadcastService {
         }
 
         return { broadcast, recipients, sentResult: null }
+    }
+
+    /**
+     * Ищет рассылку с тем же содержимым, созданную этим же админом за последнее окно.
+     * Защищает от повторного нажатия «Отправить» (в том числе после оборванного
+     * запроса), из-за которого письма уходили дважды.
+     */
+    async findRecentDuplicate({
+        subject,
+        body,
+        ctaLabel = '',
+        ctaUrl = '',
+        targetMode,
+        adminId = null,
+        now = new Date(),
+        windowMs = DEFAULT_DEDUPE_WINDOW_MS
+    } = {}) {
+        if (!subject || !body || !targetMode) return null
+
+        const where = {
+            subject,
+            body,
+            target_mode: targetMode,
+            cta_label: ctaLabel || null,
+            cta_url: ctaUrl || null,
+            status: { [Op.in]: DEDUPE_STATUSES },
+            created_at: { [Op.gte]: new Date(now.getTime() - windowMs) }
+        }
+        if (adminId) where.created_by = adminId
+
+        return MailBroadcast.findOne({ where, order: [['id', 'DESC']] })
     }
 
     async materializeRecipients(broadcastId, where, { transaction } = {}) {

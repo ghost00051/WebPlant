@@ -11,6 +11,14 @@ import {
 
 const DEFAULT_ICON = '/icons/icon-192.png'
 
+const DEFAULT_DEDUPE_WINDOW_MS = 10 * 60 * 1000
+const DEDUPE_STATUSES = ['pending', 'sending', 'sent']
+
+function dedupeWindowMs() {
+    const parsed = Number.parseInt(process.env.PUSH_BROADCAST_DEDUPE_WINDOW_MS, 10)
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_DEDUPE_WINDOW_MS
+}
+
 export function escapeLikePattern(value) {
     return value.replace(/[\\%_]/g, character => `\\${character}`)
 }
@@ -26,7 +34,7 @@ class PushBroadcastService {
         return { user_id: { [Op.ne]: null } }
     }
 
-    async createBroadcast({ adminId = null, payload, now = new Date() } = {}) {
+    async createBroadcast({ adminId = null, payload, now = new Date(), deferDelivery = false } = {}) {
         const validation = validateBroadcastInput(payload)
         if (!validation.ok) {
             const error = new Error(validation.message)
@@ -36,7 +44,8 @@ class PushBroadcastService {
 
         const value = validation.value
         const scheduledFor = value.scheduledFor ? new Date(value.scheduledFor) : null
-        const status = resolveScheduledStatus(value.scheduledFor, now)
+
+        const status = deferDelivery ? 'pending' : resolveScheduledStatus(value.scheduledFor, now)
         const subscriptionWhere = this.buildSubscriptionWhere({
             targetMode: value.targetMode,
             userIds: value.userIds,
@@ -82,6 +91,32 @@ class PushBroadcastService {
 
         const { broadcast: updated, result } = await this.sendBroadcast(broadcast.id, { now })
         return { broadcast: updated, recipients, sentResult: result }
+    }
+
+    async findRecentDuplicate({
+        title,
+        body,
+        url = '',
+        targetMode,
+        includeGuests = false,
+        adminId = null,
+        now = new Date(),
+        windowMs = dedupeWindowMs()
+    } = {}) {
+        if (!title || !body || !targetMode) return null
+
+        const where = {
+            title,
+            body,
+            url: url || null,
+            target_mode: targetMode,
+            include_guests: Boolean(includeGuests),
+            status: { [Op.in]: DEDUPE_STATUSES },
+            created_at: { [Op.gte]: new Date(now.getTime() - windowMs) }
+        }
+        if (adminId) where.created_by = adminId
+
+        return PushBroadcast.findOne({ where, order: [['id', 'DESC']] })
     }
 
     async sendBroadcast(broadcastId, { now = new Date() } = {}) {

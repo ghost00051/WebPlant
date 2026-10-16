@@ -692,6 +692,76 @@ body {
     margin-top: 14px;
 }
 
+.wateringRecommendationActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.wateringRecommendationActions .wateringRecommendationApply {
+    flex: 1 1 160px;
+    width: auto;
+    margin-top: 0;
+}
+
+.wateringRecommendationRefine {
+    flex: 0 0 auto;
+    min-height: 42px;
+    padding: 10px 16px;
+    border: 1px solid #C9D8CC;
+    border-radius: 13px;
+    background: #FFFFFF;
+    color: #4C7A5E;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.wateringAdviceOptions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 0 22px 10px;
+}
+
+.wateringAdviceOptions button {
+    max-width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #C9D8CC;
+    border-radius: 999px;
+    background: #F4FAF6;
+    color: #2F6B47;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+}
+
+.wateringAdviceOptions button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.wateringAdviceFooterButtons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wateringAdviceFooter .wateringAdviceSkip {
+    border: 1px solid #DCD8D2;
+    background: #FFFFFF;
+    color: #6B6B6B;
+}
+
+.wateringAdviceFooter .wateringAdviceSkip:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
 .wateringAdviceError {
     padding: 0 22px 12px;
     color: #B42318;

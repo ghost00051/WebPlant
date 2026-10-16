@@ -29,6 +29,7 @@ import "./models/Plant.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
 import "./models/ChatLog.js"
+import "./models/AiAdviceLog.js"
 import "./models/SiteVisit.js"
 
 

@@ -53,7 +53,8 @@ $RECYCLE.BIN/
 .history/
 
 *.vsix
-*dsa.htmlAnimated-Floating-Tab-bar-/
+*dsa.html
+Animated-Floating-Tab-bar-/
 Bug-Tracker-WebPlant.csv
 Bug-Tracker-WebPlant.xlsx
 deploy.config.json
@@ -62,4 +63,3 @@ Frontend/htaccess
 DEPLOY.md
 probe-upload-test.html
 upload-dist.ps1
-Frontend/htaccess

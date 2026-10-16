@@ -264,12 +264,30 @@ function AdminPushPanel() {
         setFormError('')
         setStatusMessage('')
 
+        const idempotencySource = JSON.stringify({
+            title: trimmedTitle,
+            body: trimmedBody,
+            url: url.trim() || '/',
+            targetMode,
+            selectedIds: targetMode === 'users' ? selectedIds : [],
+            includeGuests: targetMode === 'all' ? includeGuests : false
+        })
+        let idempotencyHash = 2166136261
+        for (let index = 0; index < idempotencySource.length; index++) {
+            idempotencyHash ^= idempotencySource.charCodeAt(index)
+            idempotencyHash = Math.imul(idempotencyHash, 16777619)
+        }
+        const idempotencyKey = `push-${(idempotencyHash >>> 0).toString(16)}-${idempotencySource.length}`
+
         try {
             const response = await fetch(
                 `${ADMIN_PUSH_BASE}/broadcasts`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': idempotencyKey
+                    },
                     credentials: 'include',
                     body: JSON.stringify({
                         title: trimmedTitle,
@@ -291,6 +309,18 @@ function AdminPushPanel() {
             if (scheduledIso) {
                 setStatusMessage(
                     `Рассылка запланирована на ${new Date(scheduledIso).toLocaleString('ru-RU')}.`
+                )
+            } else if (data.deduplicated) {
+                setStatusMessage(
+                    'Такая рассылка уже была создана ранее — повторно уведомления не отправляются.'
+                )
+            } else if (!data.sentResult) {
+                const total = data.broadcast?.total_subscriptions
+                    ?? data.recipientsCount
+                    ?? 0
+                setStatusMessage(
+                    `Рассылка создана: отправка начнётся в течение минуты. Подписок всего: ${total}. ` +
+                    'Прогресс виден в списке последних рассылок.'
                 )
             } else {
                 const sentResult = data.sentResult || {}
@@ -314,7 +344,17 @@ function AdminPushPanel() {
             await loadOverview()
         } catch (error) {
             console.error('Ошибка отправки рассылки:', error)
-            setFormError(error.message || 'Не удалось отправить рассылку.')
+            const networkFailure = error instanceof TypeError
+                || /network|fetch|abort|прерва/i.test(error?.message || '')
+            if (networkFailure) {
+                setFormError(
+                    'Связь прервалась до ответа сервера. Рассылка могла уже создаться — ' +
+                    'проверьте список последних рассылок ниже и не отправляйте повторно.'
+                )
+                await loadOverview()
+            } else {
+                setFormError(error.message || 'Не удалось отправить рассылку.')
+            }
         } finally {
             setSending(false)
         }

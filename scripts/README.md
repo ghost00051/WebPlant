@@ -70,3 +70,18 @@ node scripts/sync-bug-tracker.mjs --check
 - Односторонняя синхронизация: правки, внесённые прямо в xlsx/CSV, при следующем запуске будут перезаписаны таблицей.
 - Задача планировщика выполняется только при активной сессии пользователя: «выполнять без входа в систему» потребовало бы сохранения пароля Windows.
 - Если понадобится обратная запись (xlsx → Google Sheets), нужен сервисный аккаунт с доступом на редактирование либо Apps Script-вебхук: анонимной выгрузки для записи недостаточно.
+
+## Git-хуки репозитория
+
+Хуки лежат в [`.githooks/`](../.githooks/README.md), установщик копирует их в `$GIT_DIR/hooks`
+(в этом репозитории — `C:\WebPlant.git\hooks`), чтобы хук не зависел от синхронизации Yandex.Disk:
+
+```bash
+node scripts/install-git-hooks.mjs             # установить/обновить копии хуков
+node scripts/install-git-hooks.mjs --status    # сверить копии с источником
+node scripts/install-git-hooks.mjs --uninstall # удалить установленные копии
+```
+
+Сейчас подключён [`.githooks/pre-push`](../.githooks/pre-push): при push он берёт `version` из
+`Frontend/package.json` отправляемого коммита, ставит аннотированный тег `v<version>` на этот
+коммит и отправляет его в тот же remote (разово пропустить: `WEBPLANT_SKIP_AUTOTAG=1 git push ...`).

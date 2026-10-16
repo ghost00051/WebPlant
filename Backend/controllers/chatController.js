@@ -2,6 +2,7 @@ import { Op } from 'sequelize'
 import Plant from '../models/Plant.js'
 import ChatLog from '../models/ChatLog.js'
 import { askAi } from '../services/aiService.js'
+import { buildPlantsOverview, resolveLocalChatAnswer } from '../utils/chatIntent.js'
 
 function getUserId(req) {
     return req.user?.id ?? null
@@ -121,6 +122,30 @@ class ChatController {
             }))
 
 
+            const localAnswer = resolveLocalChatAnswer({
+                message,
+                plants: plantContext,
+                isAuthorized: !!userId,
+                now
+            })
+
+            if (localAnswer) {
+                await ChatLog.create({
+                    user_id: userId,
+                    session_id: session,
+                    role: 'assistant',
+                    text: localAnswer.text,
+                    metadata: { guestToken, local: true, intent: localAnswer.intent }
+                })
+
+                return res.json({
+                    text: localAnswer.text,
+                    sessionId: session,
+                    usage: null,
+                    local: true
+                })
+            }
+
             let answer
             try {
                 answer = await askAi({
@@ -134,16 +159,40 @@ class ChatController {
                     }
                 })
             } catch (aiError) {
+                const budgetExceeded = aiError?.code === 'AI_BUDGET_EXCEEDED'
+                const degradedText = buildPlantsOverview({
+                    plants: plantContext,
+                    isAuthorized: !!userId,
+                    now
+                })
 
                 await ChatLog.create({
                     user_id: userId,
                     session_id: session,
                     role: 'assistant',
-                    text: '',
+                    text: degradedText,
                     error: aiError.message || 'AI error',
-                    metadata: { guestToken }
+                    metadata: { guestToken, degraded: true }
                 })
-                throw aiError
+
+                console.warn('⚠️ Чат без модели, отвечаю по данным приложения:', aiError.message || aiError)
+
+                if (!userId && budgetExceeded) {
+                    return res.status(503).json({
+                        message: 'Алиса сегодня ответила на максимум вопросов — продолжим завтра 🌱'
+                    })
+                }
+
+                return res.json({
+                    text: userId
+                        ? `${degradedText}
+
+(Модель сейчас недоступна, поэтому отвечаю по данным приложения.)`
+                        : 'Модель сейчас недоступна. Попробуйте, пожалуйста, чуть позже.',
+                    sessionId: session,
+                    usage: null,
+                    degraded: true
+                })
             }
 
             await ChatLog.create({

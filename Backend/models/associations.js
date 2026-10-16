@@ -3,6 +3,7 @@ import User from './userModels.js'
 import Plant from './Plant.js'
 import PlantPhoto from './PlantPhoto.js'
 import ChatLog from './ChatLog.js'
+import AiAdviceLog from './AiAdviceLog.js'
 import './Passkey.js'
 import './PasskeyChallenge.js'
 
@@ -14,6 +15,9 @@ User.hasMany(Plant, {
 
 User.hasMany(ChatLog, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 ChatLog.belongsTo(User, { foreignKey: 'user_id' })
+
+User.hasMany(AiAdviceLog, { foreignKey: 'user_id', onDelete: 'SET NULL' })
+AiAdviceLog.belongsTo(User, { foreignKey: 'user_id' })
 
 Plant.belongsTo(User, {
     foreignKey: 'user_id',

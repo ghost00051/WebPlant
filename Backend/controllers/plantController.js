@@ -12,10 +12,12 @@ import {
     isValidWateringInterval
 } from '../utils/validation.js'
 import {
+    getMaxAdviceQuestions,
     suggestPlantSpecies,
     suggestWateringAdvice,
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
+import { logAiAdvice } from '../utils/aiAdviceLog.js'
 import {
     generateWateringOccurrences,
     findFirstWateringAfter,
@@ -93,6 +95,12 @@ class PlantController {
 
         try {
             const species = await suggestPlantSpecies(plantName.trim())
+            logAiAdvice({
+                userId: getUserId(req),
+                kind: 'species',
+                plantName,
+                species
+            })
             return res.json({ species })
         } catch (error) {
             console.error('❌ Ошибка подсказки вида растения:', error)
@@ -103,7 +111,7 @@ class PlantController {
     }
 
     async suggestWateringAdvice(req, res) {
-        const { name, species, answers = [] } = req.body || {}
+        const { name, species, answers = [], location, mode } = req.body || {}
         if (typeof name !== 'string' || !name.trim() || name.trim().length > 255) {
             return res.status(400).json({ message: 'Введите корректное название растения' })
         }
@@ -111,7 +119,14 @@ class PlantController {
             (typeof species !== 'string' || species.length > 255)) {
             return res.status(400).json({ message: 'Некорректный вид растения' })
         }
-        if (!Array.isArray(answers) || answers.length > 4 ||
+        if (location !== undefined &&
+            (typeof location !== 'string' || location.length > 255)) {
+            return res.status(400).json({ message: 'Некорректное место растения' })
+        }
+        if (mode !== undefined && !['auto', 'question', 'recommendation'].includes(mode)) {
+            return res.status(400).json({ message: 'Некорректный режим подсказки' })
+        }
+        if (!Array.isArray(answers) || answers.length > getMaxAdviceQuestions() ||
             answers.some(item =>
                 !item ||
                 typeof item !== 'object' ||
@@ -129,10 +144,24 @@ class PlantController {
             const advice = await suggestWateringAdvice({
                 plantName: name.trim(),
                 species: species?.trim(),
+                location: location?.trim(),
+                mode: mode || 'auto',
                 answers: answers.map(({ question, answer }) => ({
                     question: question.trim(),
                     answer: answer.trim()
                 }))
+            })
+            logAiAdvice({
+                userId: getUserId(req),
+                kind: 'watering',
+                plantName: name,
+                species,
+                season: advice.season,
+                resultType: advice.type,
+                intervalDays: advice.intervalDays,
+                confidence: advice.confidence,
+                questionsAsked: answers.length,
+                source: advice.source
             })
             return res.json(advice)
         } catch (error) {
@@ -144,13 +173,17 @@ class PlantController {
     }
 
     async suggestWateringTime(req, res) {
-        const { name, species, intervalDays } = req.body || {}
+        const { name, species, intervalDays, location } = req.body || {}
         if (typeof name !== 'string' || !name.trim() || name.trim().length > 255) {
             return res.status(400).json({ message: 'Введите корректное название растения' })
         }
         if (species !== undefined &&
             (typeof species !== 'string' || species.length > 255)) {
             return res.status(400).json({ message: 'Некорректный вид растения' })
+        }
+        if (location !== undefined &&
+            (typeof location !== 'string' || location.length > 255)) {
+            return res.status(400).json({ message: 'Некорректное место растения' })
         }
         if (!isValidWateringInterval(intervalDays)) {
             return res.status(400).json({ message: 'Некорректная частота полива' })
@@ -160,7 +193,18 @@ class PlantController {
             const advice = await suggestWateringTimeAdvice({
                 plantName: name.trim(),
                 species: species?.trim(),
+                location: location?.trim(),
                 intervalDays
+            })
+            logAiAdvice({
+                userId: getUserId(req),
+                kind: 'time',
+                plantName: name,
+                species,
+                season: advice.season,
+                resultType: 'time',
+                timeOfDay: advice.timeOfDay,
+                source: advice.source
             })
             return res.json(advice)
         } catch (error) {

@@ -142,12 +142,12 @@ function AdminMailPanel() {
         }
     }, [loadOverview])
 
-    // Пока рассылка уходит порциями, обновляем статистику: прогресс видно
-    // в списке последних рассылок без перезагрузки страницы.
     useEffect(() => {
         if (roleState !== 'admin' || !overview) return undefined
+        // 'pending' без расписания — рассылка уже создана и ждёт ближайшего тика job'а.
         const inProgress = Array.isArray(overview.recent)
-            && overview.recent.some(item => item.status === 'sending')
+            && overview.recent.some(item => item.status === 'sending'
+                || (item.status === 'pending' && !item.scheduled_for))
         if (!inProgress) return undefined
 
         const timer = setInterval(loadOverview, OVERVIEW_POLL_MS)
@@ -393,12 +393,30 @@ function AdminMailPanel() {
         setStatusMessage('')
         setTestMessage('')
 
+        const idempotencySource = JSON.stringify({
+            subject: trimmedSubject,
+            body: trimmedBody,
+            ctaLabel: ctaLabel.trim(),
+            ctaUrl: ctaUrl.trim(),
+            targetMode,
+            selectedIds: targetMode === 'users' ? selectedIds : []
+        })
+        let idempotencyHash = 2166136261
+        for (let index = 0; index < idempotencySource.length; index++) {
+            idempotencyHash ^= idempotencySource.charCodeAt(index)
+            idempotencyHash = Math.imul(idempotencyHash, 16777619)
+        }
+        const idempotencyKey = `mail-${(idempotencyHash >>> 0).toString(16)}-${idempotencySource.length}`
+
         try {
             const response = await fetch(
                 `${ADMIN_MAIL_BASE}/broadcasts`,
                 {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': idempotencyKey
+                    },
                     credentials: 'include',
                     body: JSON.stringify({
                         subject: trimmedSubject,
@@ -434,7 +452,17 @@ function AdminMailPanel() {
             await loadOverview()
         } catch (error) {
             console.error('Ошибка отправки рассылки писем:', error)
-            setFormError(error.message || 'Не удалось отправить рассылку.')
+            const networkFailure = error instanceof TypeError
+                || /network|fetch|abort|прерва/i.test(error?.message || '')
+            if (networkFailure) {
+                setFormError(
+                    'Связь прервалась до ответа сервера. Рассылка могла уже создаться — ' +
+                    'проверьте список последних рассылок ниже и не отправляйте повторно.'
+                )
+                await loadOverview()
+            } else {
+                setFormError(error.message || 'Не удалось отправить рассылку.')
+            }
         } finally {
             setSending(false)
         }
@@ -873,9 +901,15 @@ function AdminMailPanel() {
 }
 
 function describeSendResult(data) {
+    if (data?.deduplicated) {
+        return 'Эта рассылка уже была создана ранее — повторно письма не отправляются. ' +
+            'Прогресс виден в списке последних рассылок.'
+    }
+
     const result = data?.sentResult
     if (!result) {
-        return 'Рассылка создана: письма уходят порциями в фоне. Прогресс виден в списке последних рассылок.'
+        return 'Рассылка создана: отправка начнётся в течение минуты. ' +
+            'Прогресс виден в списке последних рассылок.'
     }
 
     const parts = [`Отправлено ${result.sent} из ${result.total}`]

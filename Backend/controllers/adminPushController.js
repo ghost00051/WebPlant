@@ -3,6 +3,12 @@ import PushSubscription from '../models/PushSubscription.js'
 import User from '../models/userModels.js'
 import pushBroadcastService from '../services/pushBroadcastService.js'
 import {
+    findIdempotentBroadcast,
+    formatBroadcastMoment,
+    normalizeIdempotencyKey,
+    rememberIdempotentBroadcast
+} from '../utils/broadcastIdempotency.js'
+import {
     isValidBroadcastId,
     validateBroadcastInput
 } from '../utils/pushBroadcastValidation.js'
@@ -124,15 +130,59 @@ class AdminPushController {
                 return res.status(503).json({ message: 'Push-уведомления не настроены на сервере' })
             }
 
-            const { broadcast, recipients, sentResult } = await pushBroadcastService.createBroadcast({
-                adminId: req.user?.id ?? null,
-                payload
+            const adminId = req.user?.id ?? null
+            const idempotencyKey = normalizeIdempotencyKey(req.get?.('Idempotency-Key'))
+
+            if (idempotencyKey) {
+                const existingId = await findIdempotentBroadcast('push', idempotencyKey)
+                if (existingId) {
+                    const existing = await PushBroadcast.findByPk(existingId)
+                    if (existing) {
+                        return res.status(200).json({
+                            broadcast: toPlain(existing),
+                            recipientsCount: existing.total_subscriptions,
+                            sentResult: null,
+                            queued: true,
+                            deduplicated: true
+                        })
+                    }
+                }
+            }
+
+            const duplicate = await pushBroadcastService.findRecentDuplicate({
+                title: validation.value.title,
+                body: validation.value.body,
+                url: validation.value.url,
+                targetMode: validation.value.targetMode,
+                includeGuests: validation.value.includeGuests,
+                adminId
             })
+            if (duplicate) {
+                const moment = formatBroadcastMoment(duplicate.created_at)
+                return res.status(409).json({
+                    message: `Такая рассылка уже создана${moment ? ` ${moment}` : ''} (№${duplicate.id}). ` +
+                        'Повторная отправка заблокирована, чтобы уведомления не пришли дважды. ' +
+                        'Если нужно отправить снова — измените текст.',
+                    broadcast: toPlain(duplicate),
+                    duplicated: true
+                })
+            }
+
+            const { broadcast, recipients } = await pushBroadcastService.createBroadcast({
+                adminId,
+                payload,
+                deferDelivery: true
+            })
+
+            if (idempotencyKey) {
+                await rememberIdempotentBroadcast('push', idempotencyKey, broadcast.id)
+            }
 
             return res.status(201).json({
                 broadcast: toPlain(broadcast),
-                recipientsCount: recipients.length,
-                sentResult
+                recipientsCount: recipients.length > 0 ? recipients.length : broadcast.total_subscriptions,
+                sentResult: null,
+                queued: true
             })
         } catch (error) {
             if (error?.statusCode === 400) {

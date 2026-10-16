@@ -72,6 +72,7 @@ function AddPlants() {
     const [wateringMessages, setWateringMessages] = useState([])
     const [wateringAnswer, setWateringAnswer] = useState('')
     const [wateringRecommendation, setWateringRecommendation] = useState(null)
+    const [wateringMaxQuestions, setWateringMaxQuestions] = useState(6)
     const [isAskingWateringTime, setIsAskingWateringTime] = useState(false)
     const [isWateringTimeDialogOpen, setIsWateringTimeDialogOpen] = useState(false)
     const [wateringTimeAdvice, setWateringTimeAdvice] = useState(null)
@@ -175,7 +176,7 @@ function AddPlants() {
         }
     }
 
-    const requestWateringAdvice = async (answers, sessionId) => {
+    const requestWateringAdvice = async (answers, sessionId, mode = 'auto') => {
         setIsAskingWateringAdvice(true)
         setWateringAdviceError('')
         try {
@@ -186,7 +187,8 @@ function AddPlants() {
                 body: JSON.stringify({
                     name: name.trim(),
                     species: species.trim(),
-                    answers
+                    answers,
+                    mode
                 })
             })
             const data = await response.json().catch(() => ({}))
@@ -195,10 +197,17 @@ function AddPlants() {
             }
             if (wateringDialogSessionRef.current !== sessionId) return
 
+            if (Number.isInteger(data.maxQuestions) && data.maxQuestions > 0) {
+                setWateringMaxQuestions(data.maxQuestions)
+            }
+
             if (data.type === 'question' && typeof data.question === 'string') {
                 setWateringMessages(messages => [...messages, {
                     role: 'assistant',
-                    text: data.question
+                    text: data.question,
+                    options: Array.isArray(data.options)
+                        ? data.options.filter(option => typeof option === 'string' && option.trim()).slice(0, 4)
+                        : []
                 }])
             } else if (
                 data.type === 'recommendation' &&
@@ -286,24 +295,46 @@ function AddPlants() {
         setIsAskingWateringAdvice(false)
     }
 
-    const submitWateringAnswer = event => {
-        event.preventDefault()
-        const answer = wateringAnswer.trim()
+    const sendWateringAnswer = (rawAnswer, mode = 'auto') => {
+        const answer = String(rawAnswer || '').trim()
         const lastQuestion = [...wateringMessages].reverse().find(
             message => message.role === 'assistant'
         )?.text
-        if (!answer || !lastQuestion || isAskingWateringAdvice) return
+        const skip = mode === 'recommendation' && !answer
+        if (!lastQuestion || isAskingWateringAdvice) return
+        if (!answer && !skip) return
 
+        const answerText = answer || 'Пропустить вопрос'
         const nextAnswers = [...wateringAnswers, {
             question: lastQuestion,
-            answer
+            answer: answerText
         }]
         const sessionId = wateringDialogSessionRef.current
         setWateringAnswers(nextAnswers)
-        setWateringMessages(messages => [...messages, { role: 'user', text: answer }])
+        setWateringMessages(messages => [
+            ...messages.map(message => ({ ...message, options: [] })),
+            { role: 'user', text: answerText }
+        ])
         setWateringAnswer('')
         setWateringAdviceError('')
-        requestWateringAdvice(nextAnswers, sessionId)
+        setWateringRecommendation(null)
+        requestWateringAdvice(nextAnswers, sessionId, mode)
+    }
+
+    const submitWateringAnswer = event => {
+        event.preventDefault()
+        sendWateringAnswer(wateringAnswer)
+    }
+
+    const skipWateringQuestions = () => {
+        sendWateringAnswer('', 'recommendation')
+    }
+
+    const refineWateringAdvice = () => {
+        if (wateringAnswers.length >= wateringMaxQuestions || isAskingWateringAdvice) return
+        setWateringRecommendation(null)
+        setWateringAdviceError('')
+        requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current, 'question')
     }
 
     const applyWateringRecommendation = () => {
@@ -315,6 +346,12 @@ function AddPlants() {
         setSelectedPreset(matchingPreset?.id || 'custom')
         closeWateringAdvice()
     }
+
+    // Варианты ответа показываем только для последнего неотвеченного вопроса.
+    const lastWateringMessage = wateringMessages[wateringMessages.length - 1]
+    const currentQuestionOptions = lastWateringMessage?.role === 'assistant'
+        ? (lastWateringMessage.options || [])
+        : []
 
     useEffect(() => {
         if (isWateringDialogOpen) {
@@ -936,19 +973,31 @@ function AddPlants() {
                                         <p className='wateringRecommendationConfidence'>
                                             Уверенность: {
                                                 wateringRecommendation.confidence === 'high'
-                                                    ? 'высокая'
+                                                    ? 'высокая — условий достаточно для точного ориентира'
                                                     : wateringRecommendation.confidence === 'medium'
-                                                        ? 'средняя'
-                                                        : 'низкая'
+                                                        ? 'средняя — условия типичные, но уточнены не все'
+                                                        : 'низкая — данных мало, ориентир самый осторожный'
                                             }. Проверяйте, просох ли грунт, и корректируйте график.
                                         </p>
-                                        <button
-                                            type='button'
-                                            className='wateringRecommendationApply'
-                                            onClick={applyWateringRecommendation}
-                                        >
-                                            Применить интервал
-                                        </button>
+                                        <div className='wateringRecommendationActions'>
+                                            <button
+                                                type='button'
+                                                className='wateringRecommendationApply'
+                                                onClick={applyWateringRecommendation}
+                                            >
+                                                Применить интервал
+                                            </button>
+                                            {wateringAnswers.length < 4 && (
+                                                <button
+                                                    type='button'
+                                                    className='wateringRecommendationRefine'
+                                                    onClick={refineWateringAdvice}
+                                                    disabled={isAskingWateringAdvice}
+                                                >
+                                                    Уточнить условия
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
                                 )}
                                 <div ref={wateringMessagesEndRef} />
@@ -958,19 +1007,33 @@ function AddPlants() {
                                     <p>{wateringAdviceError}</p>
                                     <button
                                         type='button'
-                                        onClick={() => requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current)}
+                                        onClick={() => requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current, 'auto')}
                                         disabled={isAskingWateringAdvice}
                                     >
                                         Попробовать ещё раз
                                     </button>
                                 </div>
                             )}
+                            {!wateringRecommendation && currentQuestionOptions.length > 0 && (
+                                <div className='wateringAdviceOptions' role='group' aria-label='Варианты ответа'>
+                                    {currentQuestionOptions.map(option => (
+                                        <button
+                                            key={option}
+                                            type='button'
+                                            onClick={() => sendWateringAnswer(option)}
+                                            disabled={isAskingWateringAdvice}
+                                        >
+                                            {option}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                             {!wateringRecommendation && (
                                 <form className='wateringAdviceReply' onSubmit={submitWateringAnswer}>
                                     <label htmlFor='wateringAdviceAnswer'>
-                                        {wateringAnswers.length >= 4
-                                            ? 'Получаем осторожную рекомендацию'
-                                            : 'Ваш ответ'}
+                                        {wateringAnswers.length >= wateringMaxQuestions
+                                            ? 'Получаем рекомендацию'
+                                            : 'Ваш ответ или свой вариант'}
                                     </label>
                                     <textarea
                                         id='wateringAdviceAnswer'
@@ -982,23 +1045,41 @@ function AddPlants() {
                                         disabled={
                                             isAskingWateringAdvice ||
                                             Boolean(wateringAdviceError) ||
-                                            wateringAnswers.length >= 4 ||
+                                            wateringAnswers.length >= wateringMaxQuestions ||
                                             !wateringMessages.some(message => message.role === 'assistant')
                                         }
                                     />
                                     <div className='wateringAdviceFooter'>
-                                        <span>{wateringAnswers.length}/4 уточнений</span>
-                                        <button
-                                            type='submit'
-                                            disabled={
-                                                !wateringAnswer.trim() ||
-                                                isAskingWateringAdvice ||
-                                                Boolean(wateringAdviceError) ||
-                                                wateringAnswers.length >= 4
+                                        <span>
+                                            {wateringAnswers.length}/{wateringMaxQuestions} уточнений
+                                            {wateringAnswers.length >= 3 && ' — дальше уже будет рекомендация'}
+                                        </span>
+                                        <div className='wateringAdviceFooterButtons'>
+                                            <button
+                                                type='button'
+                                                className='wateringAdviceSkip'
+                                                onClick={skipWateringQuestions}
+                                                disabled={
+                                                    isAskingWateringAdvice ||
+                                                    Boolean(wateringAdviceError) ||
+                                                    wateringAnswers.length >= wateringMaxQuestions ||
+                                                    !wateringMessages.some(message => message.role === 'assistant')
+                                                }
+                                            >
+                                                Хватит вопросов
+                                            </button>
+                                            <button
+                                                type='submit'
+                                                disabled={
+                                                    !wateringAnswer.trim() ||
+                                                    isAskingWateringAdvice ||
+                                                    Boolean(wateringAdviceError) ||
+                                                    wateringAnswers.length >= wateringMaxQuestions
                                             }
                                         >
                                             Ответить
                                         </button>
+                                        </div>
                                     </div>
                                 </form>
                             )}

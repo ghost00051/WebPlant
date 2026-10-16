@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import adminAnalyticsController from '../controllers/adminAnalyticsController.js'
 import adminManageController from '../controllers/adminManageController.js'
+import adminAiController from '../controllers/adminAiController.js'
 import { requireAdmin } from '../middleware/admin.js'
 
 const router = Router()
@@ -11,6 +12,9 @@ router.get('/analytics/overview', adminAnalyticsController.getOverview)
 router.get('/analytics/timeseries', adminAnalyticsController.getTimeseries)
 router.get('/analytics/breakdown', adminAnalyticsController.getBreakdown)
 router.get('/visits', adminAnalyticsController.getVisits)
+
+router.get('/ai/metrics', adminAiController.getMetrics)
+router.get('/ai/logs', adminAiController.getLogs)
 
 router.get('/users', adminManageController.listUsers)
 router.get('/users/:id', adminManageController.getUser)

@@ -653,13 +653,21 @@ if (-not $SkipGateway) {
     Write-Step "Поднимаю gateway (localhost:$GatewayPort → backend в кластере)"
 
     $nodeNames = @()
+    $nodeAddresses = @()
     foreach ($line in (Get-NativeLines { kubectl get nodes -o wide --no-headers })) {
         $fields = $line -split '\s+'
-        if ($fields.Count -ge 6 -and $fields[1] -eq 'Ready') { $nodeNames += $fields[0] }
+        if ($fields.Count -ge 6 -and $fields[1] -eq 'Ready') {
+            $nodeNames += $fields[0]
+            if ($fields[5] -match '^\d{1,3}(\.\d{1,3}){3}$') { $nodeAddresses += $fields[5] }
+        }
     }
     if (-not $nodeNames.Count) { throw 'Не найдено ни одной Ready-ноды' }
+    if (-not $nodeAddresses.Count) {
+        Write-WarnStep 'Не удалось определить IPv4-адреса нод — использую имена (возможны сбои из-за IPv6)'
+        $nodeAddresses = $nodeNames
+    }
 
-    $upstreams = ($nodeNames | ForEach-Object { "        server ${_}:$NodePort max_fails=2 fail_timeout=5s;" }) -join "`n"
+    $upstreams = ($nodeAddresses | ForEach-Object { "        server ${_}:$NodePort max_fails=2 fail_timeout=5s;" }) -join "`n"
     $gatewayConf = (Read-Utf8 (Join-Path $K8sDir 'gateway/nginx.conf.tpl')).Replace('__UPSTREAM_SERVERS__', $upstreams)
     $gatewayConfPath = Join-Path $StagingDir 'gateway-nginx.conf'
     Write-Utf8NoBom $gatewayConfPath $gatewayConf
