@@ -4,6 +4,7 @@ import PasskeyChallenge from '../models/PasskeyChallenge.js'
 import PasswordResetToken from '../models/PasswordResetToken.js'
 import PlantPhoto from '../models/PlantPhoto.js'
 import ChatLog from '../models/ChatLog.js'
+import AiAdviceLog from '../models/AiAdviceLog.js'
 import SiteVisit from '../models/SiteVisit.js'
 import { Op } from "sequelize"
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
@@ -14,6 +15,16 @@ const VISIT_RETENTION_DAYS = 400
 const CLEANUP_LOCK = 'job:cleanup-expired'
 const CLEANUP_LOCK_TTL_MS = 30 * 60 * 1000
 
+function readRetentionDays(value, fallback) {
+    const parsed = Number.parseInt(value ?? '', 10)
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function retentionCutoff(days) {
+    if (!days) return null
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+}
+
 export async function cleanExpiredAuthData() {
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -21,10 +32,14 @@ export async function cleanExpiredAuthData() {
     const visitCutoff = new Date(Date.now() - VISIT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10)
+    const chatLogCutoff = retentionCutoff(readRetentionDays(process.env.CHAT_LOG_RETENTION_DAYS, 365))
+    const adviceLogCutoff = retentionCutoff(readRetentionDays(process.env.AI_ADVICE_LOG_RETENTION_DAYS, 365))
 
     const [
         deletedConsents,
         deletedGuestChatLogs,
+        deletedUserChatLogs,
+        deletedAdviceLogs,
         deletedSessions,
         deletedChallenges,
         deletedResetTokens,
@@ -46,6 +61,19 @@ export async function cleanExpiredAuthData() {
                 created_at: { [Op.lt]: guestDataCutoff }
             }
         }),
+        chatLogCutoff
+            ? ChatLog.destroy({
+                where: {
+                    user_id: { [Op.ne]: null },
+                    created_at: { [Op.lt]: chatLogCutoff }
+                }
+            })
+            : Promise.resolve(0),
+        adviceLogCutoff
+            ? AiAdviceLog.destroy({
+                where: { created_at: { [Op.lt]: adviceLogCutoff } }
+            })
+            : Promise.resolve(0),
         AuthSession.destroy({
             where: {
                 [Op.or]: [
@@ -75,10 +103,12 @@ export async function cleanExpiredAuthData() {
     ])
 
     const deleted =
-        deletedConsents + deletedGuestChatLogs + deletedSessions + deletedChallenges +
-        deletedResetTokens
+        deletedConsents + deletedGuestChatLogs + deletedUserChatLogs + deletedAdviceLogs +
+        deletedSessions + deletedChallenges + deletedResetTokens
     console.log(
         `🧹 Очищено гостевых согласий: ${deletedConsents}, гостевых сообщений: ${deletedGuestChatLogs}, ` +
+        `сообщений пользователей: ${deletedUserChatLogs}, ` +
+        `записей журнала ИИ: ${deletedAdviceLogs}, ` +
         `сессий: ${deletedSessions}, ` +
         `passkey-челленджей: ${deletedChallenges}, ссылок сброса пароля: ${deletedResetTokens}, ` +
         `фото-файлов: ${deletedPhotos}, ` +

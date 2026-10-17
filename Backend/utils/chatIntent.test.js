@@ -23,6 +23,28 @@ test('detectChatIntent: узнаёт типовые вопросы', () => {
     assert.equal(detectChatIntent(null), null)
 })
 
+test('detectChatIntent: вежливые префиксы и регистр не мешают команде', () => {
+    assert.equal(detectChatIntent('Алиса, что полить?'), 'what_to_water')
+    assert.equal(detectChatIntent('  Покажи, пожалуйста, график  '), 'schedule')
+    assert.equal(detectChatIntent('Лейка, сколько у меня растений'), 'plants_count')
+    assert.equal(detectChatIntent('ПОМОЩЬ'), 'help')
+})
+
+test('detectChatIntent: вопросы ухода не перехватываются командами (регресс)', () => {
+    assert.equal(detectChatIntent('Почему желтеют мои растения?'), null)
+    assert.equal(detectChatIntent('Нужна помощь с фикусом, он сбросил листья'), null)
+    assert.equal(detectChatIntent('Полив сегодня был?'), null)
+    assert.equal(detectChatIntent('Когда полить фикус, если он сохнет?'), null)
+    assert.equal(detectChatIntent('Что делать с пятнами на листьях?'), null)
+    assert.equal(detectChatIntent('Помогите, растение вянет'), null)
+})
+
+test('detectChatIntent: длинные сообщения всегда уходят к модели', () => {
+    const long = `Что полить ${'и чем ещё помочь '.repeat(10)}`
+    assert.ok(long.length > 120)
+    assert.equal(detectChatIntent(long), null)
+})
+
 test('describePlantDay: сегодня, завтра, просрочка и дальняя дата', () => {
     assert.equal(describePlantDay('2026-10-16T06:00:00Z', { now: NOW, timeZone: TZ }), 'сегодня')
     assert.equal(describePlantDay('2026-10-17T06:00:00Z', { now: NOW, timeZone: TZ }), 'завтра')
@@ -111,6 +133,38 @@ test('resolveLocalChatAnswer: список растений и справка', 
 
 test('resolveLocalChatAnswer: незнакомый вопрос уходит к модели', () => {
     assert.equal(resolveLocalChatAnswer({ message: 'почему желтеют листья', now: NOW }), null)
+})
+
+test('resolveLocalChatAnswer: живые вопросы не подменяются шаблоном (регресс)', () => {
+    const plants = [plant('Монстера', '2026-10-20T06:00:00Z')]
+    const common = { plants, isAuthorized: true, now: NOW, timeZone: TZ }
+
+    assert.equal(resolveLocalChatAnswer({ message: 'Почему желтеют мои растения?', ...common }), null)
+    assert.equal(resolveLocalChatAnswer({ message: 'Нужна помощь с фикусом, он сбросил листья', ...common }), null)
+    assert.equal(resolveLocalChatAnswer({ message: 'Полив сегодня был?', ...common }), null)
+})
+
+test('resolveLocalChatAnswer: часовой пояс пользователя меняет ответ', () => {
+    const now = new Date('2026-10-17T20:00:00Z')
+    const plants = [plant('Монстера', '2026-10-18T05:00:00Z')]
+
+    const moscow = resolveLocalChatAnswer({ message: 'Что полить?', plants, isAuthorized: true, now, timeZone: 'Europe/Moscow' })
+    const vladivostok = resolveLocalChatAnswer({ message: 'Что полить?', plants, isAuthorized: true, now, timeZone: 'Asia/Vladivostok' })
+
+    assert.match(moscow.text, /Ближайший полив/)
+    assert.match(vladivostok.text, /Сегодня по графику/)
+})
+
+test('buildPlantsOverview: растение без даты не считается просроченным', () => {
+    const overview = buildPlantsOverview({
+        plants: [plant('Монстера', null)],
+        isAuthorized: true,
+        now: NOW,
+        timeZone: TZ
+    })
+
+    assert.match(overview, /Монстера/)
+    assert.doesNotMatch(overview, /1970|2074\d/)
 })
 
 test('buildPlantsOverview: сводка для деградации без модели', () => {

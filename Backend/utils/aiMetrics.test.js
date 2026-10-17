@@ -7,12 +7,32 @@ import {
     parsePriceValue,
     estimateAiCost,
     getAiDailyRequestBudget,
+    isAiBudgetExceeded,
     isTimeoutError,
     latencyBucketId,
+    readAiMetricsRange,
+    readLocalBudgetFallback,
     readPriceConfig,
+    resetLocalBudgetFallback,
     summarizeAiMetrics,
     trackAiCall
 } from './aiMetrics.js'
+
+/** Тесты бюджета работают без Redis: это и есть сценарий «Redis недоступен». */
+function withoutRedis() {
+    const saved = {
+        REDIS_URL: process.env.REDIS_URL,
+        REDIS_HOST: process.env.REDIS_HOST
+    }
+    delete process.env.REDIS_URL
+    delete process.env.REDIS_HOST
+    return () => {
+        if (saved.REDIS_URL === undefined) delete process.env.REDIS_URL
+        else process.env.REDIS_URL = saved.REDIS_URL
+        if (saved.REDIS_HOST === undefined) delete process.env.REDIS_HOST
+        else process.env.REDIS_HOST = saved.REDIS_HOST
+    }
+}
 
 test('aiMetricsDay: день считается по часовому поясу приложения', () => {
     const lateEveningUtc = new Date('2026-10-16T21:30:00Z')
@@ -168,4 +188,90 @@ test('trackAiCall: неизвестный scope не пишется', async () =
     const result = await trackAiCall({ scope: 'unknown' })
     assert.equal(result.recorded, false)
     assert.equal(result.reason, 'unknown-scope')
+})
+
+test('бюджет: при недоступном Redis включается локальный предохранитель', async () => {
+    const restore = withoutRedis()
+    const savedBudget = process.env.AI_DAILY_REQUEST_BUDGET
+    try {
+        resetLocalBudgetFallback()
+        process.env.AI_DAILY_REQUEST_BUDGET = '2'
+
+        const before = await isAiBudgetExceeded()
+        assert.equal(before.exceeded, false, 'пока расход нулевой, бюджет не исчерпан')
+
+        await trackAiCall({ scope: 'chat', latencyMs: 10 })
+        await trackAiCall({ scope: 'advice', latencyMs: 10 })
+        assert.equal(readLocalBudgetFallback(aiMetricsDay()), 2)
+
+        const after = await isAiBudgetExceeded()
+        assert.equal(after.exceeded, true, 'без Redis бюджет не должен открываться бесконечно')
+        assert.equal(after.degraded, true)
+        assert.equal(after.localFallback, true)
+        assert.equal(after.usedToday, 2)
+    } finally {
+        if (savedBudget === undefined) delete process.env.AI_DAILY_REQUEST_BUDGET
+        else process.env.AI_DAILY_REQUEST_BUDGET = savedBudget
+        resetLocalBudgetFallback()
+        restore()
+    }
+})
+
+test('бюджет: кэш-хиты не расходуют локальный предохранитель', async () => {
+    const restore = withoutRedis()
+    const savedBudget = process.env.AI_DAILY_REQUEST_BUDGET
+    try {
+        resetLocalBudgetFallback()
+        process.env.AI_DAILY_REQUEST_BUDGET = '1'
+
+        await trackAiCall({ scope: 'chat', cached: true })
+        assert.equal(readLocalBudgetFallback(aiMetricsDay()), 0)
+
+        const budget = await isAiBudgetExceeded()
+        assert.equal(budget.exceeded, false)
+    } finally {
+        if (savedBudget === undefined) delete process.env.AI_DAILY_REQUEST_BUDGET
+        else process.env.AI_DAILY_REQUEST_BUDGET = savedBudget
+        resetLocalBudgetFallback()
+        restore()
+    }
+})
+
+test('бюджет: выключенный лимит не ограничивает и не считает локально', async () => {
+    const restore = withoutRedis()
+    const savedBudget = process.env.AI_DAILY_REQUEST_BUDGET
+    try {
+        resetLocalBudgetFallback()
+        delete process.env.AI_DAILY_REQUEST_BUDGET
+
+        await trackAiCall({ scope: 'chat', latencyMs: 5 })
+        const budget = await isAiBudgetExceeded()
+
+        assert.equal(budget.limit, 0)
+        assert.equal(budget.exceeded, false)
+    } finally {
+        if (savedBudget !== undefined) process.env.AI_DAILY_REQUEST_BUDGET = savedBudget
+        resetLocalBudgetFallback()
+        restore()
+    }
+})
+
+test('readAiMetricsRange: без Redis отдаёт нулевую серию и локальный расход', async () => {
+    const restore = withoutRedis()
+    try {
+        resetLocalBudgetFallback()
+        const range = await readAiMetricsRange({ days: 3, now: new Date('2026-10-17T09:00:00Z') })
+
+        assert.equal(range.days, 3)
+        assert.equal(range.series.length, 3)
+        assert.deepEqual(
+            range.series.map(row => row.day),
+            ['2026-10-15', '2026-10-16', '2026-10-17']
+        )
+        assert.equal(range.summary.totals.requests, 0)
+        assert.equal(range.budget.localFallbackUsed, 0)
+    } finally {
+        resetLocalBudgetFallback()
+        restore()
+    }
 })

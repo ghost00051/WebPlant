@@ -198,12 +198,30 @@ Redis в кластере используется backend-ом в трёх ме
    Определение вида, совет по поливу и по времени полива кэшируются на
    `AI_CACHE_TTL_SECONDS` (по умолчанию 7 суток), ответы чата — на
    `AI_CHAT_CACHE_TTL_SECONDS` (10 минут), ключи `ctp:ai:*`. Экономит платные
-   вызовы Yandex Cloud.
+   вызовы Yandex Cloud. Одновременные одинаковые запросы считаются один раз:
+   первый берёт лок `ctp:lock:ai-cache:*`, остальные забирают готовый ответ из кэша.
 
 Ручки настройки (см. `10-configmap.yaml`): `AI_CACHE_ENABLED`,
 `AI_CACHE_TTL_SECONDS`, `AI_CHAT_CACHE_TTL_SECONDS`, `REDIS_KEY_PREFIX`,
 `REDIS_CONNECT_TIMEOUT_MS`, `REDIS_COMMAND_TIMEOUT_MS`, `REDIS_FAILURE_THRESHOLD`,
 `REDIS_BREAKER_COOLDOWN_MS`, `REDIS_DEBUG`.
+
+Расход и таймауты ИИ (тоже в `10-configmap.yaml`):
+
+| Переменная | Смысл |
+| --- | --- |
+| `AI_DAILY_REQUEST_BUDGET` | Суточный лимит обращений к модели на весь сервис. `0` или пусто — **лимита нет**. При исчерпании чат отвечает фолбэком по данным приложения, гости получают `503` |
+| `AI_PRICE_INPUT_PER_1K`, `AI_PRICE_OUTPUT_PER_1K`, `AI_PRICE_CACHED_PER_1K`, `AI_PRICE_CURRENCY` | Тариф для оценки стоимости в админке; без них стоимость не считается |
+| `AI_CHAT_TIMEOUT_MS`, `AI_ADVICE_TIMEOUT_MS` | Таймаут одного HTTP-вызова модели |
+| `AI_CHAT_DEADLINE_MS`, `AI_ADVICE_DEADLINE_MS` | Сквозной дедлайн на весь запрос (включая ретраи) |
+| `WATERING_ADVICE_MAX_QUESTIONS` | Потолок уточняющих вопросов советника (по умолчанию 6, максимум 10) |
+| `AI_CHAT_GUEST_DAILY_LIMIT`, `AI_CHAT_USER_DAILY_LIMIT` | Суточные лимиты сообщений гостя и пользователя |
+| `APP_TIME_ZONE` | Пояс для метрик и для пользователей без личного пояса |
+| `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | Срок хранения чатов и журнала подсказок; `0` — бессрочно |
+
+При недоступном Redis суточный бюджет продолжает считаться локально
+(счётчик в памяти пода) — иначе авария Redis снимала бы ограничитель стоимости.
+Значение видно в ответе `GET /api/admin/ai/metrics` как `budget.localFallbackUsed`.
 
 Проверить, что backend действительно видит Redis: `GET /health` возвращает
 `"redis": "ok"` (значения: `ok`, `unavailable`, `disabled`).

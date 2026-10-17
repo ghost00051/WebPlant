@@ -4,7 +4,6 @@ import Plant from '../models/Plant.js'
 import PlantPhoto from '../models/PlantPhoto.js'
 import WateringLog from '../models/WateringLog.js'
 import sequelize from '../db.js'
-import jwt from 'jsonwebtoken'
 import { Op } from 'sequelize'
 import {
     getUploadedPlantPhotoPath,
@@ -13,7 +12,7 @@ import {
 } from '../utils/validation.js'
 import {
     getMaxAdviceQuestions,
-    suggestPlantSpecies,
+    suggestPlantSpeciesWithMeta,
     suggestWateringAdvice,
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
@@ -34,7 +33,7 @@ import {
     zonedDayKey
 } from '../utils/wateringSchedule.js'
 import User from '../models/userModels.js'
-import { resolveTimeZone } from '../utils/timeZone.js'
+import { resolveHemisphere, resolveTimeZone } from '../utils/timeZone.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
@@ -74,13 +73,13 @@ async function getUserTimeZone(userId) {
 }
 
 function getUserId(req) {
-    const token = req.cookies.token
-    if (!token) return null
-    try {
-        const decoded = jwt.verify(token, process.env.SECRET_KEY)
-        return decoded.id
-    } catch (e) {
-        return null
+    return req.user?.id ?? null
+}
+
+function getUserAiLocale(req) {
+    return {
+        timeZone: resolveTimeZone(req.user?.timezone),
+        hemisphere: resolveHemisphere(req.user)
     }
 }
 
@@ -94,12 +93,14 @@ class PlantController {
         }
 
         try {
-            const species = await suggestPlantSpecies(plantName.trim())
+            const { species, source, latencyMs } = await suggestPlantSpeciesWithMeta(plantName.trim())
             logAiAdvice({
                 userId: getUserId(req),
                 kind: 'species',
                 plantName,
-                species
+                species,
+                source,
+                latencyMs
             })
             return res.json({ species })
         } catch (error) {
@@ -141,11 +142,14 @@ class PlantController {
         }
 
         try {
+            const locale = getUserAiLocale(req)
             const advice = await suggestWateringAdvice({
                 plantName: name.trim(),
                 species: species?.trim(),
                 location: location?.trim(),
                 mode: mode || 'auto',
+                timeZone: locale.timeZone,
+                hemisphere: locale.hemisphere,
                 answers: answers.map(({ question, answer }) => ({
                     question: question.trim(),
                     answer: answer.trim()
@@ -161,7 +165,8 @@ class PlantController {
                 intervalDays: advice.intervalDays,
                 confidence: advice.confidence,
                 questionsAsked: answers.length,
-                source: advice.source
+                source: advice.source,
+                latencyMs: advice.latencyMs
             })
             return res.json(advice)
         } catch (error) {
@@ -190,11 +195,14 @@ class PlantController {
         }
 
         try {
+            const locale = getUserAiLocale(req)
             const advice = await suggestWateringTimeAdvice({
                 plantName: name.trim(),
                 species: species?.trim(),
                 location: location?.trim(),
-                intervalDays
+                intervalDays,
+                timeZone: locale.timeZone,
+                hemisphere: locale.hemisphere
             })
             logAiAdvice({
                 userId: getUserId(req),
@@ -204,7 +212,8 @@ class PlantController {
                 season: advice.season,
                 resultType: 'time',
                 timeOfDay: advice.timeOfDay,
-                source: advice.source
+                source: advice.source,
+                latencyMs: advice.latencyMs
             })
             return res.json(advice)
         } catch (error) {

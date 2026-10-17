@@ -45,7 +45,7 @@ test('buildAdviceLogRow: чистит пустые строки и неизве�
 
     assert.equal(row.plant_name, null)
     assert.equal(row.species, null)
-    assert.equal(row.source, 'ai')
+    assert.equal(row.source, 'unknown', 'неизвестный источник не выдаём за ответ модели')
     assert.equal(row.time_of_day, 'evening')
     assert.equal(row.questions_asked, 0)
 })
@@ -62,6 +62,7 @@ test('normalizeAdviceSource: пропускает только известны�
     assert.equal(normalizeAdviceSource('fallback'), 'fallback')
     assert.equal(normalizeAdviceSource('cache'), 'cache')
     assert.equal(normalizeAdviceSource('ai'), 'ai')
-    assert.equal(normalizeAdviceSource(''), 'ai')
-    assert.equal(normalizeAdviceSource(null), 'ai')
+    assert.equal(normalizeAdviceSource(''), 'unknown')
+    assert.equal(normalizeAdviceSource(null), 'unknown')
+    assert.equal(normalizeAdviceSource('ai '), 'unknown', 'значение должно быть передано точным')
 })

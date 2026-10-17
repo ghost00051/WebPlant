@@ -3,9 +3,16 @@ import Plant from '../models/Plant.js'
 import ChatLog from '../models/ChatLog.js'
 import { askAi } from '../services/aiService.js'
 import { buildPlantsOverview, resolveLocalChatAnswer } from '../utils/chatIntent.js'
+import { appTimeZone } from '../utils/localDay.js'
+import { resolveTimeZone } from '../utils/timeZone.js'
 
 function getUserId(req) {
     return req.user?.id ?? null
+}
+
+function getUserTimeZone(req, userId) {
+    if (!userId) return appTimeZone()
+    return resolveTimeZone(req.user?.timezone)
 }
 
 function getSessionOwner(userId, guestToken) {
@@ -14,13 +21,18 @@ function getSessionOwner(userId, guestToken) {
         : { user_id: null, 'metadata.guestToken': guestToken }
 }
 
+function isDegraded(row) {
+    return Boolean(row?.metadata?.degraded)
+}
+
 function isSessionId(value) {
     return typeof value === 'string' &&
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
 const MAX_HISTORY = 20          
-const SESSION_GAP_HOURS = 6    
+const SESSION_GAP_HOURS = 6
+const MAX_PLANTS_IN_CONTEXT = 50
 
 class ChatController {
 
@@ -42,6 +54,7 @@ class ChatController {
 
             let session = sessionId
             const now = new Date()
+            const timeZone = getUserTimeZone(req, userId)
 
             if (session) {
                 const ownedSession = await ChatLog.findOne({
@@ -89,8 +102,7 @@ class ChatController {
                 where: {
                     session_id: session,
                     ...getSessionOwner(userId, guestToken),
-                    role: { [Op.in]: ['user', 'assistant'] },
-                    error: null
+                    role: { [Op.in]: ['user', 'assistant'] }
                 },
                 order: [['created_at', 'DESC']],
                 limit: MAX_HISTORY
@@ -99,17 +111,24 @@ class ChatController {
 
             const history = historyRows
                 .reverse()
-                .filter(r => r.id !== userMsg.id)
+                .filter(r => r.id !== userMsg.id && !isDegraded(r))
                 .map(r => ({ role: r.role, text: r.text }))
 
 
             let plants = []
+            let plantsCount = 0
             if (userId) {
-                plants = await Plant.findAll({
-                    where: { user_id: userId, is_active: true },
-                    order: [['next_watering_at', 'ASC']],
-                    limit: 50
-                })
+                const plantsWhere = { user_id: userId, is_active: true }
+                const [rows, total] = await Promise.all([
+                    Plant.findAll({
+                        where: plantsWhere,
+                        order: [['next_watering_at', 'ASC']],
+                        limit: MAX_PLANTS_IN_CONTEXT
+                    }),
+                    Plant.count({ where: plantsWhere })
+                ])
+                plants = rows
+                plantsCount = total
             }
 
             const plantContext = plants.map(p => ({
@@ -126,7 +145,8 @@ class ChatController {
                 message,
                 plants: plantContext,
                 isAuthorized: !!userId,
-                now
+                now,
+                timeZone
             })
 
             if (localAnswer) {
@@ -151,11 +171,13 @@ class ChatController {
                 answer = await askAi({
                     message,
                     history,
+                    timeZone,
                     context: {
                         isAuthorized: !!userId,
-                        plantsCount: plants.length,
+                        plantsCount,
                         plants: plantContext,
-                        today: now.toISOString()
+                        today: now.toISOString(),
+                        timeZone
                     }
                 })
             } catch (aiError) {
@@ -163,7 +185,8 @@ class ChatController {
                 const degradedText = buildPlantsOverview({
                     plants: plantContext,
                     isAuthorized: !!userId,
-                    now
+                    now,
+                    timeZone
                 })
 
                 await ChatLog.create({
@@ -172,7 +195,11 @@ class ChatController {
                     role: 'assistant',
                     text: degradedText,
                     error: aiError.message || 'AI error',
-                    metadata: { guestToken, degraded: true }
+                    metadata: {
+                        guestToken,
+                        degraded: true,
+                        degradeReason: budgetExceeded ? 'budget' : (aiError.code || 'ai-error')
+                    }
                 })
 
                 console.warn('⚠️ Чат без модели, отвечаю по данным приложения:', aiError.message || aiError)
@@ -230,10 +257,7 @@ class ChatController {
             let activeSession = sessionId
             if (!activeSession) {
                 const latest = await ChatLog.findOne({
-                    where: {
-                        ...getSessionOwner(userId, guestToken),
-                        error: null
-                    },
+                    where: getSessionOwner(userId, guestToken),
                     attributes: ['session_id'],
                     order: [['created_at', 'DESC'], ['id', 'DESC']]
                 })
@@ -245,8 +269,7 @@ class ChatController {
 
             const where = {
                 ...getSessionOwner(userId, guestToken),
-                session_id: activeSession,
-                error: null
+                session_id: activeSession
             }
             const parsedLimit = Number.parseInt(limit, 10)
 
@@ -262,7 +285,8 @@ class ChatController {
                     id: r.id,
                     role: r.role,
                     text: r.text,
-                    createdAt: r.created_at
+                    createdAt: r.created_at,
+                    degraded: isDegraded(r) || undefined
                 }))
 
             return res.json({

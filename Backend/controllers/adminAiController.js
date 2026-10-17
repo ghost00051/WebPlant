@@ -20,7 +20,8 @@ const ADVICE_KIND_LABELS = {
 const SOURCE_LABELS = {
     ai: 'модель',
     cache: 'кэш',
-    fallback: 'запасной вариант'
+    fallback: 'запасной вариант',
+    unknown: 'не указан'
 }
 
 function parseDays(value) {
@@ -63,6 +64,8 @@ async function getMetrics(req, res) {
         const config = {
             chatTimeoutMs: Number.parseInt(process.env.AI_CHAT_TIMEOUT_MS, 10) || 20_000,
             adviceTimeoutMs: Number.parseInt(process.env.AI_ADVICE_TIMEOUT_MS, 10) || 15_000,
+            chatDeadlineMs: Number.parseInt(process.env.AI_CHAT_DEADLINE_MS, 10) || null,
+            adviceDeadlineMs: Number.parseInt(process.env.AI_ADVICE_DEADLINE_MS, 10) || null,
             dailyBudget: metrics.budget.limit,
             maxAdviceQuestions: getMaxAdviceQuestions(),
             priceConfigured: Boolean(metrics.summary.cost)

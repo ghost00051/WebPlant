@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+    assertUsableChatResponse,
+    buildChatRequest,
     extractResponseText,
     getMaxAdviceQuestions,
     normalizeConfidence,
@@ -135,6 +137,90 @@ test('extractResponseText: обе формы ответа Responses API', () => 
         'Первая\nВторая'
     )
     assert.equal(extractResponseText({}), '')
+})
+
+test('assertUsableChatResponse: пустой и обрезанный ответ — ошибка, а не заглушка в кэш', () => {
+    assert.equal(assertUsableChatResponse({ output_text: '  Ответ  ' }), 'Ответ')
+
+    assert.throws(
+        () => assertUsableChatResponse({ output_text: '   ' }),
+        error => error.code === 'AI_EMPTY_RESPONSE'
+    )
+    assert.throws(
+        () => assertUsableChatResponse({}),
+        error => error.code === 'AI_EMPTY_RESPONSE'
+    )
+    assert.throws(
+        () => assertUsableChatResponse({
+            output_text: 'Обрыв',
+            status: 'incomplete',
+            incomplete_details: { reason: 'max_output_tokens' }
+        }),
+        error => error.code === 'AI_INCOMPLETE_RESPONSE'
+    )
+})
+
+test('buildChatRequest: статусы полива считаются по календарным суткам пользователя', () => {
+    const now = new Date('2026-10-17T20:00:00Z')
+    const request = buildChatRequest({
+        message: 'пора ли полить?',
+        history: [],
+        timeZone: 'Europe/Moscow',
+        context: {
+            isAuthorized: true,
+            plantsCount: 2,
+            today: now.toISOString(),
+            plants: [
+                { name: 'Завтрашняя', nextWatering: '2026-10-18T05:00:00Z', intervalDays: 7 },
+                { name: 'Сегодняшняя', nextWatering: '2026-10-17T05:00:00Z', intervalDays: 3 }
+            ]
+        }
+    })
+
+    const contextText = request.input[0].content
+    assert.match(contextText, /Завтрашняя.*— завтра/)
+    assert.match(contextText, /Сегодняшняя.*— пора полить сегодня/)
+    assert.match(contextText, /Europe\/Moscow/)
+    assert.equal(request.instructions.includes('Алиса'), true)
+})
+
+test('buildChatRequest: счётчик растений отдельно от показанного списка', () => {
+    const request = buildChatRequest({
+        message: 'сколько у меня растений?',
+        history: [],
+        timeZone: 'Europe/Moscow',
+        context: {
+            isAuthorized: true,
+            plantsCount: 120,
+            today: new Date('2026-10-17T09:00:00Z').toISOString(),
+            plants: [{ name: 'Монстера', nextWatering: '2026-10-20T05:00:00Z' }]
+        }
+    })
+
+    const contextText = request.input[0].content
+    assert.match(contextText, /Всего растений: 120/)
+    assert.match(contextText, /Показаны первые 1 растений из 120/)
+})
+
+test('buildChatRequest: история ограничена десятью сообщениями и роли приведены к API', () => {
+    const history = Array.from({ length: 14 }, (_, index) => ({
+        role: index % 2 === 0 ? 'user' : 'assistant',
+        text: `сообщение ${index}`
+    }))
+
+    const request = buildChatRequest({
+        message: 'новый вопрос',
+        history,
+        timeZone: 'UTC',
+        context: { isAuthorized: false }
+    })
+
+    // контекст + 10 сообщений истории + текущее сообщение
+    assert.equal(request.input.length, 12)
+    assert.equal(request.input[1].content, 'сообщение 4')
+    assert.equal(request.input[10].content, 'сообщение 13')
+    assert.equal(request.input[11].content, 'новый вопрос')
+    assert.equal(request.input[2].role, 'assistant')
 })
 
 test('detectPlantGroup: группы определяются по названию и виду', () => {

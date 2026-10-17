@@ -20,3 +20,11 @@ export function isValidTimeZone(value) {
 export function resolveTimeZone(value) {
     return isValidTimeZone(value) ? value.trim() : DEFAULT_TIME_ZONE
 }
+
+export function resolveHemisphere(user, env = process.env) {
+    const personal = typeof user?.hemisphere === 'string' ? user.hemisphere.trim().toLowerCase() : ''
+    if (personal === 'south' || personal === 'north') return personal
+
+    const global = String(env.HEMISPHERE || '').trim().toLowerCase()
+    return global === 'south' ? 'south' : 'north'
+}

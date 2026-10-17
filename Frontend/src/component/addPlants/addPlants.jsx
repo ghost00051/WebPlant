@@ -17,6 +17,30 @@ import {
 
 const MAX_PHOTOS = 2
 
+/**
+ * У обращений к ИИ нет смысла ждать бесконечно: на бэкенде стоит сквозной дедлайн
+ * (AI_ADVICE_DEADLINE_MS, по умолчанию 30 с), поэтому фронт обрывает запрос чуть позже
+ * и показывает понятную ошибку вместо вечного спиннера.
+ */
+const AI_REQUEST_TIMEOUT_MS = 35000
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+    try {
+        return await fetch(url, { ...options, signal: controller.signal })
+    } finally {
+        window.clearTimeout(timer)
+    }
+}
+
+function describeAiRequestError(error, fallbackMessage) {
+    if (error?.name === 'AbortError') {
+        return 'Сервис не ответил вовремя. Попробуйте ещё раз — данные не потеряны.'
+    }
+    return error?.message || fallbackMessage
+}
+
 const PRESETS = [
     { id: 'daily', label: 'Каждый день', days: 1 },
     { id: '3days', label: 'Раз в 3 дня', days: 3 },
@@ -154,7 +178,7 @@ function AddPlants() {
         setIsSuggestingSpecies(true)
         setSpeciesSuggestionError('')
         try {
-            const response = await fetch(`${API_URL}/plants/suggest-species`, {
+            const response = await fetchWithTimeout(`${API_URL}/plants/suggest-species`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -170,7 +194,7 @@ function AddPlants() {
             setSpecies(data.species.trim())
         } catch (error) {
             console.error('Ошибка подсказки вида растения:', error)
-            setSpeciesSuggestionError(error.message || 'Не удалось определить вид растения')
+            setSpeciesSuggestionError(describeAiRequestError(error, 'Не удалось определить вид растения'))
         } finally {
             setIsSuggestingSpecies(false)
         }
@@ -180,7 +204,7 @@ function AddPlants() {
         setIsAskingWateringAdvice(true)
         setWateringAdviceError('')
         try {
-            const response = await fetch(`${API_URL}/plants/watering-advice`, {
+            const response = await fetchWithTimeout(`${API_URL}/plants/watering-advice`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -223,7 +247,7 @@ function AddPlants() {
         } catch (error) {
             if (wateringDialogSessionRef.current !== sessionId) return
             console.error('Ошибка рекомендации частоты полива:', error)
-            setWateringAdviceError(error.message || 'Не удалось получить рекомендацию')
+            setWateringAdviceError(describeAiRequestError(error, 'Не удалось получить рекомендацию'))
         } finally {
             if (wateringDialogSessionRef.current === sessionId) {
                 setIsAskingWateringAdvice(false)
@@ -239,7 +263,7 @@ function AddPlants() {
         setWateringTimeAdvice(null)
         setWateringTimeAdviceError('')
         try {
-            const response = await fetch(`${API_URL}/plants/watering-time-advice`, {
+            const response = await fetchWithTimeout(`${API_URL}/plants/watering-time-advice`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -263,7 +287,7 @@ function AddPlants() {
             setWateringTimeAdvice(data)
         } catch (error) {
             console.error('Ошибка рекомендации времени полива:', error)
-            setWateringTimeAdviceError(error.message || 'Не удалось подобрать время полива')
+            setWateringTimeAdviceError(describeAiRequestError(error, 'Не удалось подобрать время полива'))
         } finally {
             setIsAskingWateringTime(false)
         }

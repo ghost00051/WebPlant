@@ -2,7 +2,7 @@ import AiAdviceLog from '../models/AiAdviceLog.js'
 
 const MAX_TEXT = 255
 const ADVICE_KINDS = ['species', 'watering', 'time']
-const ADVICE_SOURCES = ['ai', 'cache', 'fallback']
+const ADVICE_SOURCES = ['ai', 'cache', 'fallback', 'unknown']
 
 function trimText(value) {
     if (typeof value !== 'string') return null
@@ -16,7 +16,7 @@ function toInteger(value) {
 }
 
 export function normalizeAdviceSource(value) {
-    return ADVICE_SOURCES.includes(value) ? value : 'ai'
+    return ADVICE_SOURCES.includes(value) ? value : 'unknown'
 }
 
 export function buildAdviceLogRow(entry = {}) {

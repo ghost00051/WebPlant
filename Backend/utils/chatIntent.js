@@ -1,51 +1,48 @@
-import { appTimeZone } from './aiMetrics.js'
+import { appTimeZone, describePlantDay, diffLocalDays, localDayKey } from './localDay.js'
 
-const DAY_MS = 24 * 60 * 60 * 1000
+export { describePlantDay }
 
-const INTENT_PATTERNS = [
-    { intent: 'what_to_water', pattern: /что\s+полить|кого\s+полить|пора\s+полить|нужно\s+полить|полить\s+сегодня|полив\s+сегодня|что\s+поливать/i },
-    { intent: 'schedule', pattern: /график|расписан|когда\s+полить|когда\s+поливать|следующий\s+полив|план\s+полива/i },
-    { intent: 'plants_count', pattern: /сколько\s+(у\s+меня\s+)?растен|мои\s+растения|список\s+растений|какие\s+у\s+меня\s+растения/i },
-    { intent: 'help', pattern: /что\s+ты\s+умеешь|чем\s+ты\s+можешь\s+помочь|помощь|help|подсказки/i }
+const MAX_LOCAL_COMMAND_LENGTH = 120
+
+const POLITE_PREFIX = /^(?:алиса|лейка|пожалуйста|скажи|подскажи|покажи-ка|покажи|ну|а)[\s,]+/
+
+const CARE_PROBLEM = /почему|отчего|желт|сохн|вянет|вянут|засыха|боле|пятн|гнил|гниёт|гниет|опал|сбросил|спасти|что\s+делать|не\s+растёт|не\s+растет|плохо\s+себя/
+
+const COMMAND_PATTERNS = [
+    {
+        intent: 'what_to_water',
+        pattern: /^(?:что|кого)(?:\s+мне)?\s+полить(?:\s+(?:сегодня|сейчас|завтра))?$|^(?:пора|нужно|надо)\s+полить$|^полить\s+сегодня$|^что\s+поливать$|^полив\s+сегодня$/
+    },
+    {
+        intent: 'schedule',
+        pattern: /^(?:покажи|показать)(?:\s+мне)?\s+(?:график|расписание|план)(?:\s+полива)?$|^(?:график|расписание|план)(?:\s+полива)?$|^когда\s+поли(?:ть|вать)(?:\s+.{1,30})?$|^следующий\s+полив$/
+    },
+    {
+        intent: 'plants_count',
+        pattern: /^сколько(?:\s+у\s+меня)?\s+растений$|^(?:мои|какие(?:\s+у\s+меня)?)\s+растения$|^список\s+растений$/
+    },
+    {
+        intent: 'help',
+        pattern: /^помощь$|^help$|^подсказки$|^что\s+ты\s+умеешь$|^чем\s+ты\s+можешь\s+помочь$|^какие\s+есть\s+(?:команды|возможности)$/
+    }
 ]
 
+export function normalizeLocalCommand(message) {
+    if (typeof message !== 'string') return ''
+    let text = message.trim().toLowerCase().replace(/\s+/g, ' ')
+    text = text.replace(/[?!.…\s]+$/u, '')
+    for (let i = 0; i < 3 && POLITE_PREFIX.test(text); i += 1) {
+        text = text.replace(POLITE_PREFIX, '')
+    }
+    return text.trim()
+}
+
 export function detectChatIntent(message) {
-    const text = typeof message === 'string' ? message.trim() : ''
-    if (!text) return null
-    const match = INTENT_PATTERNS.find(item => item.pattern.test(text))
+    const text = normalizeLocalCommand(message)
+    if (!text || text.length > MAX_LOCAL_COMMAND_LENGTH) return null
+    if (CARE_PROBLEM.test(text)) return null
+    const match = COMMAND_PATTERNS.find(item => item.pattern.test(text))
     return match ? match.intent : null
-}
-
-function dayKey(value, timeZone) {
-    const date = value instanceof Date ? value : new Date(value)
-    if (Number.isNaN(date.getTime())) return null
-    return new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-    }).format(date)
-}
-
-export function describePlantDay(value, { now = new Date(), timeZone = appTimeZone() } = {}) {
-    const target = dayKey(value, timeZone)
-    const today = dayKey(now, timeZone)
-    if (!target || !today) return null
-    if (target === today) return 'сегодня'
-
-    const diffDays = Math.round(
-        (new Date(`${target}T00:00:00Z`) - new Date(`${today}T00:00:00Z`)) / DAY_MS
-    )
-    if (diffDays === 1) return 'завтра'
-    if (diffDays === -1) return 'вчера'
-    if (diffDays < -1) return `просрочен на ${Math.abs(diffDays)} дн.`
-    if (diffDays <= 7) return `через ${diffDays} дн.`
-
-    return new Intl.DateTimeFormat('ru-RU', {
-        timeZone,
-        day: 'numeric',
-        month: 'long'
-    }).format(new Date(value))
 }
 
 function isDue(plant, now) {
@@ -57,7 +54,7 @@ function isDue(plant, now) {
 function dueToday(plant, options) {
     const next = plant?.nextWatering ? new Date(plant.nextWatering) : null
     if (!next || Number.isNaN(next.getTime())) return false
-    return dayKey(next, options.timeZone) === dayKey(options.now, options.timeZone)
+    return localDayKey(next, options.timeZone) === localDayKey(options.now, options.timeZone)
 }
 
 function plantLine(plant, options) {
@@ -195,3 +192,5 @@ export function resolveLocalChatAnswer({
 
     return null
 }
+
+export { diffLocalDays, localDayKey }

@@ -116,7 +116,7 @@ export function detectPlantGroup({ name, species } = {}) {
     return PLANT_GROUPS.find(group => group.pattern.test(haystack)) || DEFAULT_GROUP
 }
 
-export function getSeasonInfo(now = new Date(), timeZone = APP_TIME_ZONE) {
+export function getSeasonInfo(now = new Date(), timeZone = APP_TIME_ZONE, hemisphere = null) {
     const formatter = new Intl.DateTimeFormat('ru-RU', {
         timeZone,
         month: 'numeric',
@@ -133,7 +133,8 @@ export function getSeasonInfo(now = new Date(), timeZone = APP_TIME_ZONE) {
     else if (month >= 6 && month <= 8) season = 'summer'
     else season = 'autumn'
 
-    if (String(process.env.HEMISPHERE || '').toLowerCase() === 'south') {
+    const resolvedHemisphere = String(hemisphere || process.env.HEMISPHERE || '').toLowerCase()
+    if (resolvedHemisphere === 'south') {
         season = { winter: 'summer', summer: 'winter', spring: 'autumn', autumn: 'spring' }[season]
     }
 
@@ -173,9 +174,9 @@ function describeAnswers(answers = []) {
     return lines.length > 0 ? ` Ваши уточнения: ${lines.join(' ')}` : ''
 }
 
-export function fallbackWateringAdvice({ plantName, species, answers = [], now = new Date(), timeZone } = {}) {
+export function fallbackWateringAdvice({ plantName, species, answers = [], now = new Date(), timeZone, hemisphere } = {}) {
     const group = detectPlantGroup({ name: plantName, species })
-    const season = getSeasonInfo(now, timeZone)
+    const season = getSeasonInfo(now, timeZone, hemisphere)
     const intervalDays = seasonInterval(group, season.season)
     const details = describeAnswers(answers)
     const seasonNote = season.season === 'winter'
@@ -200,10 +201,11 @@ export function fallbackWateringTimeAdvice({
     intervalDays = null,
     now = new Date(),
     timeZone,
+    hemisphere,
     location = ''
 } = {}) {
     const group = detectPlantGroup({ name: plantName, species })
-    const season = getSeasonInfo(now, timeZone)
+    const season = getSeasonInfo(now, timeZone, hemisphere)
     const outdoors = /улиц|балкон|террас|сад|огород|теплиц|лоджи/i.test(String(location || ''))
     const rainyRisk = ['fern', 'calathea_maranta', 'orchid'].includes(group.id)
     const longInterval = Number.isFinite(intervalDays) && intervalDays >= 12

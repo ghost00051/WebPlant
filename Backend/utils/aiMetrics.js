@@ -1,15 +1,30 @@
-/**
- * Телеметрия обращений к ИИ.
- *
- * Счётчики живут в Redis по дням (по часовому поясу приложения) и не теряются
- * при перезапуске подов, в отличие от статистики кэша в памяти процесса.
- * Собираем: обращения к модели, ошибки и таймауты, попадания в кэш, токены,
- * задержки и их распределение по корзинам, а также расход дневного бюджета.
- */
-
 import { getRedisKeyPrefix, redisCommand } from '../redis.js'
+import { appTimeZone } from './localDay.js'
+
+export { appTimeZone }
 
 const METRICS_TTL_SECONDS = 90 * 24 * 60 * 60
+
+const LOCAL_FALLBACK_MAX_DAYS = 3
+const localRequestFallback = new Map()
+
+function bumpLocalRequestFallback(day) {
+    localRequestFallback.set(day, (localRequestFallback.get(day) || 0) + 1)
+    if (localRequestFallback.size > LOCAL_FALLBACK_MAX_DAYS) {
+        const keep = [...localRequestFallback.keys()].sort().slice(-LOCAL_FALLBACK_MAX_DAYS)
+        for (const key of [...localRequestFallback.keys()]) {
+            if (!keep.includes(key)) localRequestFallback.delete(key)
+        }
+    }
+}
+
+export function readLocalBudgetFallback(day = aiMetricsDay()) {
+    return localRequestFallback.get(day) || 0
+}
+
+export function resetLocalBudgetFallback() {
+    localRequestFallback.clear()
+}
 
 export const AI_SCOPES = ['chat', 'species', 'advice', 'time']
 export const AI_SCOPE_LABELS = {
@@ -19,7 +34,6 @@ export const AI_SCOPE_LABELS = {
     time: 'Время полива'
 }
 
-/** Корзины задержки: по ним считаем распределение, не храня каждое значение. */
 export const LATENCY_BUCKETS = [
     { id: 'lt1', label: 'до 1 с', maxMs: 1000 },
     { id: 'lt3', label: '1–3 с', maxMs: 3000 },
@@ -41,11 +55,6 @@ const COUNTER_FIELDS = [
     'latency_count'
 ]
 
-export function appTimeZone(env = process.env) {
-    return env.APP_TIME_ZONE || 'Europe/Moscow'
-}
-
-/** День в формате YYYY-MM-DD по часовому поясу приложения. */
 export function aiMetricsDay(now = new Date(), timeZone = appTimeZone()) {
     return new Intl.DateTimeFormat('en-CA', {
         timeZone,
@@ -71,10 +80,7 @@ function readNumber(value) {
     return Number.isFinite(parsed) ? parsed : 0
 }
 
-/**
- * Цена из .env: принимаем и точку, и запятую как разделитель, а также пробелы
- * (0,5 / 0.5 / 1 234,5). Иначе одна опечатка молча превратила бы стоимость в ноль.
- */
+
 export function parsePriceValue(raw) {
     if (raw === undefined || raw === null) return null
     const normalized = String(raw).trim().replace(/[\s\u00A0]/g, '').replace(',', '.')
@@ -91,8 +97,6 @@ export function readPriceConfig(env = process.env) {
         currency: env.AI_PRICE_CURRENCY || 'RUB',
         inputPer1k: input ?? 0,
         outputPer1k: output ?? 0,
-        // Кешированный вход у Яндекса дешевле обычного; если цена не задана,
-        // считаем кешированные токены по цене входа — оценка сверху.
         cachedPer1k: parsePriceValue(env.AI_PRICE_CACHED_PER_1K)
     }
 }
@@ -105,7 +109,6 @@ export function estimateAiCost(
 
     const input = readNumber(tokensIn)
     const output = readNumber(tokensOut)
-    // Кешированные токены входят в общее число входных — вычитаем их, чтобы не считать дважды.
     const cached = Math.min(readNumber(tokensCached), input)
 
     const costIn = price.cachedPer1k === null
@@ -216,6 +219,8 @@ export async function trackAiCall({
         redisCommand(['HINCRBY', key, field, String(value)])
     ))
     if (replies.some(reply => reply === null)) {
+        // Redis не принял счётчики: держим хотя бы локальный расход, чтобы бюджет не «испарился».
+        if (!cached) bumpLocalRequestFallback(day)
         return { recorded: false, reason: 'redis-error' }
     }
     await redisCommand(['EXPIRE', key, String(METRICS_TTL_SECONDS)])
@@ -289,18 +294,23 @@ function sumFields(rows) {
 export async function readAiMetricsRange({ days = 7, now = new Date() } = {}) {
     const safeDays = Math.min(Math.max(Number.parseInt(days, 10) || 7, 1), 90)
     const today = aiMetricsDay(now)
-    const rows = []
+    const dayKeys = []
 
     for (let offset = safeDays - 1; offset >= 0; offset -= 1) {
         const date = new Date(`${today}T00:00:00Z`)
         date.setUTCDate(date.getUTCDate() - offset)
-        const day = date.toISOString().slice(0, 10)
-        const raw = await redisCommand(['HGETALL', buildAiMetricsKey(day)])
-        rows.push({ day, raw: raw && typeof raw === 'object' ? raw : {} })
+        dayKeys.push(date.toISOString().slice(0, 10))
     }
+
+    const loaded = await Promise.all(dayKeys.map(async day => {
+        const raw = await redisCommand(['HGETALL', buildAiMetricsKey(day)])
+        return { day, raw: raw && typeof raw === 'object' ? raw : {} }
+    }))
+    const rows = loaded
 
     const budgetLimit = getAiDailyRequestBudget()
     const usedToday = readNumber(rows[rows.length - 1]?.raw?.requests)
+    const localUsedToday = readLocalBudgetFallback(aiMetricsDay(now))
 
     return {
         days: safeDays,
@@ -311,7 +321,8 @@ export async function readAiMetricsRange({ days = 7, now = new Date() } = {}) {
             limit: budgetLimit,
             usedToday,
             remaining: budgetLimit > 0 ? Math.max(0, budgetLimit - usedToday) : null,
-            exceeded: budgetLimit > 0 && usedToday >= budgetLimit
+            exceeded: budgetLimit > 0 && usedToday >= budgetLimit,
+            localFallbackUsed: localUsedToday
         }
     }
 }
@@ -322,7 +333,17 @@ export async function isAiBudgetExceeded({ now = new Date() } = {}) {
 
     const day = aiMetricsDay(now)
     const value = await redisCommand(['HGET', buildAiMetricsKey(day), 'requests'])
-    if (value === null) return { exceeded: false, limit, usedToday: 0, degraded: true }
+    if (value === null) {
+
+        const usedLocally = readLocalBudgetFallback(day)
+        return {
+            exceeded: usedLocally >= limit,
+            limit,
+            usedToday: usedLocally,
+            degraded: true,
+            localFallback: true
+        }
+    }
 
     const usedToday = readNumber(value)
     return { exceeded: usedToday >= limit, limit, usedToday }

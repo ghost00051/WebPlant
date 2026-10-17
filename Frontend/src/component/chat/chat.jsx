@@ -5,14 +5,13 @@ import './adaptiv.css'
 import IconLeaf from '../../assets/IconLeaf.svg'
 import IconMenu from '../../assets/IconMenu.svg'
 import IconSend from '../../assets/IconSend.svg'
-import IconMic from '../../assets/IconMic.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 
 const CHAT_TIMEOUT_MS = 30000
 const HISTORY_LIMIT = 50
 
-const GREETING = 'Привет! Я Алиса 💚 Помогу с поливом и уходом за растениями. Спроси: «Что полить?», «Покажи график» или «Сколько у меня растений?»'
+const GREETING = 'Привет! Я ИИ-помощник — помогу уследить за поливом и уходом за растениями. Напиши «Что полить?», «Покажи график» или «Сколько у меня растений?» — всё покажу.'
 
 function Chat() {
 
@@ -309,16 +308,7 @@ function Chat() {
                         className='chatActionBtn'
                         onClick={() => sendMessage()}
                         disabled={isTyping || !input.trim()}
-                        aria-label={input.trim() ? 'Отправить' : 'Голосовой ввод'}
-                    >
-                        <ThemedIcon src={IconMic} alt="" />
-                    </button>
-                    <button
-                        type='button'
-                        className='chatActionBtn'
-                        onClick={() => sendMessage()}
-                        disabled={isTyping || !input.trim()}
-                        aria-label={input.trim() ? 'Отправить' : 'Голосовой ввод'}
+                        aria-label='Отправить'
                     >
                         <img src={IconSend} alt="" />
                     </button>

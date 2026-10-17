@@ -65,6 +65,8 @@ const MIGRATION_FILES_BY_TABLE = {
     mail_broadcasts: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     mail_broadcast_recipients: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
+    ai_advice_logs: 'Backend/migrations/20261016_create_ai_advice_logs.sql',
+    chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
     site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
