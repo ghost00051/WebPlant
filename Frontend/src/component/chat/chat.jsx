@@ -293,6 +293,7 @@ function Chat() {
 
             <div className='chatInputArea'>
                 <div className='chatInputWrapper'>
+                    <input type="file" />
                     <textarea
                         ref={inputRef}
                         className='chatInputField'
