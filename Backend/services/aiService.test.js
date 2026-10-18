@@ -4,11 +4,16 @@ import assert from 'node:assert/strict'
 import {
     assertUsableChatResponse,
     buildChatRequest,
+    buildVisionRequest,
     extractResponseText,
+    formatPlantDiagnosisText,
     getMaxAdviceQuestions,
     normalizeConfidence,
+    normalizePhotoQuality,
     normalizeQuestionOptions,
+    normalizeSeverity,
     normalizeSpeciesSuggestion,
+    parsePlantDiagnosis,
     parseWateringAdvice,
     parseWateringTimeAdvice
 } from './aiService.js'
@@ -315,4 +320,108 @@ test('buildIntervalReference: ориентиры и сезонная попра�
 
     const summer = buildIntervalReference('summer')
     assert.match(summer, /лето/i)
+})
+
+test('parsePlantDiagnosis: полный JSON, уверенность и ограничения размеров', () => {
+    const raw = JSON.stringify({
+        isPlant: true,
+        plantName: '  Перец (Capsicum)  ',
+        visibleSymptoms: Array.from({ length: 8 }, (_, index) => 'Симптом ' + (index + 1)),
+        likelyProblems: [
+            { name: ' Паутинный клещ ', confidence: 'Высокая', why: '  Видны клещи и паутина  ' },
+            { name: 'Хлороз', confidence: 'medium' },
+            { name: 'Перелив', confidence: 'low' },
+            { name: 'Недостаток света', confidence: 'high' },
+            { name: 'Пятая проблема', confidence: 'high' }
+        ],
+        severity: 'Тяжёлая',
+        careAdvice: ['  Полейте растение  '],
+        photoQuality: 'хорошая',
+        needsAnotherPhoto: true,
+        summary: '  Растение поражено клещом.  '
+    })
+
+    const parsed = parsePlantDiagnosis(raw)
+
+    assert.ok(parsed)
+    assert.equal(parsed.plantName, 'Перец (Capsicum)')
+    assert.equal(parsed.visibleSymptoms.length, 6)
+    assert.equal(parsed.likelyProblems.length, 4)
+    assert.deepEqual(parsed.likelyProblems[0], {
+        name: 'Паутинный клещ',
+        confidence: 'high',
+        why: 'Видны клещи и паутина'
+    })
+    assert.equal(parsed.severity, 'severe')
+    assert.equal(parsed.photoQuality, 'good')
+    assert.equal(parsed.needsAnotherPhoto, true)
+    assert.equal(parsed.summary, 'Растение поражено клещом.')
+    assert.deepEqual(parsed.careAdvice, ['Полейте растение'])
+})
+
+test('parsePlantDiagnosis: markdown-обёртка, русские значения и пустые ответы', () => {
+    const fence = String.fromCharCode(96).repeat(3)
+    const fenced = parsePlantDiagnosis(fence + 'json{"isPlant":true,"plantName":"Фикус","severity":"лёгкая","photoQuality":"средняя"}' + fence)
+    assert.ok(fenced)
+    assert.equal(fenced.severity, 'mild')
+    assert.equal(fenced.photoQuality, 'fair')
+
+    const notPlant = parsePlantDiagnosis(JSON.stringify({ isPlant: false, summary: '' }))
+    assert.equal(notPlant.isPlant, false)
+    assert.match(notPlant.summary, /не удалось/i)
+
+    assert.equal(parsePlantDiagnosis('не json'), null)
+    assert.equal(parsePlantDiagnosis(null), null)
+    assert.equal(parsePlantDiagnosis(JSON.stringify({})), null)
+})
+
+test('normalizeSeverity / normalizePhotoQuality: неизвестные значения не ломают разбор', () => {
+    assert.equal(normalizeSeverity('Тяжёлая'), 'severe')
+    assert.equal(normalizeSeverity('нечто'), 'unknown')
+    assert.equal(normalizeSeverity(undefined), 'unknown')
+    assert.equal(normalizePhotoQuality('плохая'), 'poor')
+    assert.equal(normalizePhotoQuality('???'), 'fair')
+})
+
+test('buildVisionRequest: фото и вопрос попадают в запрос, длинный вопрос обрезается', () => {
+    const { instructions, input } = buildVisionRequest({
+        imageDataUrl: 'data:image/jpeg;base64,AAAA',
+        question: 'я'.repeat(700),
+        plantName: 'Перец'
+    })
+
+    assert.match(instructions, /ботанический/i)
+    assert.match(instructions, /JSON/)
+
+    const parts = input[0].content
+    assert.equal(parts[0].type, 'input_text')
+    assert.equal(parts[1].type, 'input_image')
+    assert.equal(parts[1].image_url, 'data:image/jpeg;base64,AAAA')
+    assert.match(parts[0].text, /Перец/)
+    assert.ok(parts[0].text.includes('я'.repeat(500)))
+    assert.ok(!parts[0].text.includes('я'.repeat(501)))
+})
+
+test('formatPlantDiagnosisText: карточка диагноза, дисклеймер и случай «не растение»', () => {
+    const text = formatPlantDiagnosisText({
+        isPlant: true,
+        plantName: 'Перец',
+        visibleSymptoms: ['Пожелтение'],
+        likelyProblems: [{ name: 'Хлороз', confidence: 'medium', why: 'Бледные листья' }],
+        severity: 'moderate',
+        careAdvice: ['Проверьте полив'],
+        photoQuality: 'good',
+        needsAnotherPhoto: false,
+        summary: 'Похоже на дефицит питания.'
+    })
+
+    assert.match(text, /Перец/)
+    assert.match(text, /Хлороз/)
+    assert.match(text, /уверенность: средняя/)
+    assert.match(text, /Проверьте полив/)
+    assert.match(text, /предварительная оценка/i)
+
+    const notPlant = formatPlantDiagnosisText({ isPlant: false, summary: 'Похоже на стену.' })
+    assert.match(notPlant, /стену/)
+    assert.match(notPlant, /не диагноз/i)
 })

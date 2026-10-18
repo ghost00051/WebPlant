@@ -28,6 +28,14 @@ import {
     getValidGuestToken
 } from '../middleware/guestToken.js'
 import { isValidTimeZone, resolveTimeZone } from '../utils/timeZone.js'
+import Plant from '../models/Plant.js'
+import {
+    advanceZonedWatering,
+    zonedDayHourAfter,
+    MISSED_GRACE_MS,
+    WATERING_TIME_OF_DAY_HOURS
+} from '../utils/wateringSchedule.js'
+import { withNotificationsReset } from '../utils/plantMetadata.js'
 
 dotenv.config()
 
@@ -461,7 +469,41 @@ class UserController {
                 return res.status(400).json({ message: "Нет полей для обновления" })
             }
 
+            const previousTimeZone = resolveTimeZone(user.timezone)
+            const nextTimeZone = updates.timezone !== undefined
+                ? resolveTimeZone(updates.timezone)
+                : previousTimeZone
+
             await user.update(updates)
+
+            if (nextTimeZone !== previousTimeZone) {
+                const plants = await Plant.findAll({
+                    where: { user_id: user.id, is_active: true }
+                })
+                await sequelize.transaction(async transaction => {
+                    for (const plant of plants) {
+                        if (!plant.next_watering_at) continue
+
+                        const hour = WATERING_TIME_OF_DAY_HOURS[plant.watering_time_of_day] ??
+                            WATERING_TIME_OF_DAY_HOURS.morning
+                        const interval = Number.isInteger(plant.watering_interval_days) &&
+                            plant.watering_interval_days > 0
+                            ? plant.watering_interval_days
+                            : 7
+                        let next = zonedDayHourAfter(plant.next_watering_at, 0, hour, nextTimeZone)
+                        if (!next || !Number.isFinite(next.getTime())) continue
+                        if (next.getTime() <= Date.now() - MISSED_GRACE_MS) {
+                            next = advanceZonedWatering(next, interval, hour, nextTimeZone, new Date())
+                        }
+                        if (!next) continue
+
+                        await plant.update({
+                            next_watering_at: next,
+                            metadata: withNotificationsReset(plant.metadata)
+                        }, { transaction })
+                    }
+                })
+            }
 
             return res.json(buildUserPayload(user))
         } catch (e) {

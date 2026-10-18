@@ -1,10 +1,11 @@
 import { Op } from 'sequelize'
 import Plant from '../models/Plant.js'
 import ChatLog from '../models/ChatLog.js'
-import { askAi } from '../services/aiService.js'
+import { analyzePlantPhoto, askAi } from '../services/aiService.js'
 import { buildPlantsOverview, resolveLocalChatAnswer } from '../utils/chatIntent.js'
 import { appTimeZone } from '../utils/localDay.js'
 import { resolveTimeZone } from '../utils/timeZone.js'
+import { saveChatPhoto } from '../utils/chatPhoto.js'
 
 function getUserId(req) {
     return req.user?.id ?? null
@@ -33,6 +34,79 @@ function isSessionId(value) {
 const MAX_HISTORY = 20          
 const SESSION_GAP_HOURS = 6
 const MAX_PLANTS_IN_CONTEXT = 50
+const MAX_PHOTO_MESSAGE_LENGTH = 1000
+
+async function resolveSession({ userId, guestToken, sessionId, now }) {
+    if (sessionId) {
+        const ownedSession = await ChatLog.findOne({
+            where: {
+                session_id: sessionId,
+                ...getSessionOwner(userId, guestToken)
+            },
+            attributes: ['id']
+        })
+        return ownedSession ? { session: sessionId } : { notFound: true }
+    }
+
+    const where = userId
+        ? { user_id: userId, role: 'user' }
+        : { user_id: null, 'metadata.guestToken': guestToken, role: 'user' }
+
+    const last = await ChatLog.findOne({
+        where,
+        order: [['created_at', 'DESC']]
+    })
+    if (!last) return { session: null }
+
+    const hoursSince = (now - new Date(last.created_at)) / (60 * 60 * 1000)
+    return { session: hoursSince < SESSION_GAP_HOURS ? last.session_id : null }
+}
+
+async function loadRecentHistory({ userId, guestToken, sessionId, excludeId }) {
+    const rows = await ChatLog.findAll({
+        where: {
+            session_id: sessionId,
+            ...getSessionOwner(userId, guestToken),
+            role: { [Op.in]: ['user', 'assistant'] }
+        },
+        order: [['created_at', 'DESC']],
+        limit: MAX_HISTORY
+    })
+
+    return rows
+        .reverse()
+        .filter(row => row.id !== excludeId && !isDegraded(row))
+        .map(row => ({ role: row.role, text: row.text }))
+}
+
+async function loadPlantsContext(userId, { limit = MAX_PLANTS_IN_CONTEXT } = {}) {
+    if (!userId) return { plants: [], plantsCount: 0 }
+
+    const where = { user_id: userId, is_active: true }
+    const [rows, total] = await Promise.all([
+        Plant.findAll({
+            where,
+            order: [['next_watering_at', 'ASC']],
+            limit
+        }),
+        Plant.count({ where })
+    ])
+
+    return { plants: rows, plantsCount: total }
+}
+
+function visionFailureMessage(error) {
+    switch (error?.code) {
+        case 'AI_BUDGET_EXCEEDED':
+            return 'На сегодня лимит обращений к ИИ исчерпан. Попробуйте завтра 🌱'
+        case 'AI_VISION_NOT_CONFIGURED':
+            return 'Анализ фото пока недоступен.'
+        case 'AI_VISION_UNSUPPORTED_IMAGE':
+            return 'Не удалось прочитать фото. Попробуйте JPEG или PNG.'
+        default:
+            return 'Не получилось разобрать фото. Попробуйте другое фото или повторите позже.'
+    }
+}
 
 class ChatController {
 
@@ -52,84 +126,33 @@ class ChatController {
                 return res.status(400).json({ message: 'Некорректный sessionId' })
             }
 
-            let session = sessionId
             const now = new Date()
             const timeZone = getUserTimeZone(req, userId)
 
-            if (session) {
-                const ownedSession = await ChatLog.findOne({
-                    where: {
-                        session_id: session,
-                        ...getSessionOwner(userId, guestToken)
-                    },
-                    attributes: ['id']
-                })
-                if (!ownedSession) {
-                    return res.status(404).json({ message: 'Сессия не найдена' })
-                }
+            const resolvedSession = await resolveSession({ userId, guestToken, sessionId, now })
+            if (resolvedSession.notFound) {
+                return res.status(404).json({ message: 'Сессия не найдена' })
             }
-
-            if (!session) {
-                const where = userId
-                    ? { user_id: userId, role: 'user' }
-                    : { user_id: null, 'metadata.guestToken': guestToken, role: 'user' }
-
-                const last = await ChatLog.findOne({
-                    where,
-                    order: [['created_at', 'DESC']]
-                })
-
-                if (last) {
-                    const hoursSince = (now - new Date(last.created_at)) / (60 * 60 * 1000)
-                    session = hoursSince < SESSION_GAP_HOURS
-                        ? last.session_id
-                        : null   
-                }
-            }
-
+            let session = resolvedSession.session
 
             const userMsg = await ChatLog.create({
                 user_id: userId,
-                session_id: session || undefined,  
+                session_id: session || undefined,
                 role: 'user',
                 text: message,
                 metadata: { ip: req.ip, userAgent: req.headers['user-agent'], guestToken }
             })
             session = userMsg.session_id
 
-
-            const historyRows = await ChatLog.findAll({
-                where: {
-                    session_id: session,
-                    ...getSessionOwner(userId, guestToken),
-                    role: { [Op.in]: ['user', 'assistant'] }
-                },
-                order: [['created_at', 'DESC']],
-                limit: MAX_HISTORY
+            const history = await loadRecentHistory({
+                userId,
+                guestToken,
+                sessionId: session,
+                excludeId: userMsg.id
             })
 
 
-            const history = historyRows
-                .reverse()
-                .filter(r => r.id !== userMsg.id && !isDegraded(r))
-                .map(r => ({ role: r.role, text: r.text }))
-
-
-            let plants = []
-            let plantsCount = 0
-            if (userId) {
-                const plantsWhere = { user_id: userId, is_active: true }
-                const [rows, total] = await Promise.all([
-                    Plant.findAll({
-                        where: plantsWhere,
-                        order: [['next_watering_at', 'ASC']],
-                        limit: MAX_PLANTS_IN_CONTEXT
-                    }),
-                    Plant.count({ where: plantsWhere })
-                ])
-                plants = rows
-                plantsCount = total
-            }
+            const { plants, plantsCount } = await loadPlantsContext(userId)
 
             const plantContext = plants.map(p => ({
                 name: p.name,
@@ -243,6 +266,143 @@ class ChatController {
         }
     }
 
+    async analyzePhoto(req, res) {
+        try {
+            const userId = getUserId(req)
+            const guestToken = req.guestToken
+            const file = req.file
+
+            if (!file?.buffer?.length) {
+                return res.status(400).json({ message: 'Фото не загружено' })
+            }
+
+            const { sessionId } = req.body || {}
+            if (sessionId && !isSessionId(sessionId)) {
+                return res.status(400).json({ message: 'Некорректный sessionId' })
+            }
+
+            const rawMessage = req.body?.message
+            const message = typeof rawMessage === 'string'
+                ? rawMessage.trim().slice(0, MAX_PHOTO_MESSAGE_LENGTH)
+                : ''
+            const now = new Date()
+            const timeZone = getUserTimeZone(req, userId)
+
+            const resolvedSession = await resolveSession({ userId, guestToken, sessionId, now })
+            if (resolvedSession.notFound) {
+                return res.status(404).json({ message: 'Сессия не найдена' })
+            }
+            let session = resolvedSession.session
+
+            const photo = await saveChatPhoto(file.buffer)
+            const photoUrl = `${req.protocol}://${req.get('host')}/uploads/chat/${photo.filename}`
+
+            const userMsg = await ChatLog.create({
+                user_id: userId,
+                session_id: session || undefined,
+                role: 'user',
+                text: message || 'Фото растения для диагностики',
+                metadata: {
+                    ip: req.ip,
+                    userAgent: req.headers['user-agent'],
+                    guestToken,
+                    photoUrl
+                }
+            })
+            session = userMsg.session_id
+
+            let result
+            try {
+                result = await analyzePlantPhoto({
+                    imageBuffer: file.buffer,
+                    question: message,
+                    timeZone
+                })
+            } catch (visionError) {
+                const budgetExceeded = visionError?.code === 'AI_BUDGET_EXCEEDED'
+                const failureText = visionFailureMessage(visionError)
+
+                await ChatLog.create({
+                    user_id: userId,
+                    session_id: session,
+                    role: 'assistant',
+                    text: failureText,
+                    error: visionError.message || 'AI vision error',
+                    metadata: {
+                        guestToken,
+                        photoUrl,
+                        degraded: true,
+                        degradeReason: budgetExceeded ? 'budget' : (visionError.code || 'vision-error')
+                    }
+                })
+
+                console.warn('⚠️ Анализ фото без модели:', visionError.message || visionError)
+
+                if (!userId && budgetExceeded) {
+                    return res.status(503).json({
+                        message: 'На сегодня лимит анализа фото исчерпан — продолжим завтра 🌱'
+                    })
+                }
+
+                return res.json({
+                    text: failureText,
+                    sessionId: session,
+                    photoUrl,
+                    degraded: true
+                })
+            }
+
+            await ChatLog.create({
+                user_id: userId,
+                session_id: session,
+                role: 'assistant',
+                text: result.text,
+                input_tokens: result.usage?.input_tokens || null,
+                output_tokens: result.usage?.output_tokens || null,
+                metadata: {
+                    guestToken,
+                    photoUrl,
+                    diagnosis: result.diagnosis,
+                    source: result.source,
+                    latencyMs: result.latencyMs
+                }
+            })
+
+            return res.json({
+                text: result.text,
+                sessionId: session,
+                photoUrl,
+                diagnosis: result.diagnosis,
+                source: result.source,
+                cached: result.cached,
+                usage: result.usage
+            })
+        } catch (error) {
+            console.error('❌ Ошибка анализа фото в чате:', error)
+
+            const unsupportedCodes = [
+                'CHAT_PHOTO_EMPTY',
+                'CHAT_PHOTO_UNSUPPORTED',
+                'AI_VISION_NO_IMAGE',
+                'AI_VISION_UNSUPPORTED_IMAGE'
+            ]
+            if (unsupportedCodes.includes(error?.code)) {
+                return res.status(400).json({ message: 'Не удалось прочитать фото. Попробуйте JPEG или PNG.' })
+            }
+
+            const unavailableCodes = [
+                'CHAT_PHOTO_UNAVAILABLE',
+                'AI_VISION_UNAVAILABLE',
+                'AI_VISION_NOT_CONFIGURED'
+            ]
+            if (unavailableCodes.includes(error?.code)) {
+                return res.status(503).json({ message: 'Обработка фото временно недоступна' })
+            }
+
+            return res.status(500).json({ message: 'Не удалось проанализировать фото. Попробуйте позже.' })
+        }
+    }
+
 
     async history(req, res) {
         try {
@@ -286,7 +446,9 @@ class ChatController {
                     role: r.role,
                     text: r.text,
                     createdAt: r.created_at,
-                    degraded: isDegraded(r) || undefined
+                    degraded: isDegraded(r) || undefined,
+                    photoUrl: r.metadata?.photoUrl || null,
+                    diagnosis: r.metadata?.diagnosis || null
                 }))
 
             return res.json({

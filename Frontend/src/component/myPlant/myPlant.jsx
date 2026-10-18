@@ -7,6 +7,7 @@ import './dark-theme.css'
 import search from '../../assets/search.svg'
 import xcircle from '../../assets/x-circle.svg'
 import { API_URL } from '../../utils/api.js'
+import { weekdayRestrictionApplies } from '../../utils/date.js'
 
 const WEEKDAYS = [
     { id: 1, label: 'Пн' },
@@ -189,6 +190,7 @@ function MyPlant() {
     }
 
     const toggleReminderWeekday = day => {
+        if (!weekdayRestrictionApplies(Number(editForm?.watering_interval_days))) return
         setEditForm(current => ({
             ...current,
             reminder_weekdays: current.reminder_weekdays.includes(day)
@@ -199,6 +201,9 @@ function MyPlant() {
 
     const filteredPlants = plant.filter(item =>
         item.name?.toLowerCase().includes(searchQuery.trim().toLowerCase())
+    )
+    const canRestrictWeekdays = weekdayRestrictionApplies(
+        Number(editForm?.watering_interval_days)
     )
 
     return (
@@ -396,19 +401,31 @@ function MyPlant() {
                             <fieldset className='plantEditorWeekdays'>
                                 <legend>Дни напоминаний</legend>
                                 <div>
-                                    {WEEKDAYS.map(day => (
-                                        <button
-                                            key={day.id}
-                                            type='button'
-                                            className={editForm.reminder_weekdays.includes(day.id) ? 'active' : ''}
-                                            aria-pressed={editForm.reminder_weekdays.includes(day.id)}
-                                            onClick={() => toggleReminderWeekday(day.id)}
-                                        >
-                                            {day.label}
-                                        </button>
-                                    ))}
+                                    {WEEKDAYS.map(day => {
+                                        const isSelected = canRestrictWeekdays &&
+                                            editForm.reminder_weekdays.includes(day.id)
+
+                                        return (
+                                            <button
+                                                key={day.id}
+                                                type='button'
+                                                className={isSelected ? 'active' : ''}
+                                                aria-pressed={canRestrictWeekdays ? isSelected : undefined}
+                                                onClick={() => toggleReminderWeekday(day.id)}
+                                                disabled={!canRestrictWeekdays}
+                                            >
+                                                {day.label}
+                                            </button>
+                                        )
+                                    })}
                                 </div>
-                                <small>Если не выбирать дни, напоминания будут приходить по графику.</small>
+                                <small>
+                                    {!canRestrictWeekdays
+                                        ? 'Полив попадает на разные дни недели — ограничить дни можно при ежедневном поливе или интервале, кратном 7.'
+                                        : editForm.reminder_weekdays.length === 0
+                                            ? 'Если не выбирать дни, напоминания будут приходить по графику.'
+                                            : 'Дни выбраны по частоте полива. При необходимости измените их вручную.'}
+                                </small>
                             </fieldset>
                             {editError && <p className='plantDialogError' role='alert'>{editError}</p>}
                             <div className='plantDialogActions'>

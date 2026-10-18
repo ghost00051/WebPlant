@@ -1,0 +1,76 @@
+html[data-theme='dark'] .notificationsPage {
+  background: var(--theme-page);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notificationsBack,
+html[data-theme='dark'] .notificationsMarkAll {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notificationsMarkAll img,
+html[data-theme='dark'] .notificationsBack img {
+  filter: brightness(0) invert(88%);
+}
+
+html[data-theme='dark'] .notificationsPush {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notificationsPushError {
+  color: #ffb4ab;
+}
+
+html[data-theme='dark'] .notificationsIcon--watering,
+html[data-theme='dark'] .notificationsIcon--care {
+  background: rgba(95, 158, 110, 0.18);
+}
+
+html[data-theme='dark'] .notificationsIcon--advice {
+  background: rgba(211, 162, 60, 0.18);
+}
+
+html[data-theme='dark'] .notificationsIcon--system {
+  background: rgba(138, 127, 196, 0.2);
+}
+
+html[data-theme='dark'] .notificationsIcon--alert {
+  background: rgba(212, 105, 95, 0.2);
+}
+
+html[data-theme='dark'] .notificationsAction--watering,
+html[data-theme='dark'] .notificationsAction--care {
+  background: rgba(95, 158, 110, 0.2);
+  color: #a9d6b2;
+}
+
+html[data-theme='dark'] .notificationsAction--advice {
+  background: rgba(211, 162, 60, 0.2);
+  color: #e8c98c;
+}
+
+html[data-theme='dark'] .notificationsAction--system {
+  background: rgba(138, 127, 196, 0.22);
+  color: #c4bce6;
+}
+
+html[data-theme='dark'] .notificationsAction--alert {
+  background: rgba(212, 105, 95, 0.22);
+  color: #f0b3ac;
+}
+
+html[data-theme='dark'] .notificationsError {
+  background: rgba(179, 38, 30, 0.16);
+  color: #ffb4ab;
+}
+
+html[data-theme='dark'] .notificationsBottomNav {
+  background: var(--theme-page);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notificationsCard.is-unread {
+  border-color: rgba(127, 209, 160, 0.35);
+}

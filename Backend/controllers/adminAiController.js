@@ -64,8 +64,10 @@ async function getMetrics(req, res) {
         const config = {
             chatTimeoutMs: Number.parseInt(process.env.AI_CHAT_TIMEOUT_MS, 10) || 20_000,
             adviceTimeoutMs: Number.parseInt(process.env.AI_ADVICE_TIMEOUT_MS, 10) || 15_000,
+            visionTimeoutMs: Number.parseInt(process.env.AI_VISION_TIMEOUT_MS, 10) || 45_000,
             chatDeadlineMs: Number.parseInt(process.env.AI_CHAT_DEADLINE_MS, 10) || null,
             adviceDeadlineMs: Number.parseInt(process.env.AI_ADVICE_DEADLINE_MS, 10) || null,
+            visionDeadlineMs: Number.parseInt(process.env.AI_VISION_DEADLINE_MS, 10) || null,
             dailyBudget: metrics.budget.limit,
             maxAdviceQuestions: getMaxAdviceQuestions(),
             priceConfigured: Boolean(metrics.summary.cost)

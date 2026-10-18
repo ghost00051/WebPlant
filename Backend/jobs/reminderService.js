@@ -1,17 +1,35 @@
 import cron from 'node-cron'
 import { Op } from 'sequelize'
+import sequelize from '../db.js'
 import Plant from '../models/Plant.js'
 import pushService from '../services/pushService.js'
 import WateringLog from '../models/WateringLog.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import { storeNotification } from '../services/notificationService.js'
-import { isReminderWeekday, weekdayRestrictionApplies } from '../utils/wateringSchedule.js'
+import {
+    isReminderWeekday,
+    splitMissedWaterings,
+    weekdayRestrictionApplies,
+    zonedDayHourAfter,
+    zonedDayKey,
+    MISSED_GRACE_MS,
+    WATERING_TIME_OF_DAY_HOURS
+} from '../utils/wateringSchedule.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 import User from '../models/userModels.js'
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
+import { isRemindersPaused, registerAutoSkip } from '../utils/plantMetadata.js'
 
 const HOUR = 60 * 60 * 1000
 const SUMMARY_HOUR = 9
+const DAY_BEFORE_START_HOUR = 9
+const DAY_BEFORE_END_HOUR = 21
+const DAY_BEFORE_QUERY_FROM_MS = 8 * HOUR
+const DAY_BEFORE_QUERY_TO_MS = 44 * HOUR
+const ON_DAY_EARLY_MS = 5 * 60 * 1000
+const ON_DAY_LATE_MS = 15 * 60 * 1000
+const AUTO_SKIP_NOTE = 'Автоматический пропуск (просрочено > 24ч)'
+const MAX_SKIP_LOGS_PER_TICK = 100
 const TICK_LOCK = 'job:reminder-tick'
 const TICK_INTERVAL_MINUTES = 10
 const TICK_CRON = `*/${TICK_INTERVAL_MINUTES} * * * *`
@@ -37,14 +55,14 @@ function getDateParts(date, timeZone) {
 
 function zonedMidnightToUtc({ year, month, day }, timeZone) {
     const utcGuess = Date.UTC(year, month - 1, day)
-    const zonedParts = getDateParts(new Date(utcGuess), timeZone)
+    const zoned = getDateParts(new Date(utcGuess), timeZone)
     const zonedAsUtc = Date.UTC(
-        zonedParts.year,
-        zonedParts.month - 1,
-        zonedParts.day,
-        zonedParts.hour,
-        zonedParts.minute,
-        zonedParts.second
+        zoned.year,
+        zoned.month - 1,
+        zoned.day,
+        zoned.hour,
+        zoned.minute,
+        zoned.second
     )
     return new Date(utcGuess - (zonedAsUtc - utcGuess))
 }
@@ -63,6 +81,15 @@ function getDayBounds(now, timeZone) {
         date: `${today.year}-${String(today.month).padStart(2, '0')}-${String(today.day).padStart(2, '0')}`,
         end: zonedMidnightToUtc(tomorrowParts, timeZone)
     }
+}
+
+function localTomorrowKey(now, timeZone) {
+    return zonedDayKey(zonedDayHourAfter(now, 1, 12, timeZone), timeZone)
+}
+
+function wateringHour(plant) {
+    return WATERING_TIME_OF_DAY_HOURS[plant.watering_time_of_day] ??
+        WATERING_TIME_OF_DAY_HOURS.morning
 }
 
 async function loadTimeZones(userIds) {
@@ -96,7 +123,7 @@ class ReminderService {
     }
 
     async autoSkipOverdue(now) {
-        const cutoff = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        const cutoff = new Date(now.getTime() - MISSED_GRACE_MS)
 
         const plants = await Plant.findAll({
             where: {
@@ -104,6 +131,9 @@ class ReminderService {
                 next_watering_at: { [Op.lt]: cutoff }
             }
         })
+        if (!plants.length) return
+
+        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
 
         for (const candidate of plants) {
             let transaction
@@ -121,47 +151,66 @@ class ReminderService {
                 })
                 if (!plant) {
                     await transaction.rollback()
+                    transaction = null
                     continue
                 }
 
+                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
                 const scheduledFor = new Date(plant.next_watering_at)
-                const hoursLate = Math.round(
-                    (now - scheduledFor) / (60 * 60 * 1000)
-                )
-
                 const intervalDays = Number.isInteger(plant.watering_interval_days) &&
                     plant.watering_interval_days > 0
                     ? plant.watering_interval_days
                     : 7
-                const intervalMs = intervalDays * 24 * HOUR
-                const periodsToAdvance = Math.floor((now - scheduledFor) / intervalMs) + 1
-                const nextWatering = new Date(
-                    scheduledFor.getTime() + periodsToAdvance * intervalMs
+                const { missed, next } = splitMissedWaterings(
+                    scheduledFor,
+                    intervalDays,
+                    wateringHour(plant),
+                    timeZone,
+                    now
                 )
+
+                if (!missed.length || !next || !Number.isFinite(next.getTime())) {
+                    await transaction.rollback()
+                    transaction = null
+                    continue
+                }
+
+                const wasPaused = isRemindersPaused(plant.metadata)
+                const metadata = registerAutoSkip(plant.metadata, { missedSince: missed[0] })
 
                 await plant.update({
-                    next_watering_at: nextWatering,
-                    metadata: {
-                        ...(plant.metadata || {}),
-                        notifications: {}
-                    }
+                    next_watering_at: next,
+                    metadata
                 }, { transaction })
 
-                await WateringLog.create({
-                    plant_id: plant.id,
-                    user_id: plant.user_id,
-                    action: 'skipped',
-                    action_at: now,
-                    scheduled_for: scheduledFor,
-                    hours_late: hoursLate,
-                    note: 'Автоматический пропуск (просрочено > 24ч)'
-                }, { transaction })
+                const logged = missed.length > MAX_SKIP_LOGS_PER_TICK
+                    ? missed.slice(-MAX_SKIP_LOGS_PER_TICK)
+                    : missed
+
+                for (const slot of logged) {
+                    await WateringLog.create({
+                        plant_id: plant.id,
+                        user_id: plant.user_id,
+                        action: 'skipped',
+                        action_at: now,
+                        scheduled_for: slot,
+                        hours_late: Math.max(0, Math.round((now.getTime() - slot.getTime()) / HOUR)),
+                        note: AUTO_SKIP_NOTE
+                    }, { transaction })
+                }
+
                 await transaction.commit()
+                transaction = null
 
                 console.log(
-                    `⏭ plant#${plant.id} «${plant.name}»: пропущен ` +
-                    `(просрочен на ${hoursLate}ч), сдвинут на ${nextWatering.toISOString()}`
+                    `⏭ plant#${plant.id} «${plant.name}»: пропущено ${missed.length}, ` +
+                    `слоты: ${logged.map(slot => slot.toISOString()).join(', ')}, ` +
+                    `следующий полив ${next.toISOString()}`
                 )
+
+                if (!wasPaused) {
+                    await this.notifyAutoSkip(plant, missed)
+                }
             } catch (error) {
                 if (transaction && !transaction.finished) await transaction.rollback()
                 console.error(
@@ -172,17 +221,49 @@ class ReminderService {
         }
     }
 
+    async notifyAutoSkip(plant, missed) {
+        const first = missed[0]
+        const body = missed.length === 1
+            ? `«${plant.name}»: полив пропущен. Растение всё ещё ждёт воды.`
+            : `«${plant.name}»: пропущено ${missed.length} поливов. Растение всё ещё ждёт воды.`
+
+        try {
+            const { notification } = await storeNotification({
+                userId: plant.user_id,
+                plantId: plant.id,
+                type: 'watering_due',
+                title: '💧 Полив пропущен',
+                body,
+                dedupeKey: `plant:${plant.id}:auto_skip:${first.toISOString()}`,
+                scheduledFor: first
+            })
+            await pushService.sendToUser(
+                plant.user_id,
+                '💧 Полив пропущен',
+                body,
+                '/icons/icon-192.png',
+                { plantId: plant.id, url: '/home', tag: 'auto_skip', notificationId: notification.id }
+            )
+        } catch (error) {
+            console.error(`❌ Не удалось отправить уведомление о пропуске plant#${plant.id}:`, error)
+        }
+    }
+
     async tick() {
         const now = new Date()
         console.log(`\n🔔 ReminderService.tick() @ ${now.toISOString()}`)
 
-        try {
-            await this.autoSkipOverdue(now)
-            await this.sendMorningSummary(now)
-            await this.sendDayBefore(now)
-            await this.sendOnDay(now)
-        } catch (e) {
-            console.error('❌ ReminderService.tick error:', e)
+        for (const [name, run] of [
+            ['autoSkipOverdue', () => this.autoSkipOverdue(now)],
+            ['sendMorningSummary', () => this.sendMorningSummary(now)],
+            ['sendDayBefore', () => this.sendDayBefore(now)],
+            ['sendOnDay', () => this.sendOnDay(now)]
+        ]) {
+            try {
+                await run()
+            } catch (error) {
+                console.error(`❌ ReminderService.${name} error:`, error)
+            }
         }
     }
 
@@ -215,11 +296,15 @@ class ReminderService {
 
     async sendMorningSummaryTo(preference, { date, end }) {
         try {
+            const missedCondition = sequelize.literal("(metadata->>'missed_since') IS NOT NULL")
             const plants = await Plant.findAll({
                 where: {
                     user_id: preference.user_id,
                     is_active: true,
-                    next_watering_at: { [Op.lt]: end }
+                    [Op.or]: [
+                        { next_watering_at: { [Op.lt]: end } },
+                        missedCondition
+                    ]
                 },
                 attributes: ['id', 'name', 'location'],
                 order: [['next_watering_at', 'ASC']]
@@ -258,8 +343,8 @@ class ReminderService {
     }
 
     async sendDayBefore(now) {
-        const from = new Date(now.getTime() + 20 * HOUR)
-        const to = new Date(now.getTime() + 28 * HOUR)
+        const from = new Date(now.getTime() + DAY_BEFORE_QUERY_FROM_MS)
+        const to = new Date(now.getTime() + DAY_BEFORE_QUERY_TO_MS)
 
         const plants = await Plant.findAll({
             where: {
@@ -268,30 +353,43 @@ class ReminderService {
                 next_watering_at: { [Op.between]: [from, to] }
             }
         })
+        if (!plants.length) return
 
         const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
 
         for (const plant of plants) {
-            const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-            if (!this.matchesWeekday(plant, timeZone)) continue
-            if (this.alreadyNotified(plant, 'day_before', now)) continue
+            try {
+                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+                if (isRemindersPaused(plant.metadata)) continue
+                if (!this.matchesWeekday(plant, timeZone)) continue
 
-            const result = await this.notify(plant, {
-                title: '🌿 Напоминание',
-                body: `Завтра полить «${plant.name}»${plant.location ? ` (${plant.location})` : ''}`,
-                tag: 'day_before',
-                type: 'watering_day_before'
-            })
+                const localHour = getDateParts(now, timeZone).hour
+                if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) continue
+                if (zonedDayKey(plant.next_watering_at, timeZone) !== localTomorrowKey(now, timeZone)) continue
+                if (this.alreadyNotified(plant, 'day_before', now)) continue
 
-            if (result.sent > 0) {
-                await this.markNotified(plant, 'day_before', now)
+                const result = await this.notify(plant, {
+                    title: '🌿 Напоминание',
+                    body: `Завтра полить «${plant.name}»${plant.location ? ` (${plant.location})` : ''}`,
+                    tag: 'day_before',
+                    type: 'watering_day_before'
+                })
+
+                if (result.sent > 0) {
+                    await this.markNotified(plant, 'day_before', now)
+                }
+            } catch (error) {
+                console.error(
+                    `❌ sendDayBefore: plant#${plant.id} — напоминание не отправлено:`,
+                    error
+                )
             }
         }
     }
 
     async sendOnDay(now) {
-        const from = new Date(now.getTime() - 5 * 60 * 1000)
-        const to = new Date(now.getTime() + 15 * 60 * 1000)
+        const from = new Date(now.getTime() - ON_DAY_LATE_MS)
+        const to = new Date(now.getTime() + ON_DAY_EARLY_MS)
 
         const plants = await Plant.findAll({
             where: {
@@ -300,29 +398,37 @@ class ReminderService {
                 next_watering_at: { [Op.between]: [from, to] }
             }
         })
+        if (!plants.length) return
 
         const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
 
         for (const plant of plants) {
-            const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-            if (!this.matchesWeekday(plant, timeZone)) continue
-            if (this.alreadyNotified(plant, 'on_day', now)) continue
+            try {
+                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+                if (isRemindersPaused(plant.metadata)) continue
+                if (!this.matchesWeekday(plant, timeZone)) continue
+                if (this.alreadyNotified(plant, 'on_day', now)) continue
 
-            const result = await this.notify(plant, {
-                title: '💧 Пора полить!',
-                body: `${plant.name}${plant.location ? ` (${plant.location})` : ''} ждёт воды`,
-                tag: 'on_day',
-                type: 'watering_due'
-            })
+                const result = await this.notify(plant, {
+                    title: '💧 Пора полить!',
+                    body: `${plant.name}${plant.location ? ` (${plant.location})` : ''} ждёт воды`,
+                    tag: 'on_day',
+                    type: 'watering_due'
+                })
 
-            if (result.sent > 0) {
-                await this.markNotified(plant, 'on_day', now)
+                if (result.sent > 0) {
+                    await this.markNotified(plant, 'on_day', now)
+                }
+            } catch (error) {
+                console.error(
+                    `❌ sendOnDay: plant#${plant.id} — напоминание не отправлено:`,
+                    error
+                )
             }
         }
     }
 
     matchesWeekday(plant, timeZone = DEFAULT_TIME_ZONE) {
-
         if (!weekdayRestrictionApplies(plant.watering_interval_days)) return true
 
         return isReminderWeekday(plant.reminder_weekdays, plant.next_watering_at, timeZone)
@@ -331,7 +437,7 @@ class ReminderService {
     alreadyNotified(plant, key, now) {
         const flag = plant.metadata?.notifications?.[key]
         if (!flag) return false
-        return Date.now() - new Date(flag).getTime() < 24 * HOUR
+        return now.getTime() - new Date(flag).getTime() < 24 * HOUR
     }
 
     async markNotified(plant, key, now) {

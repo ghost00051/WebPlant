@@ -28,6 +28,16 @@ const wateringAdviceLimiter = rateLimit({
     ...rateLimitStoreOptions('plant-watering-advice')
 })
 
+const wateringWriteLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 120,
+    keyGenerator: req => String(req.user.id),
+    message: { message: 'Слишком много изменений полива. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('plant-watering-write')
+})
+
 router.post('/suggest-species', speciesSuggestionLimiter, plantController.suggestSpecies)
 router.post('/watering-advice', wateringAdviceLimiter, plantController.suggestWateringAdvice)
 router.post('/watering-time-advice', wateringAdviceLimiter, plantController.suggestWateringTime)
@@ -38,18 +48,18 @@ router.get('/timeline', plantController.getTimeline)
 router.get('/stats/completion', plantController.getCompletionStats)
 
 router.get('/', plantController.getAll)
-router.post('/', plantController.create)
+router.post('/', wateringWriteLimiter, plantController.create)
 
 router.get('/:id', plantController.getOne)
-router.put('/:id', plantController.update)
-router.delete('/:id', plantController.delete)
+router.put('/:id', wateringWriteLimiter, plantController.update)
+router.delete('/:id', wateringWriteLimiter, plantController.delete)
 
-router.post('/:id/photos', plantController.addPhotos)
-router.post('/:id/water', plantController.water)
-router.delete('/:id/water/:logId', plantController.deleteWatering)
-router.post('/:id/skip', plantController.skip)
+router.post('/:id/photos', wateringWriteLimiter, plantController.addPhotos)
+router.post('/:id/water', wateringWriteLimiter, plantController.water)
+router.delete('/:id/water/:logId', wateringWriteLimiter, plantController.deleteWatering)
+router.post('/:id/skip', wateringWriteLimiter, plantController.skip)
 router.get('/:id/history', plantController.getHistory)
 router.get('/:id/stats', plantController.getStats)
-router.patch('/:id/metadata', plantController.updateMetadata)
+router.patch('/:id/metadata', wateringWriteLimiter, plantController.updateMetadata)
 
 export default router

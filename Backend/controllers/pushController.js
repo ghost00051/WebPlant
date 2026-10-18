@@ -25,6 +25,9 @@ class PushController {
             })
 
             if (existing) {
+                if (existing.user_id && userId && existing.user_id !== userId) {
+                    return res.status(409).json({ message: 'Подписка уже привязана к другому аккаунту' })
+                }
                 await existing.update({
                     user_id: userId,
                     p256dh: subscription.keys.p256dh,

@@ -6,12 +6,15 @@ import PlantPhoto from '../models/PlantPhoto.js'
 import ChatLog from '../models/ChatLog.js'
 import AiAdviceLog from '../models/AiAdviceLog.js'
 import SiteVisit from '../models/SiteVisit.js'
+import Notification from '../models/Notification.js'
+import PushSubscription from '../models/PushSubscription.js'
 import { Op } from "sequelize"
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 
 const GUEST_DATA_RETENTION_MS = 180 * 24 * 60 * 60 * 1000
 const VISIT_RETENTION_DAYS = 400
+const NOTIFICATION_RETENTION_DAYS = 180
 const CLEANUP_LOCK = 'job:cleanup-expired'
 const CLEANUP_LOCK_TTL_MS = 30 * 60 * 1000
 
@@ -34,6 +37,9 @@ export async function cleanExpiredAuthData() {
         .slice(0, 10)
     const chatLogCutoff = retentionCutoff(readRetentionDays(process.env.CHAT_LOG_RETENTION_DAYS, 365))
     const adviceLogCutoff = retentionCutoff(readRetentionDays(process.env.AI_ADVICE_LOG_RETENTION_DAYS, 365))
+    const notificationCutoff = retentionCutoff(
+        readRetentionDays(process.env.NOTIFICATION_RETENTION_DAYS, NOTIFICATION_RETENTION_DAYS)
+    )
 
     const [
         deletedConsents,
@@ -102,6 +108,13 @@ export async function cleanExpiredAuthData() {
         })
     ])
 
+    const deletedNotifications = notificationCutoff
+        ? await Notification.destroy({ where: { created_at: { [Op.lt]: notificationCutoff } } })
+        : 0
+    const deletedGuestSubscriptions = await PushSubscription.destroy({
+        where: { user_id: null, created_at: { [Op.lt]: guestDataCutoff } }
+    })
+
     const deleted =
         deletedConsents + deletedGuestChatLogs + deletedUserChatLogs + deletedAdviceLogs +
         deletedSessions + deletedChallenges + deletedResetTokens
@@ -113,6 +126,9 @@ export async function cleanExpiredAuthData() {
         `passkey-челленджей: ${deletedChallenges}, ссылок сброса пароля: ${deletedResetTokens}, ` +
         `фото-файлов: ${deletedPhotos}, ` +
         `дней статистики посещений: ${deletedVisits}`
+    )
+    console.log(
+        `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}`
     )
     return deleted
 }

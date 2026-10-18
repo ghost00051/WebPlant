@@ -494,7 +494,7 @@ function Profile () {
                 : summaryError ||
                   (morningSummaryEnabled && !pushEnabled
                     ? 'Включите push на этом устройстве для получения сводки'
-                    : 'Каждый день в 9:00 по Москве: растения к поливу')}
+                    : 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу')}
             </p>
           </div>
           <label className='appleSwitchSettings'>

@@ -29,6 +29,7 @@ import {
 import './homePage.css'
 import './homePage.desktop.css'
 import './dark-theme.css'
+import './notifications-button.css'
 
 const EXIT_MS = 420
 const POUR_ANIMATION_MS = 1200
@@ -38,8 +39,15 @@ function plantWordForm (count) {
   const mod10 = count % 10
   const mod100 = count % 100
   if (mod10 === 1 && mod100 !== 11) return 'растение'
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'растения'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+    return 'растения'
   return 'растений'
+}
+
+function badgeValue (count) {
+  const value = Number(count) || 0
+  if (value <= 0) return ''
+  return value > 99 ? '99+' : String(value)
 }
 
 function HomePage ({ user, onTabChange }) {
@@ -63,6 +71,8 @@ function HomePage ({ user, onTabChange }) {
 
   const calendarRef = useRef(null)
   const pendingTimers = useRef(new Set())
+  const currentDayRef = useRef(toISODate(new Date()))
+  const lastRefreshAtRef = useRef(0)
 
   useEffect(
     () => () => {
@@ -249,6 +259,40 @@ function HomePage ({ user, onTabChange }) {
   }, [])
 
   useEffect(() => {
+    const refresh = ({ force = false } = {}) => {
+      const current = new Date()
+      setNow(current)
+      const dayKey = toISODate(current)
+      const dayChanged = dayKey !== currentDayRef.current
+      if (!dayChanged && !force) return
+      currentDayRef.current = dayKey
+      const timestamp = Date.now()
+      if (timestamp - lastRefreshAtRef.current < 5000) return
+      lastRefreshAtRef.current = timestamp
+      void loadHomeData()
+      void getNotifications()
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') refresh({ force: true })
+    }
+    const handleFocus = () => refresh({ force: true })
+    const handleOnline = () => refresh({ force: true })
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleFocus)
+    window.addEventListener('online', handleOnline)
+    const dayTimer = setInterval(() => refresh(), 60_000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('online', handleOnline)
+      clearInterval(dayTimer)
+    }
+  }, [getNotifications, loadHomeData])
+
+  useEffect(() => {
     if (!offScheduleTarget) return undefined
 
     const handleKeyDown = event => {
@@ -264,12 +308,15 @@ function HomePage ({ user, onTabChange }) {
     setWateringId(plantId)
 
     try {
-      const response = await fetchWithTimeout(`${API_URL}/plants/${plantId}/water`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-        credentials: 'include'
-      })
+      const response = await fetchWithTimeout(
+        `${API_URL}/plants/${plantId}/water`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+          credentials: 'include'
+        }
+      )
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -334,12 +381,15 @@ function HomePage ({ user, onTabChange }) {
     setMissedWateringId(plantId)
     let alreadyWatered = false
     try {
-      const response = await fetchWithTimeout(`${API_URL}/plants/${plantId}/water`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduled_for: scheduledFor }),
-        credentials: 'include'
-      })
+      const response = await fetchWithTimeout(
+        `${API_URL}/plants/${plantId}/water`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduled_for: scheduledFor }),
+          credentials: 'include'
+        }
+      )
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
@@ -547,8 +597,20 @@ function HomePage ({ user, onTabChange }) {
           <p>{greeting}</p>
           <p>Мои растения</p>
         </div>
-        <div data-badge={badgeText.unreadCount}>
-          <ThemedIcon src={Notification} alt='уведомления' />
+        <div
+          className='notificationsButtonWrap'
+          data-badge={badgeValue(badgeText.unreadCount)}
+        >
+          <button
+            type='button'
+            className='notificationsTrigger'
+            onClick={() => navigate('/notifications')}
+            aria-label={badgeValue(badgeText.unreadCount)
+              ? `Уведомления, непрочитанных: ${badgeValue(badgeText.unreadCount)}`
+              : 'Уведомления'}
+          >
+            <ThemedIcon src={Notification} alt='' />
+          </button>
         </div>
       </div>
       <div className='desktopDashboardHeader'>
@@ -558,10 +620,27 @@ function HomePage ({ user, onTabChange }) {
             {greeting.replace('!', '')}, {displayName} · {dateLabel}
           </p>
         </div>
-        <span className='desktopDateBadge'>
-          <img src={CalendarIcon} alt='' />
-          Сегодня, {dayOfMonth(now)} {monthGenitive(now)}
-        </span>
+        <div className='desktopHeaderActions'>
+          <span className='desktopDateBadge'>
+            <img src={CalendarIcon} alt='' />
+            Сегодня, {dayOfMonth(now)} {monthGenitive(now)}
+          </span>
+          <button
+            type='button'
+            className='desktopNotificationsButton'
+            onClick={() => navigate('/notifications')}
+            aria-label={badgeValue(badgeText.unreadCount)
+              ? `Уведомления, непрочитанных: ${badgeValue(badgeText.unreadCount)}`
+              : 'Уведомления'}
+          >
+            <ThemedIcon src={Notification} alt='' />
+            {badgeValue(badgeText.unreadCount) && (
+              <span className='desktopNotificationsBadge'>
+                {badgeValue(badgeText.unreadCount)}
+              </span>
+            )}
+          </button>
+        </div>
       </div>
       <div className='homePageGrid'>
         <MiniCalendar

@@ -26,12 +26,13 @@ export function resetLocalBudgetFallback() {
     localRequestFallback.clear()
 }
 
-export const AI_SCOPES = ['chat', 'species', 'advice', 'time']
+export const AI_SCOPES = ['chat', 'species', 'advice', 'time', 'vision']
 export const AI_SCOPE_LABELS = {
     chat: 'Чат',
     species: 'Определение вида',
     advice: 'Частота полива',
-    time: 'Время полива'
+    time: 'Время полива',
+    vision: 'Анализ фото'
 }
 
 export const LATENCY_BUCKETS = [

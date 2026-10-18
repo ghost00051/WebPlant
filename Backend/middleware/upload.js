@@ -15,30 +15,35 @@ const storage = multer.diskStorage({
     }
 })
 
+export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+
+export function detectImageExtension(data) {
+    if (!data || data.length < 3) return null
+    if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
+        return '.jpg'
+    }
+    if (data.length >= 8 && data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+        return '.png'
+    }
+    if (data.length >= 12 && data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
+        return '.webp'
+    }
+    if (
+        data.length >= 12 &&
+        data.toString('ascii', 4, 8) === 'ftyp' &&
+        ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(data.toString('ascii', 8, 12))
+    ) {
+        return '.heic'
+    }
+    return null
+}
+
 const getImageExtension = async filePath => {
     const file = await open(filePath, 'r')
     try {
         const header = Buffer.alloc(12)
         const { bytesRead } = await file.read(header, 0, header.length, 0)
-        const data = header.subarray(0, bytesRead)
-
-        if (data.length >= 3 && data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff) {
-            return '.jpg'
-        }
-        if (data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
-            return '.png'
-        }
-        if (data.length >= 12 && data.toString('ascii', 0, 4) === 'RIFF' && data.toString('ascii', 8, 12) === 'WEBP') {
-            return '.webp'
-        }
-        if (
-            data.length >= 12 &&
-            data.toString('ascii', 4, 8) === 'ftyp' &&
-            ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].includes(data.toString('ascii', 8, 12))
-        ) {
-            return '.heic'
-        }
-        return null
+        return detectImageExtension(header.subarray(0, bytesRead))
     } finally {
         await file.close()
     }
@@ -76,7 +81,29 @@ export async function validatePlantPhotos(req, res, next) {
 export const uploadPlantPhotos = multer({
     storage,
     limits: {
-        fileSize: 5 * 1024 * 1024, 
-        files: 2                    
+        fileSize: MAX_UPLOAD_BYTES,
+        files: 2
     }
 })
+
+export const uploadChatPhoto = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: MAX_UPLOAD_BYTES,
+        files: 1
+    }
+})
+
+export function validateChatPhoto(req, res, next) {
+    if (!req.file) {
+        return res.status(400).json({ message: 'Фото не загружено' })
+    }
+
+    const extension = detectImageExtension(req.file.buffer)
+    if (!extension) {
+        return res.status(400).json({ message: 'Допустимы только изображения JPEG, PNG, WebP и HEIC' })
+    }
+
+    req.file.detectedExtension = extension
+    return next()
+}

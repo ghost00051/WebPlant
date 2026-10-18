@@ -2,6 +2,7 @@ import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import chatController from '../controllers/chatController.js'
 import { optionalAuth } from '../middleware/auth.js'
+import { uploadChatPhoto, validateChatPhoto } from '../middleware/upload.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
@@ -64,7 +65,41 @@ const chatHistoryLimiter = rateLimit({
     ...rateLimitStoreOptions('chat-history')
 })
 
+const chatPhotoLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 12,
+    keyGenerator: (req) => req.user ? `user:${req.user.id}` : ipKeyGenerator(req.ip),
+    message: { message: 'Слишком много фото за час. Подожди немного 🌱' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('chat-photo')
+})
+
+function chatPhotoUpload(req, res, next) {
+    uploadChatPhoto.single('photo')(req, res, error => {
+        if (!error) return next()
+
+        if (error.code === 'LIMIT_FILE_SIZE') {
+            return res.status(413).json({ message: 'Фото слишком большое. Максимум 5 МБ.' })
+        }
+        if (error.code === 'LIMIT_UNEXPECTED_FILE' || error.code === 'LIMIT_FILE_COUNT') {
+            return res.status(400).json({ message: 'Можно прикрепить только одно фото' })
+        }
+        return next(error)
+    })
+}
+
 router.post('/chat', chatLimiter, chatGuestDailyLimiter, chatUserDailyLimiter, chatController.send)
+router.post(
+    '/photo',
+    chatLimiter,
+    chatPhotoLimiter,
+    chatGuestDailyLimiter,
+    chatUserDailyLimiter,
+    chatPhotoUpload,
+    validateChatPhoto,
+    chatController.analyzePhoto
+)
 router.get('/history', chatHistoryLimiter, chatController.history)
 router.delete('/history', chatHistoryLimiter, chatController.clear)
 

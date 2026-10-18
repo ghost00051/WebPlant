@@ -1,40 +1,61 @@
 import { lazy, Suspense } from 'react'
-import { BrowserRouter as Router, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Navigate,
+  useParams
+} from 'react-router-dom'
 import LandingPage from './component/landingPage/landingPage.jsx'
 import SeoMetadata from './component/SeoMetadata/SeoMetadata.jsx'
 import RouteFallback from './component/RouteFallback/RouteFallback.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
 import './styles/dark-theme.css'
 import ResetPassword from './component/resetPassword/resetPassword.jsx'
+import Notification from './component/notifications/notifications.jsx'
 
-const Registration = lazy(() => import('./component/registration/registration.jsx'))
-const Home = lazy(() => import('./component/home/home.jsx'))
-const EditProfile = lazy(() => import('./component/editProfile/editProfile.jsx'))
-const MyPlant = lazy(() => import('./component/myPlant/myPlant.jsx'))
-const AddPlantPage = lazy(() => import('./component/addPlants/AddPlantPage.jsx'))
-const CookieConsentManager = lazy(
-  () => import('./component/CookieConsentManager/CookieConsentManager.jsx')
+const Registration = lazy(() =>
+  import('./component/registration/registration.jsx')
 )
-const PlantsIndexPage = lazy(() => import('./component/PlantsGuide/PlantsIndexPage.jsx'))
-const PlantsDetailPage = lazy(() => import('./component/PlantsGuide/PlantsDetailPage.jsx'))
-const CareIndexPage = lazy(() => import('./component/CareGuide/CareIndexPage.jsx'))
-const CareDetailPage = lazy(() => import('./component/CareGuide/CareDetailPage.jsx'))
+const Home = lazy(() => import('./component/home/home.jsx'))
+const EditProfile = lazy(() =>
+  import('./component/editProfile/editProfile.jsx')
+)
+const MyPlant = lazy(() => import('./component/myPlant/myPlant.jsx'))
+const AddPlantPage = lazy(() =>
+  import('./component/addPlants/AddPlantPage.jsx')
+)
+const CookieConsentManager = lazy(() =>
+  import('./component/CookieConsentManager/CookieConsentManager.jsx')
+)
+const PlantsIndexPage = lazy(() =>
+  import('./component/PlantsGuide/PlantsIndexPage.jsx')
+)
+const PlantsDetailPage = lazy(() =>
+  import('./component/PlantsGuide/PlantsDetailPage.jsx')
+)
+const CareIndexPage = lazy(() =>
+  import('./component/CareGuide/CareIndexPage.jsx')
+)
+const CareDetailPage = lazy(() =>
+  import('./component/CareGuide/CareDetailPage.jsx')
+)
 
-function SuspenseRoute({ children }) {
+function SuspenseRoute ({ children }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>
 }
 
-function PlantsDetailRoute() {
+function PlantsDetailRoute () {
   const { slug } = useParams()
   return <PlantsDetailPage slug={slug} />
 }
 
-function CareDetailRoute() {
+function CareDetailRoute () {
   const { slug } = useParams()
   return <CareDetailPage slug={slug} />
 }
 
-function App() {
+function App () {
   return (
     <Router>
       <ThemeProvider>
@@ -54,6 +75,14 @@ function App() {
             element={
               <SuspenseRoute>
                 <Registration key='register' initialMode='register' />
+              </SuspenseRoute>
+            }
+          />
+          <Route
+            path='/notifications'
+            element={
+              <SuspenseRoute>
+                <Notification />
               </SuspenseRoute>
             }
           />
@@ -122,7 +151,7 @@ function App() {
             }
           />
           <Route path='*' element={<Navigate to='/' replace />} />
-          <Route path='/reset-password' element={<ResetPassword/>}/>
+          <Route path='/reset-password' element={<ResetPassword />} />
         </Routes>
         <Suspense fallback={null}>
           <CookieConsentManager />

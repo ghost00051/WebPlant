@@ -848,7 +848,7 @@ class AdminManageController {
 
                 let scheduleRestored = false
                 let restoredNextWateringAt = null
-                if (plant && isLatestAction) {
+                if (plant) {
                     const lastWatering = await WateringLog.findOne({
                         where: { plant_id: log.plant_id, action: 'watered' },
                         order: [['action_at', 'DESC'], ['id', 'DESC']],
@@ -859,16 +859,18 @@ class AdminManageController {
                     const updates = {
                         last_watered_at: lastWatering?.action_at ?? null
                     }
-                    const hasPrevPlan = Boolean(log.metadata) &&
-                        Object.hasOwn(log.metadata, 'prev_next_watering_at')
-                    if (hasPrevPlan) {
-                        updates.next_watering_at = log.metadata.prev_next_watering_at
-                    } else if (originalAction === 'watered' || log.scheduled_for) {
-                        updates.next_watering_at = log.scheduled_for ?? log.action_at
+                    if (isLatestAction) {
+                        const hasPrevPlan = Boolean(log.metadata) &&
+                            Object.hasOwn(log.metadata, 'prev_next_watering_at')
+                        if (hasPrevPlan) {
+                            updates.next_watering_at = log.metadata.prev_next_watering_at
+                        } else if (originalAction === 'watered' || log.scheduled_for) {
+                            updates.next_watering_at = log.scheduled_for ?? log.action_at
+                        }
+                        restoredNextWateringAt = updates.next_watering_at ?? null
+                        scheduleRestored = true
                     }
                     await plant.update(updates, { transaction })
-                    restoredNextWateringAt = updates.next_watering_at ?? null
-                    scheduleRestored = true
                 }
 
                 return {

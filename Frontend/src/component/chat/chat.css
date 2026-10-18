@@ -363,3 +363,218 @@ body.keyboard-open .chatWindow {
     width: 18px;
     height: 18px;
 }
+
+
+.fileForAlice {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+.fileLabelForAlice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    padding: 8px;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.fileLabelForAlice:hover {
+    background-color: #EFECE8;
+}
+
+.fileLabelForAlice img {
+    width: 18px;
+    height: 18px;
+    display: block;
+}
+
+.fileLabelForAlice:has(.fileForAlice:disabled) {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.fileLabelForAlice:focus-within {
+    outline: 2px solid #7FD1A0;
+    outline-offset: 2px;
+}
+
+.chatAttachmentChip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    margin: 0 0 8px;
+    padding: 5px 8px 5px 10px;
+    background-color: #FFFFFF;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    color: #495057;
+}
+
+.chatAttachmentChip img {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+}
+
+.chatAttachmentName {
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chatAttachmentRemove {
+    border: none;
+    background: none;
+    padding: 0 2px;
+    color: #8A8A8A;
+    font-size: var(--font-size-md);
+    line-height: 1;
+    cursor: pointer;
+}
+
+.chatAttachmentRemove:hover {
+    color: #495057;
+}
+.chatPhoto {
+    display: block;
+    width: 100%;
+    max-width: 240px;
+    border-radius: 12px;
+    background-color: #EFECE8;
+    object-fit: cover;
+}
+
+.chatDiagnosis {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 2px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background-color: #F5F3EF;
+}
+
+.chatDiagnosisLabel {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: #8A8A8A;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.chatDiagnosisPlant {
+    margin: 0;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: #2D2D2D;
+}
+
+.chatDiagnosisSection {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.chatDiagnosisSectionTitle {
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    color: #6B7E71;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.chatDiagnosisList {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 0;
+    padding-left: 16px;
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+    color: #2D2D2D;
+}
+
+.chatDiagnosisProblem {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+.chatDiagnosisConfidence {
+    padding: 1px 6px;
+    border-radius: 8px;
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    background-color: #E9EFEA;
+    color: #6B7E71;
+}
+
+.chatDiagnosisConfidence--high {
+    background-color: #E3F3E8;
+    color: #2F7D4F;
+}
+
+.chatDiagnosisConfidence--medium {
+    background-color: #FBF0DD;
+    color: #8A6A1F;
+}
+
+.chatDiagnosisConfidence--low {
+    background-color: #FBE7E4;
+    color: #9C3B2E;
+}
+
+.chatDiagnosisWhy {
+    display: block;
+    font-weight: 400;
+    color: #6B6B6B;
+}
+
+.chatDiagnosisSeverity {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: #2D2D2D;
+}
+
+.chatDiagnosisHint {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    color: #6B7E71;
+}
+
+.chatDiagnosisDisclaimer {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.35;
+    color: #8A8A8A;
+}
+
+.chatAttachError {
+    margin: 0 0 8px;
+    font-size: var(--font-size-sm);
+    color: #9C3B2E;
+}
+
+.chatTypingLabel {
+    margin-left: 8px;
+    font-size: var(--font-size-sm);
+    color: #8A8A8A;
+}

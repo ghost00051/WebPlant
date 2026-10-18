@@ -20,23 +20,35 @@ import { logAiAdvice } from '../utils/aiAdviceLog.js'
 import {
     generateWateringOccurrences,
     findFirstWateringAfter,
-    addZonedDays,
+    advanceZonedWatering,
     isWateringMissed,
+    localDayRange,
     nextWateringInstant,
+    normalizeReminderWeekdays,
     parseWateringSlot,
     pickWateringLogForSlot,
     resolveMissedLateness,
     resolvePastWatering,
-    utcDayRange,
     WATERING_TIME_OF_DAY_HOURS,
     zonedDayHourAfter,
-    zonedDayKey
+    zonedDayKey,
+    MISSED_GRACE_HOUR
 } from '../utils/wateringSchedule.js'
+import {
+    clearWateringProgress,
+    hasWateringProgress,
+    sanitizePlantMetadata,
+    withNotificationsReset
+} from '../utils/plantMetadata.js'
 import User from '../models/userModels.js'
 import { resolveHemisphere, resolveTimeZone } from '../utils/timeZone.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
+const WATERING_DUPLICATE_WINDOW_MS = 60 * 1000
+const MAX_METADATA_BYTES = 8 * 1024
+const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips']
+const DEFAULT_SCHEDULE_DAYS = 7
 
 function computeHoursLate(scheduledFor, actionAt) {
     if (!scheduledFor) return null
@@ -47,6 +59,45 @@ function computeHoursLate(scheduledFor, actionAt) {
 
 function computeNextWatering(from, days, timeOfDay = 'morning', timeZone) {
     return nextWateringInstant(from, days, timeOfDay, timeZone ? { timeZone } : {})
+}
+
+function wateringHour(plant) {
+    return TIME_OF_DAY_HOURS[plant?.watering_time_of_day] ?? TIME_OF_DAY_HOURS.morning
+}
+
+function futureWatering(from, intervalDays, timeOfDay, timeZone, now = new Date()) {
+    const hour = wateringHour({ watering_time_of_day: timeOfDay })
+    const interval = Number.isInteger(intervalDays) && intervalDays > 0
+        ? intervalDays
+        : DEFAULT_SCHEDULE_DAYS
+    return advanceZonedWatering(from, interval, hour, timeZone, now)
+}
+
+function sameInstant(value, other) {
+    if (value === undefined || value === null) return other === undefined || other === null
+    const left = new Date(value)
+    const right = other === undefined || other === null ? null : new Date(other)
+    if (!Number.isFinite(left.getTime())) return false
+    if (!right || !Number.isFinite(right.getTime())) return false
+    return left.getTime() === right.getTime()
+}
+
+function parsePagination(query, { defaultLimit = 100, maxLimit = 500 } = {}) {
+    const limit = query.limit === undefined ? defaultLimit : Number(query.limit)
+    const offset = query.offset === undefined ? 0 : Number(query.offset)
+    if (!Number.isInteger(limit) || limit < 1 || limit > maxLimit) return null
+    if (!Number.isInteger(offset) || offset < 0) return null
+    return { limit, offset }
+}
+
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function withoutReservedMetadata(metadata) {
+    const next = sanitizePlantMetadata(metadata)
+    for (const key of RESERVED_METADATA_KEYS) delete next[key]
+    return next
 }
 
 function isValidPhotoInput(photo) {
@@ -253,8 +304,11 @@ class PlantController {
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
             const timeZone = await getUserTimeZone(userId)
-            const limit = Math.min(parseInt(req.query.limit) || 200, 500)
-            const offset = parseInt(req.query.offset) || 0
+            const pagination = parsePagination(req.query, { defaultLimit: 200, maxLimit: 500 })
+            if (!pagination) {
+                return res.status(400).json({ message: 'Параметры limit и offset должны быть целыми числами в допустимом диапазоне' })
+            }
+            const { limit, offset } = pagination
 
             const logs = await WateringLog.findAndCountAll({
                 where: {
@@ -363,7 +417,7 @@ class PlantController {
                 const occurrences = generateWateringOccurrences(
                     p.next_watering_at,
                     intervalDays,
-                    { now, daysAhead: SCHEDULE_DAYS_AHEAD }
+                    { now, daysAhead: SCHEDULE_DAYS_AHEAD, timeZone }
                 )
 
                 for (const dt of occurrences) {
@@ -386,12 +440,6 @@ class PlantController {
                         location: p.location,
                         description: p.description,
                         photo_url: mainPhoto,
-                        photos: photos.map(ph => ({
-                            id: ph.id,
-                            url: ph.url,
-                            is_main: ph.is_main,
-                            sort_order: ph.sort_order
-                        })),
                         next_watering_at: dt,
                         watering_interval_days: intervalDays,
                         watering_time_of_day: p.watering_time_of_day,
@@ -409,7 +457,8 @@ class PlantController {
                 summary: {
                     overdue: items.filter(i => i.bucket === 'overdue').reduce((s, i) => s + i.plants.length, 0),
                     today: items.filter(i => i.bucket === 'today').reduce((s, i) => s + i.plants.length, 0),
-                    total: plants.length
+                    total: items.reduce((s, i) => s + i.plants.length, 0),
+                    plants: plants.length
                 },
                 items
             })
@@ -546,6 +595,19 @@ class PlantController {
                 return res.status(400).json({ message: 'metadata должна быть объектом' })
             }
 
+            const nextWateringAt = computeNextWatering(
+                new Date(),
+                intervalDays,
+                wateringTime,
+                timeZone
+            )
+            const normalizedWeekdays = normalizeReminderWeekdays(
+                intervalDays,
+                reminder_weekdays,
+                nextWateringAt,
+                timeZone
+            )
+
             const plant = await Plant.create({
                 user_id: userId,
                 name: name.trim(),
@@ -556,14 +618,9 @@ class PlantController {
                 watering_time_of_day: wateringTime,
                 notify_morning,
                 notify_day_before,
-                reminder_weekdays,
-                next_watering_at: computeNextWatering(
-                    new Date(),
-                    intervalDays,
-                    wateringTime,
-                    timeZone
-                ),
-                metadata: metadata || {}
+                reminder_weekdays: normalizedWeekdays,
+                next_watering_at: nextWateringAt,
+                metadata: withoutReservedMetadata(metadata)
             }, { transaction: t })
 
             if (photos.length) {
@@ -641,18 +698,26 @@ class PlantController {
     }
 
     async update(req, res) {
+        let transaction
         try {
             const body = req.body || {}
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
+            transaction = await sequelize.transaction()
+            const fail = async (status, message) => {
+                if (transaction && !transaction.finished) await transaction.rollback()
+                transaction = null
+                return res.status(status).json({ message })
+            }
+
             const plant = await Plant.findOne({
-                where: { id: req.params.id, user_id: userId }
+                where: { id: req.params.id, user_id: userId },
+                transaction,
+                lock: transaction.LOCK.UPDATE
             })
 
-            if (!plant) {
-                return res.status(404).json({ message: 'Растение не найдено' })
-            }
+            if (!plant) return fail(404, 'Растение не найдено')
 
             const timeZone = await getUserTimeZone(userId)
             const allowed = [
@@ -671,84 +736,125 @@ class PlantController {
 
             if (updates.name !== undefined &&
                 (typeof updates.name !== 'string' || !updates.name.trim() || updates.name.length > 255)) {
-                return res.status(400).json({ message: 'Некорректное название растения' })
+                return fail(400, 'Некорректное название растения')
             }
             if (updates.name !== undefined) updates.name = updates.name.trim()
             for (const key of ['species', 'location']) {
                 if (updates[key] !== undefined && updates[key] !== null &&
                     (typeof updates[key] !== 'string' || updates[key].length > 255)) {
-                    return res.status(400).json({ message: 'Название или местоположение слишком длинное' })
+                    return fail(400, 'Название или местоположение слишком длинное')
                 }
                 if (typeof updates[key] === 'string') updates[key] = updates[key].trim()
             }
             if (updates.description !== undefined && updates.description !== null &&
                 (typeof updates.description !== 'string' || updates.description.length > 10000)) {
-                return res.status(400).json({ message: 'Описание должно содержать не более 10000 символов' })
+                return fail(400, 'Описание должно содержать не более 10000 символов')
             }
             if (updates.watering_interval_days !== undefined &&
                 !isValidWateringInterval(updates.watering_interval_days)) {
-                return res.status(400).json({ message: 'Интервал полива должен быть целым числом от 1 до 365 дней' })
+                return fail(400, 'Интервал полива должен быть целым числом от 1 до 365 дней')
             }
             if (updates.watering_time_of_day !== undefined &&
                 !Object.hasOwn(TIME_OF_DAY_HOURS, updates.watering_time_of_day)) {
-                return res.status(400).json({ message: 'Некорректное время полива' })
+                return fail(400, 'Некорректное время полива')
             }
             for (const key of ['last_watered_at', 'next_watering_at']) {
                 const value = updates[key]
                 if (value !== undefined && value !== null &&
                     (typeof value !== 'string' || !Number.isFinite(Date.parse(value)))) {
-                    return res.status(400).json({ message: 'Некорректная дата полива' })
+                    return fail(400, 'Некорректная дата полива')
                 }
             }
             if (updates.is_active !== undefined && typeof updates.is_active !== 'boolean') {
-                return res.status(400).json({ message: 'Некорректный статус растения' })
+                return fail(400, 'Некорректный статус растения')
             }
             for (const key of ['notify_morning', 'notify_day_before']) {
                 if (updates[key] !== undefined && typeof updates[key] !== 'boolean') {
-                    return res.status(400).json({ message: 'Настройки напоминаний должны быть логическими значениями' })
+                    return fail(400, 'Настройки напоминаний должны быть логическими значениями')
                 }
             }
             if (updates.reminder_weekdays !== undefined &&
                 !isValidReminderWeekdays(updates.reminder_weekdays)) {
-                return res.status(400).json({ message: 'Некорректные дни напоминаний' })
+                return fail(400, 'Некорректные дни напоминаний')
             }
 
-            if (body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)) {
-                updates.metadata = { ...plant.metadata, ...body.metadata }
-            } else if (body.metadata !== undefined) {
-                return res.status(400).json({ message: 'metadata должна быть объектом' })
-            }
-
-            const scheduleChanged = [
-                'next_watering_at',
-                'watering_interval_days',
-                'watering_time_of_day',
-                'last_watered_at'
-            ].some(key => updates[key] !== undefined)
-            if (scheduleChanged) {
-                if (
-                    updates.next_watering_at === undefined &&
-                    (updates.watering_interval_days !== undefined ||
-                        updates.watering_time_of_day !== undefined ||
-                        updates.last_watered_at !== undefined)
-                ) {
-                    updates.next_watering_at = computeNextWatering(
-                        updates.last_watered_at ?? plant.last_watered_at ?? new Date(),
-                        updates.watering_interval_days ?? plant.watering_interval_days ?? 7,
-                        updates.watering_time_of_day ?? plant.watering_time_of_day ?? 'morning',
-                        timeZone
-                    )
+            if (body.metadata !== undefined) {
+                if (!isPlainObject(body.metadata)) {
+                    return fail(400, 'metadata должна быть объектом')
                 }
                 updates.metadata = {
-                    ...(updates.metadata ?? plant.metadata ?? {}),
-                    notifications: {}
+                    ...sanitizePlantMetadata(plant.metadata),
+                    ...withoutReservedMetadata(body.metadata)
                 }
             }
 
-            await plant.update(updates)
+            const interval = updates.watering_interval_days !== undefined
+                ? updates.watering_interval_days
+                : plant.watering_interval_days ?? DEFAULT_SCHEDULE_DAYS
+            const timeOfDay = updates.watering_time_of_day !== undefined
+                ? updates.watering_time_of_day
+                : plant.watering_time_of_day ?? 'morning'
+            const intervalChanged = updates.watering_interval_days !== undefined &&
+                updates.watering_interval_days !== plant.watering_interval_days
+            const timeChanged = updates.watering_time_of_day !== undefined &&
+                updates.watering_time_of_day !== plant.watering_time_of_day
+            const lastChanged = updates.last_watered_at !== undefined &&
+                !sameInstant(updates.last_watered_at, plant.last_watered_at)
+            const nextProvided = updates.next_watering_at !== undefined
+            const nextWateringAt = updates.next_watering_at === undefined ||
+                updates.next_watering_at === null
+                ? null
+                : new Date(updates.next_watering_at)
+            const nextChanged = nextProvided &&
+                !sameInstant(nextWateringAt, plant.next_watering_at)
+            const scheduleChanged = intervalChanged || timeChanged || lastChanged || nextChanged ||
+                !plant.next_watering_at
+
+            if (scheduleChanged) {
+                let resolvedNext = nextWateringAt
+                if (!nextProvided) {
+                    const base = updates.last_watered_at ?? plant.last_watered_at ?? plant.created_at ?? new Date()
+                    resolvedNext = futureWatering(
+                        computeNextWatering(base, interval, timeOfDay, timeZone),
+                        interval,
+                        timeOfDay,
+                        timeZone
+                    )
+                } else if (resolvedNext && resolvedNext.getTime() <= Date.now()) {
+                    resolvedNext = futureWatering(resolvedNext, interval, timeOfDay, timeZone)
+                }
+                if (!resolvedNext) {
+                    resolvedNext = futureWatering(new Date(), interval, timeOfDay, timeZone)
+                }
+                updates.next_watering_at = resolvedNext
+                updates.metadata = withNotificationsReset(
+                    clearWateringProgress(updates.metadata ?? plant.metadata)
+                )
+            } else if (hasWateringProgress(updates.metadata ?? plant.metadata)) {
+                const nextMetadata = clearWateringProgress(updates.metadata ?? plant.metadata)
+                if (typeof plant.metadata?.missed_since === 'string' &&
+                    nextMetadata.missed_since === undefined) {
+                    nextMetadata.missed_since = plant.metadata.missed_since
+                }
+                updates.metadata = nextMetadata
+            }
+
+            if (scheduleChanged || updates.reminder_weekdays !== undefined) {
+                updates.reminder_weekdays = normalizeReminderWeekdays(
+                    interval,
+                    updates.reminder_weekdays ?? plant.reminder_weekdays,
+                    updates.next_watering_at ?? plant.next_watering_at,
+                    timeZone
+                )
+            }
+
+            await plant.update(updates, { transaction })
+            await transaction.commit()
+            transaction = null
 
             return res.json(plant)
         } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка обновления:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
@@ -977,52 +1083,55 @@ class PlantController {
                 return res.status(400).json({ message: 'Примечание должно быть строкой до 2000 символов' })
             }
 
-  
             const slotInput = req.body?.scheduled_for
             if (slotInput !== undefined && slotInput !== null && typeof slotInput !== 'string') {
                 return res.status(400).json({ message: 'Некорректная дата полива' })
             }
 
             transaction = await sequelize.transaction()
+            const fail = async (status, message) => {
+                if (transaction && !transaction.finished) await transaction.rollback()
+                transaction = null
+                return res.status(status).json({ message })
+            }
+
             const plant = await Plant.findOne({
                 where: { id: req.params.id, user_id: userId, is_active: true },
                 transaction,
                 lock: transaction.LOCK.UPDATE
             })
-            if (!plant) {
-                await transaction.rollback()
-                transaction = null
-                return res.status(404).json({ message: 'Растение не найдено' })
-            }
+            if (!plant) return fail(404, 'Растение не найдено')
 
             const now = new Date()
             const timeZone = await getUserTimeZone(userId)
             const timeOfDayHour =
                 TIME_OF_DAY_HOURS[plant.watering_time_of_day] ?? TIME_OF_DAY_HOURS.morning
+            const intervalDays = plant.watering_interval_days || DEFAULT_SCHEDULE_DAYS
 
             if (slotInput !== undefined && slotInput !== null) {
                 const slot = parseWateringSlot(slotInput, timeOfDayHour, timeZone)
-                if (!slot) {
-                    await transaction.rollback()
-                    transaction = null
-                    return res.status(400).json({ message: 'Некорректная дата полива' })
-                }
+                if (!slot) return fail(400, 'Некорректная дата полива')
                 if (slot.getTime() > now.getTime()) {
-                    await transaction.rollback()
-                    transaction = null
-                    return res.status(400).json({ message: 'Нельзя отметить полив будущей датой' })
+                    return fail(400, 'Нельзя отметить полив будущей датой')
+                }
+
+                const createdAt = plant.created_at ? new Date(plant.created_at) : null
+                if (createdAt && Number.isFinite(createdAt.getTime()) &&
+                    slot.getTime() < createdAt.getTime() - 24 * 60 * 60 * 1000) {
+                    return fail(400, 'Дата полива раньше создания растения')
                 }
 
                 const plan = resolvePastWatering(slot, {
                     now,
                     lastWateredAt: plant.last_watered_at,
                     nextWateringAt: plant.next_watering_at,
-                    intervalDays: plant.watering_interval_days || 7,
+                    intervalDays,
                     timeOfDayHours: timeOfDayHour,
                     timeZone
                 })
+                if (!plan) return fail(400, 'Некорректная дата полива')
 
-                const slotDay = utcDayRange(slot)
+                const slotDay = localDayRange(slot, timeZone)
                 const slotLogs = await WateringLog.findAll({
                     where: {
                         plant_id: plant.id,
@@ -1036,17 +1145,14 @@ class PlantController {
                     lock: transaction.LOCK.UPDATE
                 })
 
-                if (pickWateringLogForSlot(slotLogs, 'watered', slot)) {
-                    await transaction.rollback()
-                    transaction = null
-                    return res.status(409).json({ message: 'Полив за эту дату уже отмечен' })
+                if (pickWateringLogForSlot(slotLogs, 'watered', slot, timeZone)) {
+                    return fail(409, 'Полив за эту дату уже отмечен')
                 }
 
-                const skippedLog = pickWateringLogForSlot(slotLogs, 'skipped', slot)
+                const skippedLog = pickWateringLogForSlot(slotLogs, 'skipped', slot, timeZone)
                 const prevNextWateringAt = plant.next_watering_at
 
                 if (skippedLog) {
-
                     await skippedLog.update({
                         action: 'watered',
                         action_at: plan.actionAt,
@@ -1073,7 +1179,10 @@ class PlantController {
                         scheduled_for: plan.scheduledFor,
                         hours_late: plan.hoursLate,
                         note: note || null,
-                        metadata: { prev_next_watering_at: prevNextWateringAt }
+                        metadata: {
+                            prev_next_watering_at: prevNextWateringAt,
+                            recorded_at: now.toISOString()
+                        }
                     }, { transaction })
                 }
 
@@ -1081,12 +1190,19 @@ class PlantController {
                     last_watered_at: plan.lastWateredAt,
                     next_watering_at: plan.nextWateringAt
                 }
-
+                const clearedProgress = clearWateringProgress(plant.metadata)
                 if (plan.scheduleChanged) {
-                    plantUpdates.metadata = {
-                        ...(plant.metadata || {}),
-                        notifications: {}
-                    }
+                    plantUpdates.metadata = withNotificationsReset(clearedProgress)
+                } else if (hasWateringProgress(plant.metadata)) {
+                    plantUpdates.metadata = clearedProgress
+                }
+                if (plan.scheduleChanged) {
+                    plantUpdates.reminder_weekdays = normalizeReminderWeekdays(
+                        intervalDays,
+                        plant.reminder_weekdays,
+                        plan.nextWateringAt,
+                        timeZone
+                    )
                 }
 
                 await plant.update(plantUpdates, { transaction })
@@ -1101,22 +1217,38 @@ class PlantController {
                 })
             }
 
+            const recentWatering = await WateringLog.findOne({
+                where: { plant_id: plant.id, user_id: userId, action: 'watered' },
+                order: [['action_at', 'DESC'], ['id', 'DESC']],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (recentWatering &&
+                now.getTime() - new Date(recentWatering.action_at).getTime() < WATERING_DUPLICATE_WINDOW_MS) {
+                await transaction.commit()
+                transaction = null
+                return res.json({ ...plant.toJSON(), duplicate: true })
+            }
+
             const scheduledFor = plant.next_watering_at
             const nextWatering = computeNextWatering(
                 now,
-                plant.watering_interval_days || 7,
+                intervalDays,
                 plant.watering_time_of_day || 'morning',
                 timeZone
             )
-
-            const metadata = {
-                ...(plant.metadata || {}),
-                notifications: {}
-            }
+            const metadata = withNotificationsReset(clearWateringProgress(plant.metadata))
+            const reminderWeekdays = normalizeReminderWeekdays(
+                intervalDays,
+                plant.reminder_weekdays,
+                nextWatering,
+                timeZone
+            )
 
             await plant.update({
                 last_watered_at: now,
                 next_watering_at: nextWatering,
+                reminder_weekdays: reminderWeekdays,
                 metadata
             }, { transaction })
 
@@ -1128,9 +1260,10 @@ class PlantController {
                 scheduled_for: scheduledFor,
                 hours_late: computeHoursLate(scheduledFor, now),
                 note: note || null,
-                metadata: { prev_next_watering_at: scheduledFor }
+                metadata: { prev_next_watering_at: scheduledFor, recorded_at: now.toISOString() }
             }, { transaction })
             await transaction.commit()
+            transaction = null
 
             return res.json(plant)
         } catch (error) {
@@ -1207,23 +1340,24 @@ class PlantController {
                 await log.destroy({ transaction })
             }
 
-            if (isLatestAction) {
-                const latestWatering = await WateringLog.findOne({
-                    where: {
-                        plant_id: plant.id,
-                        user_id: userId,
-                        action: 'watered'
-                    },
-                    order: [['action_at', 'DESC'], ['id', 'DESC']],
-                    transaction,
-                    lock: transaction.LOCK.UPDATE
-                })
+            const latestWatering = await WateringLog.findOne({
+                where: {
+                    plant_id: plant.id,
+                    user_id: userId,
+                    action: 'watered'
+                },
+                order: [['action_at', 'DESC'], ['id', 'DESC']],
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
 
-                await plant.update({
-                    last_watered_at: latestWatering?.action_at ?? null,
-                    next_watering_at: previousPlan
-                }, { transaction })
+            const plantUpdates = {
+                last_watered_at: latestWatering?.action_at ?? null
             }
+            if (isLatestAction) {
+                plantUpdates.next_watering_at = previousPlan
+            }
+            await plant.update(plantUpdates, { transaction })
 
             await transaction.commit()
             transaction = null
@@ -1260,7 +1394,7 @@ class PlantController {
 
             transaction = await sequelize.transaction()
             const plant = await Plant.findOne({
-                where: { id: req.params.id, user_id: userId },
+                where: { id: req.params.id, user_id: userId, is_active: true },
                 transaction,
                 lock: transaction.LOCK.UPDATE
             })
@@ -1273,22 +1407,37 @@ class PlantController {
             const timeZone = await getUserTimeZone(userId)
             const now = new Date()
             const scheduledFor = plant.next_watering_at
-
-            const next = addZonedDays(scheduledFor || now, days, timeZone)
+            const currentScheduled = scheduledFor ? new Date(scheduledFor) : null
+            const base = currentScheduled && currentScheduled.getTime() > now.getTime()
+                ? currentScheduled
+                : now
+            const hour = TIME_OF_DAY_HOURS[plant.watering_time_of_day] ?? TIME_OF_DAY_HOURS.morning
+            const intervalDays = plant.watering_interval_days || DEFAULT_SCHEDULE_DAYS
+            let next = zonedDayHourAfter(base, days, hour, timeZone)
+            if (!next || !Number.isFinite(next.getTime())) {
+                await transaction.rollback()
+                transaction = null
+                return res.status(400).json({ message: 'Некорректная дата следующего полива' })
+            }
+            if (next.getTime() <= now.getTime()) {
+                next = futureWatering(next, intervalDays, plant.watering_time_of_day || 'morning', timeZone)
+            }
             if (!next || !Number.isFinite(next.getTime())) {
                 await transaction.rollback()
                 transaction = null
                 return res.status(400).json({ message: 'Некорректная дата следующего полива' })
             }
 
-
-            const metadata = {
-                ...(plant.metadata || {}),
-                notifications: {}
-            }
+            const metadata = withNotificationsReset(clearWateringProgress(plant.metadata))
 
             await plant.update({
                 next_watering_at: next,
+                reminder_weekdays: normalizeReminderWeekdays(
+                    intervalDays,
+                    plant.reminder_weekdays,
+                    next,
+                    timeZone
+                ),
                 metadata
             }, { transaction })
 
@@ -1323,8 +1472,11 @@ class PlantController {
             })
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
 
-            const limit = Math.min(parseInt(req.query.limit) || 50, 200)
-            const offset = parseInt(req.query.offset) || 0
+            const pagination = parsePagination(req.query, { defaultLimit: 50, maxLimit: 200 })
+            if (!pagination) {
+                return res.status(400).json({ message: 'Параметры limit и offset должны быть целыми числами в допустимом диапазоне' })
+            }
+            const { limit, offset } = pagination
 
             const logs = await WateringLog.findAndCountAll({
                 where: { plant_id: plant.id },
@@ -1352,11 +1504,15 @@ class PlantController {
 
             const timeZone = await getUserTimeZone(userId)
             const tomorrow = zonedDayHourAfter(new Date(), 1, 0, timeZone)
+            const missedCondition = sequelize.literal("(metadata->>'missed_since') IS NOT NULL")
             const plants = await Plant.findAll({
                 where: {
                     user_id: userId,
                     is_active: true,
-                    next_watering_at: { [Op.lt]: tomorrow }
+                    [Op.or]: [
+                        { next_watering_at: { [Op.lt]: tomorrow } },
+                        missedCondition
+                    ]
                 },
                 order: [['next_watering_at', 'ASC']]
             })
@@ -1373,6 +1529,7 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
+            const timeZone = await getUserTimeZone(userId)
             const plants = await Plant.findAll({
                 where: { user_id: userId, is_active: true },
                 attributes: ['id', 'watering_interval_days', 'created_at'],
@@ -1383,7 +1540,7 @@ class PlantController {
             let expected = 0
 
             for (const p of plants) {
-                const interval = p.watering_interval_days || 7
+                const interval = p.watering_interval_days || DEFAULT_SCHEDULE_DAYS
                 const created = new Date(p.created_at)
                 const daysAlive = Math.max(
                     0,
@@ -1393,26 +1550,30 @@ class PlantController {
             }
 
             const plantIds = plants.map(p => p.id)
-
             let actual = 0
+            let onTime = 0
 
             if (plantIds.length) {
                 const [row] = await sequelize.query(`
-                SELECT COUNT(DISTINCT (plant_id, DATE(action_at))) AS count
+                SELECT
+                    COUNT(DISTINCT (plant_id, DATE(action_at AT TIME ZONE :tz))) AS count,
+                    COUNT(DISTINCT (plant_id, DATE(action_at AT TIME ZONE :tz)))
+                        FILTER (WHERE COALESCE(hours_late, 0) <= :grace) AS on_time
                 FROM watering_logs
                 WHERE user_id = :userId
                   AND action = 'watered'
                   AND plant_id IN (:plantIds)
             `, {
-                    replacements: { userId, plantIds },
+                    replacements: { userId, plantIds, tz: timeZone, grace: MISSED_GRACE_HOUR },
                     type: sequelize.QueryTypes.SELECT
                 })
 
                 actual = parseInt(row?.count) || 0
+                onTime = parseInt(row?.on_time) || 0
             }
 
             const percent = expected > 0
-                ? Math.min(100, Math.round((actual / expected) * 100))
+                ? Math.min(100, Math.round((onTime / expected) * 100))
                 : null
 
             const firstPlant = plants.length
@@ -1426,6 +1587,7 @@ class PlantController {
                 sinceDate: firstPlant ? firstPlant.created_at : null,
                 expected,
                 actual,
+                onTime,
                 percent
             })
         } catch (error) {
@@ -1448,12 +1610,12 @@ class PlantController {
             SELECT
                 COUNT(*) FILTER (WHERE action = 'watered') AS watered_count,
                 COUNT(*) FILTER (WHERE action = 'skipped') AS skipped_count,
-                COUNT(*) FILTER (WHERE action = 'watered' AND hours_late <= 24) AS on_time_count,
+                COUNT(*) FILTER (WHERE action = 'watered' AND COALESCE(hours_late, 0) <= :grace) AS on_time_count,
                 AVG(hours_late) FILTER (WHERE action = 'watered') AS avg_hours_late
             FROM watering_logs
-            WHERE plant_id = :plantId
+            WHERE plant_id = :plantId AND user_id = :userId
         `, {
-                replacements: { plantId: plant.id },
+                replacements: { plantId: plant.id, userId, grace: MISSED_GRACE_HOUR },
                 type: sequelize.QueryTypes.SELECT
             })
 
@@ -1481,6 +1643,14 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
+            const body = req.body
+            if (!isPlainObject(body)) {
+                return res.status(400).json({ message: 'metadata должна быть объектом' })
+            }
+            if (Buffer.byteLength(JSON.stringify(body), 'utf8') > MAX_METADATA_BYTES) {
+                return res.status(400).json({ message: 'metadata слишком большая' })
+            }
+
             const plant = await Plant.findOne({
                 where: { id: req.params.id, user_id: userId }
             })
@@ -1488,8 +1658,8 @@ class PlantController {
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
 
             const newMetadata = {
-                ...plant.metadata,
-                ...req.body
+                ...sanitizePlantMetadata(plant.metadata),
+                ...withoutReservedMetadata(body)
             }
 
             await plant.update({ metadata: newMetadata })

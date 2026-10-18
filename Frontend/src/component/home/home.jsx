@@ -32,8 +32,9 @@ function Home() {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
     const [showPrompt, setShowPrompt] = useState(false)
+    const requestedTab = location.state?.activeTab
     const [activeTab, setActiveTab] = useState(
-        location.state?.activeTab === 'profile' ? 'profile' : 'home'
+        requestedTab === 'profile' || requestedTab === 'chat' ? requestedTab : 'home'
     )
 
     useEffect(() => {
