@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { loadSharp } from './plantPhotoThumb.js'
@@ -6,6 +6,8 @@ import { loadSharp } from './plantPhotoThumb.js'
 export const CHAT_PHOTO_DIRECTORY = path.resolve('uploads', 'chat')
 export const CHAT_PHOTO_MAX_SIDE = 1280
 export const CHAT_PHOTO_QUALITY = 80
+
+const CHAT_PHOTO_FILENAME = /^[0-9a-f]{32}\.jpg$/i
 
 export async function saveChatPhoto(imageBuffer) {
     if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
@@ -48,4 +50,20 @@ export async function saveChatPhoto(imageBuffer) {
 
 export function chatPhotoUrl(baseUrl, filename) {
     return `${baseUrl}/uploads/chat/${filename}`
+}
+
+export function chatPhotoFilenameFromUrl(url) {
+    if (typeof url !== 'string' || !url) return null
+    const match = /\/uploads\/chat\/([0-9a-f]{32}\.jpg)(?:[?#].*)?$/i.exec(url)
+    if (!match || !CHAT_PHOTO_FILENAME.test(match[1])) return null
+    return match[1]
+}
+
+export async function readChatPhoto(filename) {
+    if (typeof filename !== 'string' || !CHAT_PHOTO_FILENAME.test(filename)) return null
+    try {
+        return await readFile(path.join(CHAT_PHOTO_DIRECTORY, filename))
+    } catch {
+        return null
+    }
 }

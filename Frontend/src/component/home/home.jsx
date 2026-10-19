@@ -13,6 +13,7 @@ import Tools from '../tools/tools.jsx'
 import MobileNav from '../tools/MobileNav.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
+import { useChatSessions } from '../chat/useChatSessions.js'
 import AiTicker from '../aiTicker/aiTicker.jsx'
 import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
@@ -36,6 +37,7 @@ function Home() {
     const [activeTab, setActiveTab] = useState(
         requestedTab === 'profile' || requestedTab === 'chat' ? requestedTab : 'home'
     )
+    const chat = useChatSessions(user?.id, activeTab === 'chat')
 
     useEffect(() => {
         let cancelled = false
@@ -178,8 +180,22 @@ function Home() {
                             </button>
                         </div>
                     </header>
-                    <HistoryChat />
-                    <Chat />
+                    <HistoryChat
+                        sessions={chat.sessions}
+                        activeSessionId={chat.sessionId}
+                        isLoading={chat.isLoadingSessions}
+                        isOpen={chat.isHistoryOpen}
+                        onSelect={chat.selectSession}
+                        onNewChat={chat.startNewChat}
+                        onDelete={chat.deleteSession}
+                        onClose={chat.closeHistory}
+                    />
+                    <Chat
+                        sessionId={chat.sessionId}
+                        onOpenHistory={chat.openHistory}
+                        onNewChat={chat.startNewChat}
+                        onSessionsChanged={chat.refreshSessions}
+                    />
                     <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
                     <Tools onTabChange={handleTabChange} activeTab={activeTab} />
                     {showPrompt && (

@@ -101,6 +101,7 @@ router.post(
     chatController.analyzePhoto
 )
 router.get('/history', chatHistoryLimiter, chatController.history)
+router.get('/sessions', chatHistoryLimiter, chatController.sessions)
 router.delete('/history', chatHistoryLimiter, chatController.clear)
 
 export default router

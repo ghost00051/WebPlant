@@ -1,11 +1,13 @@
-import { Op } from 'sequelize'
+import { Op, QueryTypes } from 'sequelize'
+import sequelize from '../db.js'
 import Plant from '../models/Plant.js'
 import ChatLog from '../models/ChatLog.js'
 import { analyzePlantPhoto, askAi } from '../services/aiService.js'
 import { buildPlantsOverview, resolveLocalChatAnswer } from '../utils/chatIntent.js'
 import { appTimeZone } from '../utils/localDay.js'
 import { resolveTimeZone } from '../utils/timeZone.js'
-import { saveChatPhoto } from '../utils/chatPhoto.js'
+import { chatPhotoFilenameFromUrl, readChatPhoto, saveChatPhoto } from '../utils/chatPhoto.js'
+import { buildChatTitle } from '../utils/chatSession.js'
 
 function getUserId(req) {
     return req.user?.id ?? null
@@ -31,10 +33,12 @@ function isSessionId(value) {
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
 }
 
-const MAX_HISTORY = 20          
+const MAX_HISTORY = 40
 const SESSION_GAP_HOURS = 6
 const MAX_PLANTS_IN_CONTEXT = 50
 const MAX_PHOTO_MESSAGE_LENGTH = 1000
+const CHAT_SESSIONS_LIMIT = 50
+const MAX_CHAT_SESSIONS_LIMIT = 100
 
 async function resolveSession({ userId, guestToken, sessionId, now }) {
     if (sessionId) {
@@ -45,7 +49,13 @@ async function resolveSession({ userId, guestToken, sessionId, now }) {
             },
             attributes: ['id']
         })
-        return ownedSession ? { session: sessionId } : { notFound: true }
+        if (ownedSession) return { session: sessionId }
+
+        const foreignSession = await ChatLog.findOne({
+            where: { session_id: sessionId },
+            attributes: ['id']
+        })
+        return foreignSession ? { notFound: true } : { session: sessionId }
     }
 
     const where = userId
@@ -63,21 +73,95 @@ async function resolveSession({ userId, guestToken, sessionId, now }) {
 }
 
 async function loadRecentHistory({ userId, guestToken, sessionId, excludeId }) {
+    if (!sessionId) return []
+
     const rows = await ChatLog.findAll({
         where: {
             session_id: sessionId,
             ...getSessionOwner(userId, guestToken),
             role: { [Op.in]: ['user', 'assistant'] }
         },
-        order: [['created_at', 'DESC']],
+        order: [['created_at', 'DESC'], ['id', 'DESC']],
         limit: MAX_HISTORY
     })
 
     return rows
         .reverse()
         .filter(row => row.id !== excludeId && !isDegraded(row))
-        .map(row => ({ role: row.role, text: row.text }))
+        .map(row => ({
+            id: row.id,
+            role: row.role,
+            text: row.text,
+            createdAt: row.created_at,
+            photoUrl: row.metadata?.photoUrl || null
+        }))
 }
+
+async function loadLatestChatPhoto(history) {
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+        const filename = chatPhotoFilenameFromUrl(history[index]?.photoUrl)
+        if (!filename) continue
+        const buffer = await readChatPhoto(filename)
+        if (buffer) return buffer
+    }
+    return null
+}
+
+function sessionOwnerSql(userId, guestToken) {
+    return userId
+        ? { sql: 'user_id = $1', params: [userId] }
+        : { sql: "user_id IS NULL AND metadata->>'guestToken' = $1", params: [guestToken] }
+}
+
+async function loadChatSessions({ userId, guestToken, limit = CHAT_SESSIONS_LIMIT }) {
+    const owner = sessionOwnerSql(userId, guestToken)
+    const parsedLimit = Number.parseInt(limit, 10)
+    const safeLimit = Number.isFinite(parsedLimit)
+        ? Math.max(1, Math.min(parsedLimit, MAX_CHAT_SESSIONS_LIMIT))
+        : CHAT_SESSIONS_LIMIT
+
+    const rows = await sequelize.query(
+        `SELECT s.session_id,
+                s.last_at,
+                s.message_count,
+                first_message.text AS first_text,
+                first_message.metadata AS first_metadata
+         FROM (
+             SELECT session_id,
+                    MAX(created_at) AS last_at,
+                    COUNT(*) AS message_count
+             FROM chat_logs
+             WHERE ${owner.sql}
+             GROUP BY session_id
+             ORDER BY MAX(created_at) DESC
+             LIMIT $2
+         ) s
+         LEFT JOIN LATERAL (
+             SELECT text, metadata
+             FROM chat_logs
+             WHERE session_id = s.session_id AND role = 'user'
+             ORDER BY created_at ASC, id ASC
+             LIMIT 1
+         ) first_message ON TRUE
+         ORDER BY s.last_at DESC`,
+        { bind: [...owner.params, safeLimit], type: QueryTypes.SELECT }
+    )
+
+    return rows.map(row => {
+        const firstMetadata = row.first_metadata && typeof row.first_metadata === 'object'
+            ? row.first_metadata
+            : {}
+        const hasPhoto = Boolean(firstMetadata.photoUrl)
+        return {
+            id: row.session_id,
+            title: buildChatTitle({ text: row.first_text, hasPhoto }),
+            updatedAt: row.last_at,
+            messageCount: Number.parseInt(row.message_count, 10) || 0,
+            hasPhoto
+        }
+    })
+}
+
 
 async function loadPlantsContext(userId, { limit = MAX_PLANTS_IN_CONTEXT } = {}) {
     if (!userId) return { plants: [], plantsCount: 0 }
@@ -313,10 +397,20 @@ class ChatController {
 
             let result
             try {
+                const history = await loadRecentHistory({
+                    userId,
+                    guestToken,
+                    sessionId: session,
+                    excludeId: userMsg.id
+                })
+                const previousPhoto = await loadLatestChatPhoto(history)
+
                 result = await analyzePlantPhoto({
                     imageBuffer: file.buffer,
                     question: message,
-                    timeZone
+                    timeZone,
+                    history,
+                    previousPhotos: previousPhoto ? [previousPhoto] : []
                 })
             } catch (visionError) {
                 const budgetExceeded = visionError?.code === 'AI_BUDGET_EXCEEDED'
@@ -364,7 +458,9 @@ class ChatController {
                     photoUrl,
                     diagnosis: result.diagnosis,
                     source: result.source,
-                    latencyMs: result.latencyMs
+                    latencyMs: result.latencyMs,
+                    contextItems: result.usedHistoryItems || 0,
+                    previousPhotos: result.usedPreviousPhotos || 0
                 }
             })
 
@@ -435,7 +531,7 @@ class ChatController {
 
             const rows = await ChatLog.findAll({
                 where,
-                order: [['created_at', 'DESC']],
+                order: [['created_at', 'DESC'], ['id', 'DESC']],
                 limit: Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 200)) : 50
             })
 
@@ -462,6 +558,25 @@ class ChatController {
     }
 
 
+    async sessions(req, res) {
+        try {
+            const userId = getUserId(req)
+            const guestToken = req.guestToken
+
+            const items = await loadChatSessions({
+                userId,
+                guestToken,
+                limit: req.query?.limit
+            })
+
+            return res.json({ items })
+        } catch (error) {
+            console.error('❌ Ошибка списка чатов:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+
     async clear(req, res) {
         try {
             const userId = getUserId(req)
@@ -482,7 +597,7 @@ class ChatController {
 
             await ChatLog.destroy({ where })
 
-            return res.json({ message: 'Чат очищен' })
+            return res.json({ message: 'Чат удалён', sessionId })
         } catch (error) {
             console.error('❌ Ошибка очистки:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })

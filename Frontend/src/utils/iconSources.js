@@ -11,6 +11,8 @@ import ChevronLeft from '../assets/chevron-left.svg'
 import ChevronLeftRaw from '../assets/chevron-left.svg?raw'
 import EmptyIcon from '../assets/EmptyIcon.svg'
 import EmptyIconRaw from '../assets/EmptyIcon.svg?raw'
+import HistoryBtn from '../assets/HistoryBtn.svg'
+import HistoryBtnRaw from '../assets/HistoryBtn.svg?raw'
 import IconCircle from '../assets/IconCircle.svg'
 import IconCircleRaw from '../assets/IconCircle.svg?raw'
 import IconMenu from '../assets/IconMenu.svg'
@@ -39,6 +41,7 @@ export const ICON_SOURCES = new Map([
   [BackBtn, BackBtnRaw],
   [ChevronLeft, ChevronLeftRaw],
   [EmptyIcon, EmptyIconRaw],
+  [HistoryBtn, HistoryBtnRaw],
   [IconCircle, IconCircleRaw],
   [IconMenu, IconMenuRaw],
   [IconMic, IconMicRaw],

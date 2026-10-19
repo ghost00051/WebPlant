@@ -50,6 +50,15 @@ html[data-theme='dark'] .chatPhoto {
     background: var(--theme-surface);
 }
 
+html[data-theme='dark'] .chatMenuBtn {
+    background: var(--theme-surface);
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .chatHeader {
+    border-bottom-color: var(--theme-border);
+}
+
 html[data-theme='dark'] .chatAttachError {
     color: #F3A79B;
 }

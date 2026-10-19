@@ -3,8 +3,9 @@ import './chat.css'
 import './dark-theme.css'
 import './adaptiv.css'
 import IconLeaf from '../../assets/IconLeaf.svg'
-import IconMenu from '../../assets/IconMenu.svg'
 import IconSend from '../../assets/IconSend.svg'
+import NewChatBtn from '../../assets/NewChatBtn.svg'
+import HistoryBtn from '../../assets/HistoryBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import Paperclip from '../../assets/paperclip.svg'
 import { API_URL } from '../../utils/api.js'
@@ -17,6 +18,7 @@ const PHOTO_MAX_SIDE = 1600
 const MAX_INPUT_HEIGHT = 140
 const NEAR_BOTTOM_PX = 120
 const KEYBOARD_MIN_HEIGHT = 120
+const KEYBOARD_SETTLE_DELAYS = [0, 60, 140, 260, 420, 650, 900]
 
 const CONFIDENCE_LABELS = { high: 'высокая', medium: 'средняя', low: 'низкая' }
 const SEVERITY_LABELS = {
@@ -28,7 +30,34 @@ const SEVERITY_LABELS = {
 }
 
 const GREETING =
-  'Привет! Я ИИ-помощник — помогу уследить за поливом и уходом за растениями. Напиши «Что полить?», «Покажи график» или «Сколько у меня растений?» — всё покажу. Можешь прикрепить фото растения — посмотрю, что с ним.'
+  'Привет! Я ИИ-помощник — помогу уследить за поливом и уходом за растениями. Напиши «Что полить?», «Покажи график» или «Сколько у меня растений?» — всё покажу. Можешь прикрепить фото растения — посмотрю, что с ним, и продолжу разговор по этому же растению.'
+
+let localIdCounter = 0
+
+function createLocalId(prefix) {
+  localIdCounter += 1
+  return `${prefix}-${Date.now()}-${localIdCounter}`
+}
+
+function createGreeting() {
+  return {
+    id: 'greeting',
+    role: 'assistant',
+    text: GREETING,
+    createdAt: new Date().toISOString()
+  }
+}
+
+function historyItemToMessage(item) {
+  return {
+    id: `h-${item.id}`,
+    role: item.role === 'user' ? 'user' : 'assistant',
+    text: item.text,
+    createdAt: item.createdAt,
+    photoUrl: item.photoUrl || null,
+    diagnosis: item.diagnosis || null
+  }
+}
 
 async function preparePhotoForUpload (file) {
   try {
@@ -122,18 +151,11 @@ function DiagnosisCard ({ diagnosis }) {
   )
 }
 
-function Chat () {
-  const [messages, setMessages] = useState([
-    {
-      id: 'greeting',
-      role: 'assistant',
-      text: GREETING,
-      createdAt: new Date().toISOString()
-    }
-  ])
+function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
+  const [messages, setMessages] = useState([createGreeting()])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
-  const [sessionId, setSessionId] = useState(null)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(Boolean(sessionId))
   const [attachedFile, setAttachedFile] = useState(null)
   const [attachError, setAttachError] = useState('')
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false)
@@ -141,6 +163,7 @@ function Chat () {
   const listRef = useRef(null)
   const inputRef = useRef(null)
   const atBottomRef = useRef(true)
+  const sessionRef = useRef(sessionId)
 
   const scrollToBottom = () => {
     const list = listRef.current
@@ -161,20 +184,29 @@ function Chat () {
     if (!vv) return undefined
 
     let frame = 0
-    // Highest visual-viewport height seen while the input is not focused:
-    // the difference to the current height is the keyboard height.
+    let settleTimers = []
+    let keyboardOpen = false
     let restHeight = Math.max(vv.height, window.innerHeight)
     let restWidth = window.innerWidth
-    let keyboardOpen = false
+
+    const clearSettleTimers = () => {
+      settleTimers.forEach(timer => window.clearTimeout(timer))
+      settleTimers = []
+    }
+
+    const resetPageScroll = () => {
+      if (window.scrollX || window.scrollY) window.scrollTo(0, 0)
+      if (root.scrollTop) root.scrollTop = 0
+      if (document.body.scrollTop) document.body.scrollTop = 0
+    }
 
     const sync = () => {
       frame = 0
-      const height = Math.max(1, vv.height)
+      const height = Math.max(1, Math.round(vv.height))
       const layoutHeight = window.innerHeight
       const inputFocused = document.activeElement === inputRef.current
 
       if (window.innerWidth !== restWidth) {
-        // Orientation change or a real window resize, not the keyboard.
         restWidth = window.innerWidth
         restHeight = Math.max(height, layoutHeight)
       }
@@ -183,17 +215,14 @@ function Chat () {
       const isKeyboardOpen =
         inputFocused && restHeight - height > KEYBOARD_MIN_HEIGHT
 
-      // On iOS the layout viewport does not shrink when the keyboard opens:
-      // the visual viewport is panned instead. Re-anchor the whole app to the
-      // visible area and clamp the offset, because iOS sometimes leaves
-      // visualViewport.offsetTop stuck after the keyboard is dismissed.
       const maxTop = Math.max(0, layoutHeight - height)
-      const top = isKeyboardOpen
-        ? Math.min(Math.max(0, vv.offsetTop), maxTop)
+      const shouldAnchor = inputFocused && (isKeyboardOpen || vv.offsetTop > 0)
+      const top = shouldAnchor
+        ? Math.min(Math.max(0, Math.round(vv.offsetTop)), maxTop)
         : 0
 
-      root.style.setProperty('--visual-viewport-top', `${Math.round(top)}px`)
-      root.style.setProperty('--visual-viewport-height', `${Math.round(height)}px`)
+      root.style.setProperty('--visual-viewport-top', `${top}px`)
+      root.style.setProperty('--visual-viewport-height', `${height}px`)
       document.body.classList.toggle('keyboard-open', isKeyboardOpen)
 
       if (isKeyboardOpen !== keyboardOpen) {
@@ -204,34 +233,115 @@ function Chat () {
       }
     }
 
+    const settle = () => {
+      clearSettleTimers()
+      settleTimers = KEYBOARD_SETTLE_DELAYS.map(delay => window.setTimeout(() => {
+        resetPageScroll()
+        sync()
+        if (atBottomRef.current) scrollToBottom()
+      }, delay))
+    }
+
     const schedule = () => {
       if (frame) return
       frame = window.requestAnimationFrame(sync)
     }
 
+    const handleViewportChange = () => {
+      schedule()
+      settle()
+    }
+
+    const handleFocusChange = () => {
+      schedule()
+      settle()
+    }
+
     sync()
-    vv.addEventListener('resize', schedule)
+    vv.addEventListener('resize', handleViewportChange)
     vv.addEventListener('scroll', schedule)
-    window.addEventListener('resize', schedule)
-    window.addEventListener('orientationchange', schedule)
-    window.addEventListener('focusin', schedule)
-    window.addEventListener('focusout', schedule)
-    window.addEventListener('pageshow', schedule)
+    window.addEventListener('resize', handleViewportChange)
+    window.addEventListener('orientationchange', handleViewportChange)
+    window.addEventListener('focusin', handleFocusChange)
+    window.addEventListener('focusout', handleFocusChange)
+    window.addEventListener('pageshow', handleViewportChange)
 
     return () => {
       if (frame) window.cancelAnimationFrame(frame)
-      vv.removeEventListener('resize', schedule)
+      clearSettleTimers()
+      vv.removeEventListener('resize', handleViewportChange)
       vv.removeEventListener('scroll', schedule)
-      window.removeEventListener('resize', schedule)
-      window.removeEventListener('orientationchange', schedule)
-      window.removeEventListener('focusin', schedule)
-      window.removeEventListener('focusout', schedule)
-      window.removeEventListener('pageshow', schedule)
+      window.removeEventListener('resize', handleViewportChange)
+      window.removeEventListener('orientationchange', handleViewportChange)
+      window.removeEventListener('focusin', handleFocusChange)
+      window.removeEventListener('focusout', handleFocusChange)
+      window.removeEventListener('pageshow', handleViewportChange)
       root.style.removeProperty('--visual-viewport-top')
       root.style.removeProperty('--visual-viewport-height')
       document.body.classList.remove('keyboard-open')
     }
   }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 15000)
+
+    sessionRef.current = sessionId
+    setMessages([createGreeting()])
+    setInput('')
+    setAttachedFile(null)
+    setAttachError('')
+    setIsTyping(false)
+    setIsAnalyzingPhoto(false)
+    atBottomRef.current = true
+
+    if (!sessionId) {
+      setIsLoadingHistory(false)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timer)
+        controller.abort()
+      }
+    }
+
+    setIsLoadingHistory(true)
+
+    const loadHistory = async () => {
+      try {
+        const res = await fetch(
+          `${API_URL}/chat/history?sessionId=${encodeURIComponent(sessionId)}&limit=${HISTORY_LIMIT}`,
+          {
+            credentials: 'include',
+            signal: controller.signal
+          }
+        )
+        if (!res.ok) return
+
+        const data = await res.json()
+        if (cancelled) return
+
+        const items = Array.isArray(data?.items) ? data.items : []
+        if (!items.length) return
+
+        setMessages([createGreeting(), ...items.map(historyItemToMessage)])
+      } catch (error) {
+        if (error?.name !== 'AbortError')
+          console.error('Chat history error:', error)
+      } finally {
+        window.clearTimeout(timer)
+        if (!cancelled) setIsLoadingHistory(false)
+      }
+    }
+
+    loadHistory()
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [sessionId])
 
   useEffect(() => {
     const last = messages[messages.length - 1]
@@ -259,69 +369,17 @@ function Chat () {
     }
   }, [input])
 
-  useEffect(() => {
-    let cancelled = false
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 15000)
-
-    const loadHistory = async () => {
-      try {
-        const res = await fetch(
-          `${API_URL}/chat/history?limit=${HISTORY_LIMIT}`,
-          {
-            credentials: 'include',
-            signal: controller.signal
-          }
-        )
-        if (!res.ok) return
-
-        const data = await res.json()
-        if (cancelled) return
-
-        if (data?.sessionId) setSessionId(data.sessionId)
-
-        const items = Array.isArray(data?.items) ? data.items : []
-        if (!items.length) return
-
-        setMessages([
-          {
-            id: 'greeting',
-            role: 'assistant',
-            text: GREETING,
-            createdAt: new Date().toISOString()
-          },
-          ...items.map(item => ({
-            id: `h-${item.id}`,
-            role: item.role === 'user' ? 'user' : 'assistant',
-            text: item.text,
-            createdAt: item.createdAt,
-            photoUrl: item.photoUrl || null,
-            diagnosis: item.diagnosis || null
-          }))
-        ])
-      } catch (error) {
-        if (error?.name !== 'AbortError')
-          console.error('Chat history error:', error)
-      } finally {
-        window.clearTimeout(timer)
-      }
-    }
-
-    loadHistory()
-
-    return () => {
-      cancelled = true
-      window.clearTimeout(timer)
-      controller.abort()
-    }
-  }, [])
+  const notifySessionsChanged = () => {
+    onSessionsChanged?.()
+  }
 
   const sendMessage = async rawText => {
     const text = (rawText ?? input).trim()
     if (!text || isTyping) return
 
+    const requestSession = sessionId
     const userMsg = {
-      id: `u-${Date.now()}`,
+      id: createLocalId('u'),
       role: 'user',
       text,
       createdAt: new Date().toISOString()
@@ -352,36 +410,40 @@ function Chat () {
       }
 
       const data = await res.json()
-      if (data?.sessionId) setSessionId(data.sessionId)
 
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          text: data.text,
-          createdAt: new Date().toISOString()
-        }
-      ])
+      if (sessionRef.current === requestSession) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: createLocalId('a'),
+            role: 'assistant',
+            text: data.text,
+            createdAt: new Date().toISOString()
+          }
+        ])
+      }
+      notifySessionsChanged()
     } catch (e) {
       const timedOut = e?.name === 'AbortError'
       console.error('Chat error:', e)
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `e-${Date.now()}`,
-          role: 'assistant',
-          text: timedOut
-            ? '⏳ Алиса не успела ответить. Попробуйте ещё раз — я на связи.'
-            : e?.message && e.message !== 'Failed to fetch'
-            ? `⚠️ ${e.message}`
-            : '⚠️ Что-то пошло не так. Попробуй ещё раз.',
-          createdAt: new Date().toISOString()
-        }
-      ])
+      if (sessionRef.current === requestSession) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: createLocalId('e'),
+            role: 'assistant',
+            text: timedOut
+              ? '⏳ Алиса не успела ответить. Попробуйте ещё раз — я на связи.'
+              : e?.message && e.message !== 'Failed to fetch'
+              ? `⚠️ ${e.message}`
+              : '⚠️ Что-то пошло не так. Попробуй ещё раз.',
+            createdAt: new Date().toISOString()
+          }
+        ])
+      }
     } finally {
       window.clearTimeout(timer)
-      setIsTyping(false)
+      if (sessionRef.current === requestSession) setIsTyping(false)
     }
   }
 
@@ -395,12 +457,13 @@ function Chat () {
     }
 
     const text = input.trim()
+    const requestSession = sessionId
     const localPhotoUrl = URL.createObjectURL(file)
 
     setMessages(prev => [
       ...prev,
       {
-        id: `u-${Date.now()}`,
+        id: createLocalId('u'),
         role: 'user',
         text: text || 'Проверьте, пожалуйста, фото растения',
         photoUrl: localPhotoUrl,
@@ -432,88 +495,61 @@ function Chat () {
 
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`)
-      if (data?.sessionId) setSessionId(data.sessionId)
 
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `a-${Date.now()}`,
-          role: 'assistant',
-          text: data.text,
-          diagnosis: data.diagnosis || null,
-          createdAt: new Date().toISOString()
+      if (sessionRef.current === requestSession) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: createLocalId('a'),
+            role: 'assistant',
+            text: data.text,
+            diagnosis: data.diagnosis || null,
+            createdAt: new Date().toISOString()
+          }
+        ])
+
+        if (data.photoUrl) {
+          setMessages(prev => prev.map(message => (
+            message.photoUrl === localPhotoUrl
+              ? { ...message, photoUrl: data.photoUrl }
+              : message
+          )))
         }
-      ])
-
-      if (data.photoUrl) {
-        setMessages(prev => prev.map(message => (
-          message.photoUrl === localPhotoUrl
-            ? { ...message, photoUrl: data.photoUrl }
-            : message
-        )))
-        URL.revokeObjectURL(localPhotoUrl)
       }
+
+      if (data.photoUrl) URL.revokeObjectURL(localPhotoUrl)
+
+      notifySessionsChanged()
     } catch (e) {
       const timedOut = e?.name === 'AbortError'
       console.error('Photo chat error:', e)
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `e-${Date.now()}`,
-          role: 'assistant',
-          text: timedOut
-            ? '⏳ Разбор фото занял слишком много времени. Попробуйте ещё раз — модель иногда думает долго.'
-            : e?.message && e.message !== 'Failed to fetch'
-              ? `⚠️ ${e.message}`
-              : '⚠️ Не удалось разобрать фото. Попробуйте другое фото.',
-          createdAt: new Date().toISOString()
-        }
-      ])
+      if (sessionRef.current === requestSession) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: createLocalId('e'),
+            role: 'assistant',
+            text: timedOut
+              ? '⏳ Разбор фото занял слишком много времени. Попробуйте ещё раз — модель иногда думает долго.'
+              : e?.message && e.message !== 'Failed to fetch'
+                ? `⚠️ ${e.message}`
+                : '⚠️ Не удалось разобрать фото. Попробуйте другое фото.',
+            createdAt: new Date().toISOString()
+          }
+        ])
+      }
     } finally {
       window.clearTimeout(timer)
-      setIsTyping(false)
-      setIsAnalyzingPhoto(false)
+      if (sessionRef.current === requestSession) {
+        setIsTyping(false)
+        setIsAnalyzingPhoto(false)
+      }
     }
   }
 
   const handleSend = () => {
     if (attachedFile) return sendPhoto()
     return sendMessage()
-  }
-
-  const clearHistory = async () => {
-    if (isTyping) return
-
-    if (!sessionId) {
-      setMessages(prev => prev.filter(message => message.id === 'greeting'))
-      return
-    }
-    if (!window.confirm('Очистить историю чата?')) return
-
-    try {
-      const res = await fetch(`${API_URL}/chat/history`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ sessionId })
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        throw new Error(err.message || `HTTP ${res.status}`)
-      }
-
-      setSessionId(null)
-      setMessages([
-        {
-          id: 'greeting',
-          role: 'assistant',
-          text: GREETING,
-          createdAt: new Date().toISOString()
-        }
-      ])
-    } catch (error) {
-      console.error('Clear chat error:', error)
-    }
   }
 
   const handleKeyDown = e => {
@@ -545,19 +581,30 @@ function Chat () {
           <div>
             <p className='chatHeaderTitle'>ИИ-помощник Лейка</p>
             <p className='chatHeaderSubtitle'>
-              Онлайн • помогу с поливом и уходом
+              Онлайн • помню контекст разговора
             </p>
           </div>
         </div>
-        <button
-          className='chatMenuBtn'
-          type='button'
-          aria-label='Очистить историю'
-          title='Очистить историю'
-          onClick={clearHistory}
-        >
-          <ThemedIcon src={IconMenu} alt='' />
-        </button>
+        <div className='chatHeaderActions'>
+          <button
+            className='chatMenuBtn chatNewChatBtn'
+            type='button'
+            aria-label='Новый чат'
+            title='Новый чат'
+            onClick={onNewChat}
+          >
+            <ThemedIcon src={NewChatBtn} alt='' />
+          </button>
+          <button
+            className='chatMenuBtn chatHistoryBtn'
+            type='button'
+            aria-label='История чатов'
+            title='История чатов'
+            onClick={onOpenHistory}
+          >
+            <ThemedIcon src={HistoryBtn} alt='' />
+          </button>
+        </div>
       </div>
       <div className='chatMessages' ref={listRef} onScroll={handleMessagesScroll}>
         {messages.map(m => (
@@ -595,6 +642,17 @@ function Chat () {
             </div>
           </div>
         ))}
+
+        {isLoadingHistory && !isTyping && (
+          <div className='chatRow'>
+            <div className='chatBubble chatBubbleAi chatBubbleTyping'>
+              <span className='chatDot' />
+              <span className='chatDot' />
+              <span className='chatDot' />
+              <span className='chatTypingLabel'>Загружаю историю…</span>
+            </div>
+          </div>
+        )}
 
         {isTyping && (
           <div className='chatRow'>

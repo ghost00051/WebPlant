@@ -34,6 +34,14 @@ body.keyboard-open .chatWindow {
     display: flex;
     align-items: center;
     gap: 12px;
+    min-width: 0;
+}
+
+.chatHeaderActions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
 }
 
 .chatBackBtn,
@@ -50,6 +58,22 @@ body.keyboard-open .chatWindow {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
     color: #2D2D2D;
     flex-shrink: 0;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.chatMenuBtn img {
+    display: block;
+    width: 30px;
+    height: 30px;
+}
+
+.chatMenuBtn:active {
+    transform: scale(0.96);
+}
+
+.chatMenuBtn:focus-visible {
+    outline: 2px solid #7FD1A0;
+    outline-offset: 2px;
 }
 
 .chatAvatar {
@@ -74,6 +98,9 @@ body.keyboard-open .chatWindow {
     font-weight: 600;
     color: #2D2D2D;
     margin: 0 0 2px 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .chatHeaderSubtitle {
@@ -81,6 +108,9 @@ body.keyboard-open .chatWindow {
     font-weight: 500;
     color: #8A8A8A;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 

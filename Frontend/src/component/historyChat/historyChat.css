@@ -1,34 +1,240 @@
 .HistoryChat {
-    padding: 16px 10px;
-    border-right: 1px solid #e9e5df;
-    display: none;
+    box-sizing: border-box;
+    flex-direction: column;
+    min-height: 0;
+    font-family: 'Inter', sans-serif;
+    background-color: var(--theme-page);
+    color: var(--theme-text);
 }
 
-.headerOfHistoryChat {
+@media (max-width: 1023px) {
+    .HistoryChat {
+        display: none;
+    }
+
+    .HistoryChat.is-open {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        z-index: 220;
+        display: flex;
+        width: min(86%, 330px);
+        padding: calc(12px + env(safe-area-inset-top, 0px)) 10px 14px;
+        border-right: 1px solid var(--theme-border);
+        box-shadow: 0 18px 44px rgba(22, 30, 25, 0.22);
+        animation: historyChatSlideIn 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    }
+}
+
+@keyframes historyChatSlideIn {
+    from {
+        transform: translateX(-14%);
+        opacity: 0.5;
+    }
+
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .HistoryChat.is-open {
+        animation: none;
+    }
+}
+
+.historyChatBackdrop {
+    position: absolute;
+    inset: 0;
+    z-index: 210;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: rgba(18, 24, 20, 0.42);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.historyChatHeader {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    width: max-content;
-    gap: 50px;
+    gap: 8px;
+    padding: 2px 4px 12px;
 }
 
-.headerOfHistoryChat p {
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    font-weight: bold;
-    color: #2D2D2D;
+.historyChatHeaderLeft {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+}
+
+.historyChatTitle {
     margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--theme-muted);
 }
 
-.headerOfHistoryChat img {
-    width: 25px;
-    height: 25px;
+.historyChatIconBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
 }
 
-.mainOfHistoryChat {
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    font-weight: 400;
-    color: #ffd000;
-    margin: 0;
+.historyChatIconBtn img {
+    display: block;
+    width: 24px;
+    height: 24px;
+}
+
+.historyChatIconBtn:hover {
+    background-color: var(--theme-raised);
+}
+
+.historyChatIconBtn:focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: 1px;
+}
+
+.historyChatList {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    overflow-y: auto;
+    padding: 2px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+}
+
+.historyChatList::-webkit-scrollbar {
+    display: none;
+}
+
+.historyChatItem {
+    display: flex;
+    align-items: stretch;
+    border-radius: 12px;
+    transition: background-color 0.18s ease;
+}
+
+.historyChatItem:hover {
+    background-color: var(--theme-raised);
+}
+
+.historyChatItem.is-active {
+    background-color: var(--theme-accent-soft);
+}
+
+.historyChatItemBtn {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.historyChatItemBtn:focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: -2px;
+}
+
+.historyChatItemTitle {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--theme-text);
+}
+
+.historyChatItemMeta {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--font-size-xs);
+    color: var(--theme-muted);
+}
+
+.historyChatItemDelete {
+    flex: 0 0 auto;
+    width: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--theme-muted);
+    font-size: var(--font-size-lg);
+    line-height: 1;
+    cursor: pointer;
+    transition: color 0.2s ease, background-color 0.2s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.historyChatItemDelete:hover {
+    color: #9C3B2E;
+    background-color: rgba(156, 59, 46, 0.08);
+}
+
+.historyChatItemDelete:focus-visible {
+    outline: 2px solid var(--theme-accent);
+    outline-offset: -2px;
+}
+
+.historyChatEmpty {
+    margin: 10px 8px;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+    color: var(--theme-muted);
+}
+
+.historyChatFooter {
+    flex: 0 0 auto;
+    margin: 10px 8px 0;
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+    color: var(--theme-muted);
+}
+
+@media (max-width: 1023px) {
+    .historyChatBackdrop {
+        display: block;
+    }
+}
+
+@media (min-width: 1024px) {
+    .historyChatBackdrop,
+    .historyChatClose {
+        display: none;
+    }
 }
