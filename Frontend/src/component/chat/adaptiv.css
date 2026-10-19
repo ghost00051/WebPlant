@@ -1,3 +1,38 @@
+@media (max-width: 1023px) {
+    /*
+     * The chat screen is anchored to the visual viewport, so the site stays
+     * exactly between the browser chrome/nav and the on-screen keyboard.
+     * The nav is part of this box, which keeps the input above the keyboard.
+     */
+    .godOfBlocksChat {
+        position: fixed;
+        top: var(--visual-viewport-top, 0px);
+        left: 0;
+        right: 0;
+        height: 100vh;
+        height: var(--visual-viewport-height, 100dvh);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        background-color: var(--theme-page, #FAF8F5);
+    }
+
+    .godOfBlocksChat>.mobileNav {
+        order: -1;
+        flex: 0 0 auto;
+    }
+
+    .godOfBlocksChat>.chatWindow {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+    }
+}
+
 @media (max-width: 640px) {
     .chatWindow {
         max-width: 100%;

@@ -1,21 +1,18 @@
 .chatWindow {
-    position: fixed;
-    top: calc(var(--visual-viewport-top, 0px) + var(--mobile-nav-height));
-    left: 0;
-    right: 0;
-    bottom: auto;
-    height: calc(var(--visual-viewport-height, 100vh) - var(--mobile-nav-height));
+    position: relative;
     box-sizing: border-box;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    max-width: 420px;
-    margin: 0 auto;
-    background-color: #FAF8F5;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    max-width: 420px;
+    margin: 0 auto;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background-color: #FAF8F5;
+    overflow: hidden;
     font-family: 'Inter', sans-serif;
     z-index: 50;
-    margin-top: 5%;
 }
 
 body.keyboard-open .chatWindow {
@@ -31,7 +28,6 @@ body.keyboard-open .chatWindow {
     background-color: #FAF8F5;
     border-bottom: 1px solid #EAE6E1;
     z-index: 10;
-    margin-top: 4%;
 }
 
 .chatHeaderLeft {
@@ -130,6 +126,7 @@ body.keyboard-open .chatWindow {
     gap: 12px;
     scrollbar-width: none;
     -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .chatMessages::-webkit-scrollbar {
@@ -307,6 +304,7 @@ body.keyboard-open .chatWindow {
 
 .chatInputField {
     flex: 1;
+    box-sizing: border-box;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-base);
     color: #2D2D2D;
@@ -314,7 +312,9 @@ body.keyboard-open .chatWindow {
     border: none;
     outline: none;
     resize: none;
-    max-height: 100px;
+    height: auto;
+    max-height: 140px;
+    overflow-y: hidden;
     line-height: 1.4;
     padding: 8px 0;
 }

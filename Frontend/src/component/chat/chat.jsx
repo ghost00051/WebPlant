@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useLayoutEffect } from 'react'
 import './chat.css'
 import './dark-theme.css'
 import './adaptiv.css'
@@ -14,6 +14,9 @@ const PHOTO_TIMEOUT_MS = 90000
 const HISTORY_LIMIT = 50
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 const PHOTO_MAX_SIDE = 1600
+const MAX_INPUT_HEIGHT = 140
+const NEAR_BOTTOM_PX = 120
+const KEYBOARD_MIN_HEIGHT = 120
 
 const CONFIDENCE_LABELS = { high: 'высокая', medium: 'средняя', low: 'низкая' }
 const SEVERITY_LABELS = {
@@ -137,60 +140,124 @@ function Chat () {
 
   const listRef = useRef(null)
   const inputRef = useRef(null)
-  const bottomRef = useRef(null)
+  const atBottomRef = useRef(true)
 
-  useEffect(() => {
+  const scrollToBottom = () => {
+    const list = listRef.current
+    if (!list) return
+    list.scrollTop = list.scrollHeight
+  }
+
+  const handleMessagesScroll = () => {
+    const list = listRef.current
+    if (!list) return
+    atBottomRef.current =
+      list.scrollHeight - list.scrollTop - list.clientHeight < NEAR_BOTTOM_PX
+  }
+
+  useLayoutEffect(() => {
+    const root = document.documentElement
     const vv = window.visualViewport
+    if (!vv) return undefined
+
+    let frame = 0
+    // Highest visual-viewport height seen while the input is not focused:
+    // the difference to the current height is the keyboard height.
+    let restHeight = Math.max(vv.height, window.innerHeight)
+    let restWidth = window.innerWidth
     let keyboardOpen = false
 
-    const update = () => {
-      const viewportTop = vv?.offsetTop ?? 0
-      const viewportHeight = vv?.height ?? window.innerHeight
-      const keyboardHeight = Math.max(0, window.innerHeight - viewportHeight)
-
-      document.documentElement.style.setProperty(
-        '--visual-viewport-top',
-        `${viewportTop}px`
-      )
-      document.documentElement.style.setProperty(
-        '--visual-viewport-height',
-        `${viewportHeight}px`
-      )
-
+    const sync = () => {
+      frame = 0
+      const height = Math.max(1, vv.height)
+      const layoutHeight = window.innerHeight
       const inputFocused = document.activeElement === inputRef.current
-      const isKeyboardOpen =
-        inputFocused || (keyboardOpen && keyboardHeight > 100)
-      if (isKeyboardOpen) {
-        document.body.classList.add('keyboard-open')
-        if (!keyboardOpen && listRef.current) {
-          listRef.current.scrollTop = listRef.current.scrollHeight
-        }
-      } else {
-        document.body.classList.remove('keyboard-open')
-      }
 
-      keyboardOpen = isKeyboardOpen
+      if (window.innerWidth !== restWidth) {
+        // Orientation change or a real window resize, not the keyboard.
+        restWidth = window.innerWidth
+        restHeight = Math.max(height, layoutHeight)
+      }
+      if (!inputFocused) restHeight = Math.max(restHeight, height)
+
+      const isKeyboardOpen =
+        inputFocused && restHeight - height > KEYBOARD_MIN_HEIGHT
+
+      // On iOS the layout viewport does not shrink when the keyboard opens:
+      // the visual viewport is panned instead. Re-anchor the whole app to the
+      // visible area and clamp the offset, because iOS sometimes leaves
+      // visualViewport.offsetTop stuck after the keyboard is dismissed.
+      const maxTop = Math.max(0, layoutHeight - height)
+      const top = isKeyboardOpen
+        ? Math.min(Math.max(0, vv.offsetTop), maxTop)
+        : 0
+
+      root.style.setProperty('--visual-viewport-top', `${Math.round(top)}px`)
+      root.style.setProperty('--visual-viewport-height', `${Math.round(height)}px`)
+      document.body.classList.toggle('keyboard-open', isKeyboardOpen)
+
+      if (isKeyboardOpen !== keyboardOpen) {
+        keyboardOpen = isKeyboardOpen
+        window.requestAnimationFrame(() => {
+          if (isKeyboardOpen || atBottomRef.current) scrollToBottom()
+        })
+      }
     }
 
-    vv?.addEventListener('resize', update)
-    vv?.addEventListener('scroll', update)
-    window.addEventListener('resize', update)
-    window.addEventListener('focusin', update)
-    window.addEventListener('focusout', update)
+    const schedule = () => {
+      if (frame) return
+      frame = window.requestAnimationFrame(sync)
+    }
 
-    update()
+    sync()
+    vv.addEventListener('resize', schedule)
+    vv.addEventListener('scroll', schedule)
+    window.addEventListener('resize', schedule)
+    window.addEventListener('orientationchange', schedule)
+    window.addEventListener('focusin', schedule)
+    window.addEventListener('focusout', schedule)
+    window.addEventListener('pageshow', schedule)
 
     return () => {
-      vv?.removeEventListener('resize', update)
-      vv?.removeEventListener('scroll', update)
-      window.removeEventListener('resize', update)
-      window.removeEventListener('focusin', update)
-      window.removeEventListener('focusout', update)
-      document.documentElement.style.removeProperty('--visual-viewport-top')
-      document.documentElement.style.removeProperty('--visual-viewport-height')
+      if (frame) window.cancelAnimationFrame(frame)
+      vv.removeEventListener('resize', schedule)
+      vv.removeEventListener('scroll', schedule)
+      window.removeEventListener('resize', schedule)
+      window.removeEventListener('orientationchange', schedule)
+      window.removeEventListener('focusin', schedule)
+      window.removeEventListener('focusout', schedule)
+      window.removeEventListener('pageshow', schedule)
+      root.style.removeProperty('--visual-viewport-top')
+      root.style.removeProperty('--visual-viewport-height')
       document.body.classList.remove('keyboard-open')
     }
   }, [])
+
+  useEffect(() => {
+    const last = messages[messages.length - 1]
+    if (!last) return undefined
+    if (last.role !== 'user' && !atBottomRef.current) return undefined
+
+    atBottomRef.current = true
+    const frame = window.requestAnimationFrame(scrollToBottom)
+    return () => window.cancelAnimationFrame(frame)
+  }, [messages, isTyping])
+
+  useLayoutEffect(() => {
+    const field = inputRef.current
+    if (!field) return
+
+    const previousHeight = field.offsetHeight
+    field.style.height = 'auto'
+    const nextHeight = Math.min(field.scrollHeight, MAX_INPUT_HEIGHT)
+    field.style.height = `${nextHeight}px`
+    field.style.overflowY =
+      field.scrollHeight > MAX_INPUT_HEIGHT ? 'auto' : 'hidden'
+
+    if (nextHeight > previousHeight && atBottomRef.current) {
+      window.requestAnimationFrame(scrollToBottom)
+    }
+  }, [input])
 
   useEffect(() => {
     let cancelled = false
@@ -318,7 +385,7 @@ function Chat () {
     }
   }
 
-const sendPhoto = async () => {
+  const sendPhoto = async () => {
     const file = attachedFile
     if (!file || isTyping) return
 
@@ -492,7 +559,7 @@ const sendPhoto = async () => {
           <ThemedIcon src={IconMenu} alt='' />
         </button>
       </div>
-      <div className='chatMessages' ref={listRef}>
+      <div className='chatMessages' ref={listRef} onScroll={handleMessagesScroll}>
         {messages.map(m => (
           <div
             key={m.id}
@@ -509,6 +576,9 @@ const sendPhoto = async () => {
                   src={m.photoUrl}
                   alt='Фото растения'
                   loading='lazy'
+                  onLoad={() => {
+                    if (atBottomRef.current) scrollToBottom()
+                  }}
                 />
               )}
               {m.diagnosis ? (
@@ -538,7 +608,6 @@ const sendPhoto = async () => {
             </div>
           </div>
         )}
-        <div ref={bottomRef} />
       </div>
 
       <div className='chatInputArea'>
@@ -579,7 +648,7 @@ const sendPhoto = async () => {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder='Спросите про полив или прикрепите фото'
+            placeholder='Спросите про полив или фото'
             rows={1}
             disabled={isTyping}
           />
