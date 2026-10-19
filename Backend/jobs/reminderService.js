@@ -23,6 +23,7 @@ import { withDistributedLock } from '../utils/distributedLock.js'
 import User from '../models/userModels.js'
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
 import { isRemindersPaused, registerAutoSkip } from '../utils/plantMetadata.js'
+import { readPrediction } from '../utils/wateringPrediction.js'
 
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
@@ -186,18 +187,25 @@ export function buildOnDayNotification(plant, { slot, timeZone, now = new Date()
     const slotDate = new Date(slot)
     const isLate = Number.isFinite(slotDate.getTime()) &&
         now.getTime() - slotDate.getTime() > ON_DAY_LATE_MS
+    const confidence = readPrediction(plant?.metadata)?.confidence
+    const uncertainNote = confidence === 'low'
+        ? ' Проверьте грунт: срок ориентировочный.'
+        : ''
 
     if (!isLate) {
         return {
             title: '💧 Пора полить!',
-            body: truncateText(`${name}${location} ждёт воды`, NOTIFICATION_BODY_MAX_LENGTH)
+            body: truncateText(
+                `${name}${location} ждёт воды.${uncertainNote}`,
+                NOTIFICATION_BODY_MAX_LENGTH
+            )
         }
     }
 
     return {
         title: '💧 Пора полить!',
         body: truncateText(
-            `${name}${location} ждёт воды. Полив был запланирован на ${formatSlotLabel(slotDate, timeZone)}.`,
+            `${name}${location} ждёт воды. Полив был запланирован на ${formatSlotLabel(slotDate, timeZone)}.${uncertainNote}`,
             NOTIFICATION_BODY_MAX_LENGTH
         )
     }

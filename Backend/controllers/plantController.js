@@ -44,12 +44,14 @@ import {
 } from '../utils/plantMetadata.js'
 import User from '../models/userModels.js'
 import { resolveHemisphere, resolveTimeZone } from '../utils/timeZone.js'
+import { recalculatePrediction, resetPrediction } from '../services/wateringLearning.js'
+import { buildPredictionMetadata } from '../utils/wateringPrediction.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
 const WATERING_DUPLICATE_WINDOW_MS = 60 * 1000
 const MAX_METADATA_BYTES = 8 * 1024
-const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips']
+const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips', 'prediction']
 const DEFAULT_SCHEDULE_DAYS = 7
 
 function computeHoursLate(scheduledFor, actionAt) {
@@ -622,7 +624,12 @@ class PlantController {
                 notify_day_before,
                 reminder_weekdays: normalizedWeekdays,
                 next_watering_at: nextWateringAt,
-                metadata: withoutReservedMetadata(metadata)
+                metadata: buildPredictionMetadata(withoutReservedMetadata(metadata), {
+                    baseIntervalDays: intervalDays,
+                    intervalDays,
+                    samples: 0,
+                    lastObservedAt: null
+                })
             }, { transaction: t })
 
             if (photos.length) {
@@ -889,6 +896,13 @@ class PlantController {
                     updates.next_watering_at ?? plant.next_watering_at,
                     timeZone
                 )
+            }
+
+            if (intervalChanged) {
+                updates.metadata = resetPrediction({
+                    metadata: updates.metadata ?? plant.metadata,
+                    intervalDays: interval
+                })
             }
 
             await plant.update(updates, { transaction })
@@ -1229,21 +1243,39 @@ class PlantController {
                     }, { transaction })
                 }
 
+                const prediction = await recalculatePrediction({ plant, transaction, now, timeZone })
+                const learnedIntervalDays = prediction?.intervalDays ?? intervalDays
+                const previousNext = plant.next_watering_at ? new Date(plant.next_watering_at) : null
+                const plannedNext = nextWateringInstant(
+                    plan.actionAt,
+                    learnedIntervalDays,
+                    plant.watering_time_of_day || 'morning',
+                    { timeZone }
+                ) ?? plan.nextWateringAt
+                const nextWateringAt = previousNext && plannedNext && previousNext > plannedNext
+                    ? previousNext
+                    : plannedNext
+                const scheduleChanged = !previousNext || !nextWateringAt ||
+                    previousNext.getTime() !== nextWateringAt.getTime()
+
                 const plantUpdates = {
                     last_watered_at: plan.lastWateredAt,
-                    next_watering_at: plan.nextWateringAt
+                    next_watering_at: nextWateringAt,
+                    watering_interval_days: learnedIntervalDays
                 }
-                const clearedProgress = clearWateringProgress(plant.metadata)
-                if (plan.scheduleChanged) {
+                const clearedProgress = clearWateringProgress(
+                    prediction?.metadata ?? plant.metadata
+                )
+                if (scheduleChanged) {
                     plantUpdates.metadata = withNotificationsReset(clearedProgress)
-                } else if (hasWateringProgress(plant.metadata)) {
+                } else if (prediction || hasWateringProgress(plant.metadata)) {
                     plantUpdates.metadata = clearedProgress
                 }
-                if (plan.scheduleChanged) {
+                if (scheduleChanged) {
                     plantUpdates.reminder_weekdays = normalizeReminderWeekdays(
-                        intervalDays,
+                        learnedIntervalDays,
                         plant.reminder_weekdays,
-                        plan.nextWateringAt,
+                        nextWateringAt,
                         timeZone
                     )
                 }
@@ -1274,26 +1306,6 @@ class PlantController {
             }
 
             const scheduledFor = plant.next_watering_at
-            const nextWatering = computeNextWatering(
-                now,
-                intervalDays,
-                plant.watering_time_of_day || 'morning',
-                timeZone
-            )
-            const metadata = withNotificationsReset(clearWateringProgress(plant.metadata))
-            const reminderWeekdays = normalizeReminderWeekdays(
-                intervalDays,
-                plant.reminder_weekdays,
-                nextWatering,
-                timeZone
-            )
-
-            await plant.update({
-                last_watered_at: now,
-                next_watering_at: nextWatering,
-                reminder_weekdays: reminderWeekdays,
-                metadata
-            }, { transaction })
 
             await WateringLog.create({
                 plant_id: plant.id,
@@ -1305,6 +1317,33 @@ class PlantController {
                 note: note || null,
                 metadata: { prev_next_watering_at: scheduledFor, recorded_at: now.toISOString() }
             }, { transaction })
+
+            const prediction = await recalculatePrediction({ plant, transaction, now, timeZone })
+            const learnedIntervalDays = prediction?.intervalDays ?? intervalDays
+            const nextWatering = computeNextWatering(
+                now,
+                learnedIntervalDays,
+                plant.watering_time_of_day || 'morning',
+                timeZone
+            )
+            const metadata = withNotificationsReset(clearWateringProgress(
+                prediction?.metadata ?? plant.metadata
+            ))
+            const reminderWeekdays = normalizeReminderWeekdays(
+                learnedIntervalDays,
+                plant.reminder_weekdays,
+                nextWatering,
+                timeZone
+            )
+
+            await plant.update({
+                last_watered_at: now,
+                next_watering_at: nextWatering,
+                watering_interval_days: learnedIntervalDays,
+                reminder_weekdays: reminderWeekdays,
+                metadata
+            }, { transaction })
+
             await transaction.commit()
             transaction = null
 
@@ -1337,6 +1376,8 @@ class PlantController {
                 transaction = null
                 return res.status(404).json({ message: 'Растение не найдено' })
             }
+
+            const timeZone = await getUserTimeZone(userId)
 
             const log = await WateringLog.findOne({
                 where: {
@@ -1394,8 +1435,19 @@ class PlantController {
                 lock: transaction.LOCK.UPDATE
             })
 
+            const prediction = await recalculatePrediction({
+                plant,
+                transaction,
+                now: new Date(),
+                timeZone
+            })
+
             const plantUpdates = {
                 last_watered_at: latestWatering?.action_at ?? null
+            }
+            if (prediction) {
+                plantUpdates.watering_interval_days = prediction.intervalDays
+                plantUpdates.metadata = prediction.metadata
             }
             if (isLatestAction) {
                 plantUpdates.next_watering_at = previousPlan

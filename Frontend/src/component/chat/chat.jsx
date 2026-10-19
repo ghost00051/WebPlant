@@ -11,8 +11,9 @@ import Paperclip from '../../assets/paperclip.svg'
 import { API_URL } from '../../utils/api.js'
 
 const CHAT_TIMEOUT_MS = 30000
-const PHOTO_TIMEOUT_MS = 90000
+const PHOTO_TIMEOUT_MS = 150000
 const HISTORY_LIMIT = 50
+const MAX_PHOTOS = 5
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024
 const PHOTO_MAX_SIDE = 1600
 const MAX_INPUT_HEIGHT = 140
@@ -30,7 +31,7 @@ const SEVERITY_LABELS = {
 }
 
 const GREETING =
-  'Привет! Я ИИ-помощник — помогу уследить за поливом и уходом за растениями. Напиши «Что полить?», «Покажи график» или «Сколько у меня растений?» — всё покажу. Можешь прикрепить фото растения — посмотрю, что с ним, и продолжу разговор по этому же растению.'
+  'Привет! Я ИИ-помощник — помогу уследить за поливом и уходом за растениями. Напиши «Что полить?», «Покажи график» или «Сколько у меня растений?» — всё покажу. Можешь прикрепить до 5 фото растения — посмотрю, что с ним, и продолжу разговор по этому же растению.'
 
 let localIdCounter = 0
 
@@ -49,12 +50,16 @@ function createGreeting() {
 }
 
 function historyItemToMessage(item) {
+  const photoUrls = Array.isArray(item.photoUrls) && item.photoUrls.length
+    ? item.photoUrls
+    : (item.photoUrl ? [item.photoUrl] : [])
+
   return {
     id: `h-${item.id}`,
     role: item.role === 'user' ? 'user' : 'assistant',
     text: item.text,
     createdAt: item.createdAt,
-    photoUrl: item.photoUrl || null,
+    photoUrls,
     diagnosis: item.diagnosis || null
   }
 }
@@ -156,7 +161,7 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(Boolean(sessionId))
-  const [attachedFile, setAttachedFile] = useState(null)
+  const [attachedFiles, setAttachedFiles] = useState([])
   const [attachError, setAttachError] = useState('')
   const [isAnalyzingPhoto, setIsAnalyzingPhoto] = useState(false)
 
@@ -290,7 +295,7 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
     sessionRef.current = sessionId
     setMessages([createGreeting()])
     setInput('')
-    setAttachedFile(null)
+    setAttachedFiles([])
     setAttachError('')
     setIsTyping(false)
     setIsAnalyzingPhoto(false)
@@ -448,30 +453,35 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
   }
 
   const sendPhoto = async () => {
-    const file = attachedFile
-    if (!file || isTyping) return
+    const files = attachedFiles
+    if (!files.length || isTyping) return
 
-    if (file.size > MAX_PHOTO_BYTES) {
+    if (files.length > MAX_PHOTOS) {
+      setAttachError(`Можно прикрепить не больше ${MAX_PHOTOS} фото`)
+      return
+    }
+    if (files.some(file => file.size > MAX_PHOTO_BYTES)) {
       setAttachError('Фото больше 5 МБ. Пожалуйста, выберите файл поменьше.')
       return
     }
 
     const text = input.trim()
     const requestSession = sessionId
-    const localPhotoUrl = URL.createObjectURL(file)
+    const messageId = createLocalId('u')
+    const localPhotoUrls = files.map(file => URL.createObjectURL(file))
 
     setMessages(prev => [
       ...prev,
       {
-        id: createLocalId('u'),
+        id: messageId,
         role: 'user',
         text: text || 'Проверьте, пожалуйста, фото растения',
-        photoUrl: localPhotoUrl,
+        photoUrls: localPhotoUrls,
         createdAt: new Date().toISOString()
       }
     ])
     setInput('')
-    setAttachedFile(null)
+    setAttachedFiles([])
     setAttachError('')
     setIsTyping(true)
     setIsAnalyzingPhoto(true)
@@ -480,9 +490,11 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
     const timer = window.setTimeout(() => controller.abort(), PHOTO_TIMEOUT_MS)
 
     try {
-      const uploadFile = await preparePhotoForUpload(file)
+      const uploadFiles = await Promise.all(files.map(preparePhotoForUpload))
       const formData = new FormData()
-      formData.append('photo', uploadFile, uploadFile.name || 'photo.jpg')
+      uploadFiles.forEach((file, index) => {
+        formData.append('photo', file, file.name || `photo-${index + 1}.jpg`)
+      })
       if (text) formData.append('message', text)
       if (sessionId) formData.append('sessionId', sessionId)
 
@@ -496,6 +508,10 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`)
 
+      const uploadedPhotoUrls = Array.isArray(data.photoUrls) && data.photoUrls.length
+        ? data.photoUrls
+        : (data.photoUrl ? [data.photoUrl] : [])
+
       if (sessionRef.current === requestSession) {
         setMessages(prev => [
           ...prev,
@@ -508,16 +524,18 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
           }
         ])
 
-        if (data.photoUrl) {
+        if (uploadedPhotoUrls.length) {
           setMessages(prev => prev.map(message => (
-            message.photoUrl === localPhotoUrl
-              ? { ...message, photoUrl: data.photoUrl }
+            message.id === messageId
+              ? { ...message, photoUrls: uploadedPhotoUrls }
               : message
           )))
         }
       }
 
-      if (data.photoUrl) URL.revokeObjectURL(localPhotoUrl)
+      if (uploadedPhotoUrls.length) {
+        localPhotoUrls.forEach(url => URL.revokeObjectURL(url))
+      }
 
       notifySessionsChanged()
     } catch (e) {
@@ -548,7 +566,7 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
   }
 
   const handleSend = () => {
-    if (attachedFile) return sendPhoto()
+    if (attachedFiles.length) return sendPhoto()
     return sendMessage()
   }
 
@@ -559,16 +577,30 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
     }
   }
 
+  const removeAttachedFile = index => {
+    setAttachedFiles(prev => prev.filter((_, fileIndex) => fileIndex !== index))
+    setAttachError('')
+  }
+
   const handleFileChange = e => {
-    const file = e.target.files?.[0] || null
-    if (file && file.size > MAX_PHOTO_BYTES) {
-      setAttachError('Фото больше 5 МБ. Пожалуйста, выберите файл поменьше.')
-      setAttachedFile(null)
-    } else {
-      setAttachError('')
-      setAttachedFile(file)
-    }
+    const selected = Array.from(e.target.files || [])
     e.target.value = ''
+    if (!selected.length) return
+
+    if (selected.some(file => file.size > MAX_PHOTO_BYTES)) {
+      setAttachError('Фото больше 5 МБ. Пожалуйста, выберите файл поменьше.')
+      return
+    }
+
+    const next = [...attachedFiles, ...selected]
+    if (next.length > MAX_PHOTOS) {
+      setAttachError(`Можно прикрепить не больше ${MAX_PHOTOS} фото — лишние не добавлены.`)
+      setAttachedFiles(next.slice(0, MAX_PHOTOS))
+      return
+    }
+
+    setAttachError('')
+    setAttachedFiles(next)
   }
 
   return (
@@ -617,16 +649,25 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
                 m.role === 'user' ? 'chatBubbleUser' : 'chatBubbleAi'
               }`}
             >
-              {m.photoUrl && m.role === 'user' && (
-                <img
-                  className='chatPhoto'
-                  src={m.photoUrl}
-                  alt='Фото растения'
-                  loading='lazy'
-                  onLoad={() => {
-                    if (atBottomRef.current) scrollToBottom()
-                  }}
-                />
+              {m.role === 'user' && m.photoUrls?.length > 0 && (
+                <div
+                  className={`chatPhotoGrid ${
+                    m.photoUrls.length > 1 ? 'chatPhotoGrid--multiple' : 'chatPhotoGrid--single'
+                  }`}
+                >
+                  {m.photoUrls.map((url, index) => (
+                    <img
+                      key={`${m.id}-photo-${index}`}
+                      className='chatPhoto'
+                      src={url}
+                      alt={`Фото растения ${index + 1}`}
+                      loading='lazy'
+                      onLoad={() => {
+                        if (atBottomRef.current) scrollToBottom()
+                      }}
+                    />
+                  ))}
+                </div>
               )}
               {m.diagnosis ? (
                 <DiagnosisCard diagnosis={m.diagnosis} />
@@ -672,20 +713,29 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
         {attachError && (
           <p className='chatAttachError'>{attachError}</p>
         )}
-        {attachedFile && (
-          <div className='chatAttachmentChip'>
-            <img src={Paperclip} alt='' aria-hidden='true' />
-            <span className='chatAttachmentName' title={attachedFile.name}>
-              {attachedFile.name}
+        {attachedFiles.length > 0 && (
+          <div className='chatAttachments'>
+            <div className='chatAttachmentsList'>
+              {attachedFiles.map((file, index) => (
+                <div className='chatAttachmentChip' key={`${file.name}-${file.lastModified}-${index}`}>
+                  <img src={Paperclip} alt='' aria-hidden='true' />
+                  <span className='chatAttachmentName' title={file.name}>
+                    {file.name}
+                  </span>
+                  <button
+                    type='button'
+                    className='chatAttachmentRemove'
+                    onClick={() => removeAttachedFile(index)}
+                    aria-label={`Убрать ${file.name}`}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+            <span className='chatAttachmentsCount'>
+              {attachedFiles.length} из {MAX_PHOTOS}
             </span>
-            <button
-              type='button'
-              className='chatAttachmentRemove'
-              onClick={() => setAttachedFile(null)}
-              aria-label='Убрать выбранный файл'
-            >
-              ×
-            </button>
           </div>
         )}
         <div className='chatInputWrapper'>
@@ -694,8 +744,9 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
               type='file'
               className='fileForAlice'
               accept='image/jpeg,image/png,image/webp,image/heic'
+              multiple
               onChange={handleFileChange}
-              aria-label='Прикрепить фото растения'
+              aria-label={`Прикрепить фото растения, до ${MAX_PHOTOS}`}
               disabled={isTyping}
             />
             <img src={Paperclip} alt='' aria-hidden='true' />
@@ -714,7 +765,7 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
             type='button'
             className='chatActionBtn'
             onClick={handleSend}
-            disabled={isTyping || (!input.trim() && !attachedFile)}
+            disabled={isTyping || (!input.trim() && !attachedFiles.length)}
             aria-label='Отправить'
           >
             <img src={IconSend} alt='' />

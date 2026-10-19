@@ -6,6 +6,7 @@ import { loadSharp } from './plantPhotoThumb.js'
 export const CHAT_PHOTO_DIRECTORY = path.resolve('uploads', 'chat')
 export const CHAT_PHOTO_MAX_SIDE = 1280
 export const CHAT_PHOTO_QUALITY = 80
+export const MAX_CHAT_PHOTOS = 5
 
 const CHAT_PHOTO_FILENAME = /^[0-9a-f]{32}\.jpg$/i
 

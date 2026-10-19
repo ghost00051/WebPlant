@@ -445,6 +445,35 @@ test('buildVisionRequest: продолжение диалога — перепи
     assert.match(prompt, /Всего фото в запросе: 2/)
 })
 
+test('buildVisionRequest: несколько фото в одном сообщении уходят в один запрос', () => {
+    const { input } = buildVisionRequest({
+        imageDataUrls: [
+            'data:image/jpeg;base64,ONE',
+            'data:image/jpeg;base64,TWO',
+            'data:image/jpeg;base64,THREE'
+        ],
+        previousImageDataUrls: ['data:image/jpeg;base64,PREVIOUS'],
+        question: 'Смотрите сразу три ракурса'
+    })
+
+    const parts = input[0].content
+    const images = parts.filter(part => part.type === 'input_image')
+    assert.deepEqual(images.map(item => item.image_url), [
+        'data:image/jpeg;base64,PREVIOUS',
+        'data:image/jpeg;base64,ONE',
+        'data:image/jpeg;base64,TWO',
+        'data:image/jpeg;base64,THREE'
+    ])
+
+    const labels = parts.filter(part => part.type === 'input_text').map(part => part.text)
+    assert.ok(labels.includes('Текущее фото 1 из 3:'))
+    assert.ok(labels.includes('Текущее фото 3 из 3:'))
+
+    const prompt = parts[0].text
+    assert.match(prompt, /В этом сообщении 3 фото одного растения/)
+    assert.match(prompt, /Всего фото в запросе: 4/)
+})
+
 test('formatPlantDiagnosisText: карточка диагноза, дисклеймер и случай «не растение»', () => {
     const text = formatPlantDiagnosisText({
         isPlant: true,

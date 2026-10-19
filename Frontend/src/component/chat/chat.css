@@ -481,6 +481,57 @@ body.keyboard-open .chatWindow {
 .chatAttachmentRemove:hover {
     color: #495057;
 }
+
+.chatAttachments {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.chatAttachmentsList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+}
+
+.chatAttachments .chatAttachmentChip {
+    margin: 0;
+}
+
+.chatAttachmentsCount {
+    flex: 0 0 auto;
+    padding-bottom: 2px;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-xs);
+    color: var(--theme-muted, #8A8A8A);
+}
+
+.chatPhotoGrid {
+    display: grid;
+    gap: 6px;
+    width: 100%;
+}
+
+.chatPhotoGrid--single {
+    grid-template-columns: minmax(0, 240px);
+}
+
+.chatPhotoGrid--multiple {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.chatPhotoGrid--multiple .chatPhoto {
+    aspect-ratio: 1 / 1;
+}
+
+.chatPhotoGrid--multiple .chatPhoto:nth-child(5) {
+    grid-column: span 2;
+    aspect-ratio: 2 / 1;
+}
+
 .chatPhoto {
     display: block;
     width: 100%;

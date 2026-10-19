@@ -3,6 +3,9 @@ import path from 'path'
 import fs from 'fs'
 import { open, rename, unlink } from 'fs/promises'
 import crypto from 'crypto'
+import { MAX_CHAT_PHOTOS } from '../utils/chatPhoto.js'
+
+export { MAX_CHAT_PHOTOS }
 
 const UPLOAD_DIR = path.resolve('uploads', 'plants')
 
@@ -90,20 +93,30 @@ export const uploadChatPhoto = multer({
     storage: multer.memoryStorage(),
     limits: {
         fileSize: MAX_UPLOAD_BYTES,
-        files: 1
+        files: MAX_CHAT_PHOTOS
     }
 })
 
 export function validateChatPhoto(req, res, next) {
-    if (!req.file) {
+    const files = Array.isArray(req.files)
+        ? req.files
+        : (req.file ? [req.file] : [])
+
+    if (!files.length) {
         return res.status(400).json({ message: 'Фото не загружено' })
     }
-
-    const extension = detectImageExtension(req.file.buffer)
-    if (!extension) {
-        return res.status(400).json({ message: 'Допустимы только изображения JPEG, PNG, WebP и HEIC' })
+    if (files.length > MAX_CHAT_PHOTOS) {
+        return res.status(400).json({ message: `Можно прикрепить не больше ${MAX_CHAT_PHOTOS} фото` })
     }
 
-    req.file.detectedExtension = extension
+    for (const file of files) {
+        const extension = detectImageExtension(file.buffer)
+        if (!extension) {
+            return res.status(400).json({ message: 'Допустимы только изображения JPEG, PNG, WebP и HEIC' })
+        }
+        file.detectedExtension = extension
+    }
+
+    req.files = files
     return next()
 }

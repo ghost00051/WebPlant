@@ -6,7 +6,7 @@ import { analyzePlantPhoto, askAi } from '../services/aiService.js'
 import { buildPlantsOverview, resolveLocalChatAnswer } from '../utils/chatIntent.js'
 import { appTimeZone } from '../utils/localDay.js'
 import { resolveTimeZone } from '../utils/timeZone.js'
-import { chatPhotoFilenameFromUrl, readChatPhoto, saveChatPhoto } from '../utils/chatPhoto.js'
+import { MAX_CHAT_PHOTOS, chatPhotoFilenameFromUrl, chatPhotoUrl, readChatPhoto, saveChatPhoto } from '../utils/chatPhoto.js'
 import { buildChatTitle } from '../utils/chatSession.js'
 
 function getUserId(req) {
@@ -354,10 +354,17 @@ class ChatController {
         try {
             const userId = getUserId(req)
             const guestToken = req.guestToken
-            const file = req.file
+            const files = Array.isArray(req.files)
+                ? req.files.filter(file => file?.buffer?.length)
+                : (req.file?.buffer?.length ? [req.file] : [])
 
-            if (!file?.buffer?.length) {
+            if (!files.length) {
                 return res.status(400).json({ message: 'Фото не загружено' })
+            }
+            if (files.length > MAX_CHAT_PHOTOS) {
+                return res.status(400).json({
+                    message: `Можно прикрепить не больше ${MAX_CHAT_PHOTOS} фото в одном сообщении`
+                })
             }
 
             const { sessionId } = req.body || {}
@@ -378,8 +385,9 @@ class ChatController {
             }
             let session = resolvedSession.session
 
-            const photo = await saveChatPhoto(file.buffer)
-            const photoUrl = `${req.protocol}://${req.get('host')}/uploads/chat/${photo.filename}`
+            const savedPhotos = await Promise.all(files.map(file => saveChatPhoto(file.buffer)))
+            const baseUrl = `${req.protocol}://${req.get('host')}`
+            const photoUrls = savedPhotos.map(photo => chatPhotoUrl(baseUrl, photo.filename))
 
             const userMsg = await ChatLog.create({
                 user_id: userId,
@@ -390,7 +398,9 @@ class ChatController {
                     ip: req.ip,
                     userAgent: req.headers['user-agent'],
                     guestToken,
-                    photoUrl
+                    photoUrl: photoUrls[0],
+                    photoUrls,
+                    photoCount: photoUrls.length
                 }
             })
             session = userMsg.session_id
@@ -406,7 +416,7 @@ class ChatController {
                 const previousPhoto = await loadLatestChatPhoto(history)
 
                 result = await analyzePlantPhoto({
-                    imageBuffer: file.buffer,
+                    imageBuffers: files.map(file => file.buffer),
                     question: message,
                     timeZone,
                     history,
@@ -424,7 +434,8 @@ class ChatController {
                     error: visionError.message || 'AI vision error',
                     metadata: {
                         guestToken,
-                        photoUrl,
+                        photoUrl: photoUrls[0],
+                        photoUrls,
                         degraded: true,
                         degradeReason: budgetExceeded ? 'budget' : (visionError.code || 'vision-error')
                     }
@@ -441,7 +452,8 @@ class ChatController {
                 return res.json({
                     text: failureText,
                     sessionId: session,
-                    photoUrl,
+                    photoUrl: photoUrls[0],
+                    photoUrls,
                     degraded: true
                 })
             }
@@ -455,19 +467,22 @@ class ChatController {
                 output_tokens: result.usage?.output_tokens || null,
                 metadata: {
                     guestToken,
-                    photoUrl,
+                    photoUrl: photoUrls[0],
+                    photoUrls,
                     diagnosis: result.diagnosis,
                     source: result.source,
                     latencyMs: result.latencyMs,
                     contextItems: result.usedHistoryItems || 0,
-                    previousPhotos: result.usedPreviousPhotos || 0
+                    previousPhotos: result.usedPreviousPhotos || 0,
+                    analyzedPhotos: result.usedPhotos || photoUrls.length
                 }
             })
 
             return res.json({
                 text: result.text,
                 sessionId: session,
-                photoUrl,
+                photoUrl: photoUrls[0],
+                photoUrls,
                 diagnosis: result.diagnosis,
                 source: result.source,
                 cached: result.cached,
@@ -544,6 +559,7 @@ class ChatController {
                     createdAt: r.created_at,
                     degraded: isDegraded(r) || undefined,
                     photoUrl: r.metadata?.photoUrl || null,
+                    photoUrls: Array.isArray(r.metadata?.photoUrls) ? r.metadata.photoUrls : [],
                     diagnosis: r.metadata?.diagnosis || null
                 }))
 

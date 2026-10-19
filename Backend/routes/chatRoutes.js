@@ -2,7 +2,7 @@ import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import chatController from '../controllers/chatController.js'
 import { optionalAuth } from '../middleware/auth.js'
-import { uploadChatPhoto, validateChatPhoto } from '../middleware/upload.js'
+import { MAX_CHAT_PHOTOS, uploadChatPhoto, validateChatPhoto } from '../middleware/upload.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
@@ -76,14 +76,16 @@ const chatPhotoLimiter = rateLimit({
 })
 
 function chatPhotoUpload(req, res, next) {
-    uploadChatPhoto.single('photo')(req, res, error => {
+    uploadChatPhoto.array('photo', MAX_CHAT_PHOTOS)(req, res, error => {
         if (!error) return next()
 
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(413).json({ message: 'Фото слишком большое. Максимум 5 МБ.' })
+            return res.status(413).json({ message: 'Фото слишком большое. Максимум 5 МБ на файл.' })
         }
         if (error.code === 'LIMIT_UNEXPECTED_FILE' || error.code === 'LIMIT_FILE_COUNT') {
-            return res.status(400).json({ message: 'Можно прикрепить только одно фото' })
+            return res.status(400).json({
+                message: `Можно прикрепить не больше ${MAX_CHAT_PHOTOS} фото в одном сообщении`
+            })
         }
         return next(error)
     })
