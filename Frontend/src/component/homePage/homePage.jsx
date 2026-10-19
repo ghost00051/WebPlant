@@ -145,17 +145,23 @@ function HomePage ({ user, onTabChange }) {
           credentials: 'include'
         }
       )
+      if (response.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
       if (!response.ok) {
         throw new Error(
           `Не удалось определить кол-во непрочитанных уведомлений ${response.status}`
         )
       }
       const data = await response.json()
-      setBadgeText(data)
+      if (Number.isInteger(data?.unreadCount)) {
+        setBadgeText(data)
+      }
     } catch (error) {
       console.warn('Не удалось загрузить уведомления:', error)
     }
-  }, [])
+  }, [navigate])
 
   const getAllPlants = useCallback(async () => {
     const response = await fetchWithTimeout(`${API_URL}/plants`, {
@@ -257,6 +263,23 @@ function HomePage ({ user, onTabChange }) {
     const id = setInterval(() => setNow(new Date()), 60_000)
     return () => clearInterval(id)
   }, [])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      return undefined
+    }
+
+    const handleServiceWorkerMessage = event => {
+      if (event.data?.type === 'push-received') {
+        void getNotifications()
+      }
+    }
+
+    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
+    return () => {
+      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
+    }
+  }, [getNotifications])
 
   useEffect(() => {
     const refresh = ({ force = false } = {}) => {
@@ -661,7 +684,10 @@ function HomePage ({ user, onTabChange }) {
                 {dataError}
                 <button
                   type='button'
-                  onClick={() => loadHomeData({ showLoading: true })}
+                  onClick={() => {
+                    loadHomeData({ showLoading: true })
+                    getNotifications()
+                  }}
                 >
                   Повторить
                 </button>

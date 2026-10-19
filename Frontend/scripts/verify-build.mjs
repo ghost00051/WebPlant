@@ -1,4 +1,3 @@
-
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
 
@@ -69,7 +68,8 @@ const PRIVATE_PAGES = [
   'add-plant.html',
   'edit-profile.html',
   'my-plants.html',
-  'reset-password.html'
+  'reset-password.html',
+  'notifications.html'
 ]
 
 console.log('Проверка dist\n')

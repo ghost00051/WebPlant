@@ -195,8 +195,26 @@ export function advanceZonedWatering(
     const zone = resolveTimeZone(timeZone)
     const safeHour = Number.isInteger(hour) ? hour : 0
     let next = zonedDayHourAfter(date, 0, safeHour, zone)
-    let steps = 0
+    if (!next) return null
 
+
+
+
+
+    if (next.getTime() <= current.getTime()) {
+        const daysBehind = Math.ceil(
+            (current.getTime() - next.getTime()) / DAY_IN_MILLISECONDS
+        )
+        const jumps = Math.floor(daysBehind / intervalDays) - 1
+        if (jumps > 1) {
+            const jumped = zonedDayHourAfter(next, intervalDays * jumps, safeHour, zone)
+            if (jumped && Number.isFinite(jumped.getTime())) {
+                next = jumped
+            }
+        }
+    }
+
+    let steps = 0
     while (next && next.getTime() <= current.getTime() && steps < MAX_ADVANCE_STEPS) {
         next = zonedDayHourAfter(next, intervalDays, safeHour, zone)
         steps += 1
@@ -205,12 +223,14 @@ export function advanceZonedWatering(
     return next
 }
 
+
 export function splitMissedWaterings(
     scheduledFor,
     intervalDays,
     hour,
     timeZone = APP_TIME_ZONE,
-    now = new Date()
+    now = new Date(),
+    { graceMs = MISSED_GRACE_MS } = {}
 ) {
     const scheduled = toValidDate(scheduledFor)
     const current = toValidDate(now)
@@ -218,6 +238,8 @@ export function splitMissedWaterings(
         return { missed: [], next: null }
     }
 
+    const grace = Number.isFinite(graceMs) && graceMs >= 0 ? graceMs : MISSED_GRACE_MS
+    const missedDeadline = current.getTime() - grace
     const zone = resolveTimeZone(timeZone)
     const safeHour = Number.isInteger(hour) ? hour : 0
     const missed = []
@@ -226,7 +248,7 @@ export function splitMissedWaterings(
 
     while (
         cursor &&
-        cursor.getTime() < current.getTime() &&
+        cursor.getTime() <= missedDeadline &&
         steps < MAX_ADVANCE_STEPS
     ) {
         missed.push(cursor)

@@ -12,6 +12,7 @@ import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
 import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
 import { closeRedis, describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
 import { getAiCacheStats } from './utils/aiCache.js'
+import * as pushServiceModule from './services/pushService.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -26,6 +27,7 @@ import "./models/MailBroadcast.js"
 import "./models/MailBroadcastRecipient.js"
 import "./models/PasswordResetToken.js"
 import "./models/Plant.js"
+import "./models/PlantCarePlan.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
 import "./models/ChatLog.js"
@@ -59,13 +61,32 @@ const MIGRATION_FILES_BY_TABLE = {
     passkeys: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     passkey_challenges: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     notification_preferences: 'Backend/migrations/20261005_create_notification_preferences.sql',
+    'notification_preferences.care_advice_enabled': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
+    'notification_preferences.last_care_advice_date': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
     notifications: 'Backend/migrations/20261006_create_notifications.sql',
+    'notifications.payload': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
+    'notifications.type': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
     push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
     push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    'push_subscriptions.last_success_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.last_error': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.failed_attempts': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.invalidated_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.invalid_reason': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.idempotency_key': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.started_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.updated_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.last_processed_id': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.chunk_size': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.status': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.attempts': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.sent_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.last_error': 'Backend/migrations/20261022_push_delivery_hardening.sql',
     mail_broadcasts: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     mail_broadcast_recipients: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
     ai_advice_logs: 'Backend/migrations/20261016_create_ai_advice_logs.sql',
+    plant_care_plans: 'Backend/migrations/20261021_create_plant_care_plans.sql',
     chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
@@ -76,7 +97,7 @@ function formatSchemaMigrationHint(missing) {
     const hintedFiles = new Set()
     for (const entry of missing) {
         const [tableName] = entry.split('.')
-        const migrationFile = MIGRATION_FILES_BY_TABLE[tableName]
+        const migrationFile = MIGRATION_FILES_BY_TABLE[entry] || MIGRATION_FILES_BY_TABLE[tableName]
         if (migrationFile) hintedFiles.add(migrationFile)
     }
     if (!hintedFiles.size) return 'Review Backend/migrations/ and apply the missing SQL manually.'
@@ -145,7 +166,8 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Idempotency-Key'],
+    maxAge: 600
 }))
 
 app.use(helmet({
@@ -158,7 +180,11 @@ app.use((req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const origin = req.get('origin')
         const fetchSite = req.get('sec-fetch-site')
-        const hasAuthCookie = Boolean(req.cookies?.token || req.cookies?.refresh_token)
+        const hasAuthCookie = Boolean(
+            req.cookies?.token ||
+            req.cookies?.refresh_token ||
+            req.cookies?.guest_token
+        )
         if ((origin && !isAllowedOrigin(origin)) ||
             (!origin && fetchSite === 'cross-site') ||
             (hasAuthCookie && !origin)) {
@@ -192,6 +218,17 @@ app.get('/livez', (req, res) => {
     return res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+function describePushStatus() {
+    try {
+        const getPushStatus = pushServiceModule.getPushStatus
+        return typeof getPushStatus === 'function'
+            ? getPushStatus()
+            : { configured: null }
+    } catch (error) {
+        return { configured: false, error: error?.message || String(error) }
+    }
+}
+
 app.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate()
@@ -201,6 +238,7 @@ app.get('/health', async (req, res) => {
             deployTarget: process.env.DEPLOY_TARGET || null,
             redis: describeRedisStatus(),
             mail: describeMailStatus(),
+            push: describePushStatus(),
             backgroundJobs: BACKGROUND_JOBS_ENABLED,
             aiCache: getAiCacheStats()
         })

@@ -26,13 +26,14 @@ export function resetLocalBudgetFallback() {
     localRequestFallback.clear()
 }
 
-export const AI_SCOPES = ['chat', 'species', 'advice', 'time', 'vision']
+export const AI_SCOPES = ['chat', 'species', 'advice', 'time', 'vision', 'care']
 export const AI_SCOPE_LABELS = {
     chat: 'Чат',
     species: 'Определение вида',
     advice: 'Частота полива',
     time: 'Время полива',
-    vision: 'Анализ фото'
+    vision: 'Анализ фото',
+    care: 'Советы по уходу'
 }
 
 export const LATENCY_BUCKETS = [
@@ -220,7 +221,6 @@ export async function trackAiCall({
         redisCommand(['HINCRBY', key, field, String(value)])
     ))
     if (replies.some(reply => reply === null)) {
-        // Redis не принял счётчики: держим хотя бы локальный расход, чтобы бюджет не «испарился».
         if (!cached) bumpLocalRequestFallback(day)
         return { recorded: false, reason: 'redis-error' }
     }

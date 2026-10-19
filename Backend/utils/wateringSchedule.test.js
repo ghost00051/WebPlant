@@ -7,6 +7,7 @@ import {
     isReminderWeekday,
     isWateringMissed,
     localDayRange,
+    MISSED_GRACE_MS,
     nextWateringInstant,
     normalizeReminderWeekdays,
     parseWateringSlot,
@@ -110,7 +111,21 @@ test('advanceZonedWatering: первый будущий слот в локаль
     assert.equal(advanceZonedWatering('не дата', 7, 9, MSK), null)
 })
 
-test('splitMissedWaterings: для ежедневного графика пропуски логируются по каждому слоту', () => {
+test('advanceZonedWatering: fast-forward из далёкого прошлого не блокирует event loop', () => {
+    const startedAt = performance.now()
+    const next = advanceZonedWatering(
+        new Date('1900-01-01T00:00:00Z'),
+        1,
+        9,
+        MSK,
+        new Date('2026-10-19T06:10:00Z')
+    )
+    const elapsed = performance.now() - startedAt
+    assert.equal(iso(next), '2026-10-20T06:00:00.000Z')
+    assert.ok(elapsed < 2000, `advanceZonedWatering занял ${elapsed.toFixed(0)} мс`)
+})
+
+test('splitMissedWaterings: ежедневный график — сегодняшний слот ещё не пропущен (grace-aware)', () => {
     const result = splitMissedWaterings(
         new Date('2026-10-19T06:00:00Z'),
         1,
@@ -118,11 +133,49 @@ test('splitMissedWaterings: для ежедневного графика про�
         MSK,
         new Date('2026-10-20T06:10:00Z')
     )
-    assert.deepEqual(result.missed.map(iso), [
-        '2026-10-19T06:00:00.000Z',
-        '2026-10-20T06:00:00.000Z'
-    ])
-    assert.equal(iso(result.next), '2026-10-21T06:00:00.000Z')
+
+    assert.deepEqual(result.missed.map(iso), ['2026-10-19T06:00:00.000Z'])
+    assert.equal(iso(result.next), '2026-10-20T06:00:00.000Z')
+})
+
+test('splitMissedWaterings: слот в пределах grace не пропущен и возвращается как next', () => {
+    const slot = new Date('2026-10-19T06:00:00Z')
+    const result = splitMissedWaterings(slot, 1, 9, MSK, new Date('2026-10-19T08:00:00Z'))
+    assert.deepEqual(result.missed, [])
+    assert.equal(iso(result.next), '2026-10-19T06:00:00.000Z')
+})
+
+test('splitMissedWaterings: ровно на границе grace (slot + grace === now) слот пропущен', () => {
+    const slot = new Date('2026-10-19T06:00:00Z')
+    const now = new Date(slot.getTime() + MISSED_GRACE_MS)
+    const result = splitMissedWaterings(slot, 1, 9, MSK, now)
+    assert.deepEqual(result.missed.map(iso), ['2026-10-19T06:00:00.000Z'])
+    assert.equal(iso(result.next), '2026-10-20T06:00:00.000Z')
+})
+
+test('splitMissedWaterings: простой сервиса на неделю — пропущен только старый слот', () => {
+    const result = splitMissedWaterings(
+        new Date('2026-10-12T06:00:00Z'),
+        7,
+        9,
+        MSK,
+        new Date('2026-10-19T06:10:00Z')
+    )
+    assert.deepEqual(result.missed.map(iso), ['2026-10-12T06:00:00.000Z'])
+    assert.equal(iso(result.next), '2026-10-19T06:00:00.000Z')
+})
+
+test('splitMissedWaterings: graceMs можно переопределить (0 — пропущен любой прошедший слот)', () => {
+    const result = splitMissedWaterings(
+        new Date('2026-10-19T06:00:00Z'),
+        1,
+        9,
+        MSK,
+        new Date('2026-10-19T06:10:00Z'),
+        { graceMs: 0 }
+    )
+    assert.deepEqual(result.missed.map(iso), ['2026-10-19T06:00:00.000Z'])
+    assert.equal(iso(result.next), '2026-10-20T06:00:00.000Z')
 })
 
 test('splitMissedWaterings: для недельного графика пропущен ровно один слот', () => {

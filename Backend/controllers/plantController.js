@@ -32,11 +32,13 @@ import {
     WATERING_TIME_OF_DAY_HOURS,
     zonedDayHourAfter,
     zonedDayKey,
-    MISSED_GRACE_HOUR
+    MISSED_GRACE_HOUR,
+    MISSED_GRACE_MS
 } from '../utils/wateringSchedule.js'
 import {
     clearWateringProgress,
     hasWateringProgress,
+    resumeReminders as resumeRemindersMetadata,
     sanitizePlantMetadata,
     withNotificationsReset
 } from '../utils/plantMetadata.js'
@@ -765,8 +767,25 @@ class PlantController {
                     return fail(400, 'Некорректная дата полива')
                 }
             }
+
+
+
+
+            if (updates.last_watered_at && plant.created_at) {
+                const lastWatered = new Date(updates.last_watered_at)
+                const createdAt = new Date(plant.created_at)
+                if (Number.isFinite(createdAt.getTime()) &&
+                    lastWatered.getTime() < createdAt.getTime() - MISSED_GRACE_MS) {
+                    return fail(400, 'Дата полива раньше создания растения')
+                }
+            }
             if (updates.is_active !== undefined && typeof updates.is_active !== 'boolean') {
                 return fail(400, 'Некорректный статус растения')
+            }
+            const resumeRemindersRequested = body.resume_reminders
+            if (resumeRemindersRequested !== undefined &&
+                typeof resumeRemindersRequested !== 'boolean') {
+                return fail(400, 'resume_reminders должно быть логическим значением')
             }
             for (const key of ['notify_morning', 'notify_day_before']) {
                 if (updates[key] !== undefined && typeof updates[key] !== 'boolean') {
@@ -807,8 +826,12 @@ class PlantController {
                 : new Date(updates.next_watering_at)
             const nextChanged = nextProvided &&
                 !sameInstant(nextWateringAt, plant.next_watering_at)
+
+
+
+            const reactivated = updates.is_active === true && plant.is_active === false
             const scheduleChanged = intervalChanged || timeChanged || lastChanged || nextChanged ||
-                !plant.next_watering_at
+                !plant.next_watering_at || reactivated
 
             if (scheduleChanged) {
                 let resolvedNext = nextWateringAt
@@ -837,6 +860,26 @@ class PlantController {
                     nextMetadata.missed_since = plant.metadata.missed_since
                 }
                 updates.metadata = nextMetadata
+            }
+
+
+
+
+
+            if (resumeRemindersRequested === true) {
+                updates.metadata = resumeRemindersMetadata(updates.metadata ?? plant.metadata)
+                if (updates.next_watering_at === undefined) {
+                    const currentNext = plant.next_watering_at
+                        ? new Date(plant.next_watering_at)
+                        : null
+                    if (currentNext && Number.isFinite(currentNext.getTime()) &&
+                        currentNext.getTime() <= Date.now() - MISSED_GRACE_MS) {
+                        const advanced = futureWatering(currentNext, interval, timeOfDay, timeZone)
+                        if (advanced && Number.isFinite(advanced.getTime())) {
+                            updates.next_watering_at = advanced
+                        }
+                    }
+                }
             }
 
             if (scheduleChanged || updates.reminder_weekdays !== undefined) {

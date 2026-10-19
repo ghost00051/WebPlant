@@ -1,70 +1,61 @@
 import cron from 'node-cron'
-import { Op } from 'sequelize'
 import PushBroadcast from '../models/PushBroadcast.js'
-import pushBroadcastService from '../services/pushBroadcastService.js'
+import pushBroadcastService, { STALE_SENDING_MS } from '../services/pushBroadcastService.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 
-const STALE_SENDING_MS = 10 * 60 * 1000
 const BROADCAST_LOCK = 'job:push-broadcast'
 const BROADCAST_LOCK_TTL_MS = 2 * 60 * 1000
 
-async function logStaleSending(now) {
-    try {
-        const cutoff = new Date(now.getTime() - STALE_SENDING_MS)
-        const stale = await PushBroadcast.findAll({
-            where: {
-                status: 'sending',
-                created_at: { [Op.lt]: cutoff }
-            },
-            attributes: ['id', 'created_at']
-        })
-
-        for (const broadcast of stale) {
-            console.warn(
-                `⚠️ Push-рассылка #${broadcast.id} зависла в статусе 'sending' с ` +
-                `${new Date(broadcast.created_at).toISOString()} — пропускаем`
-            )
-        }
-    } catch (error) {
-        console.error('❌ Ошибка проверки зависших push-рассылок:', error)
-    }
-}
-
 export async function processDueBroadcasts({ now = new Date() } = {}) {
-    const summary = { picked: 0, sent: 0, failed: 0 }
+    const summary = { picked: 0, sent: 0, failed: 0, recovered: 0 }
 
-    await logStaleSending(now)
+    try {
+        const recovered = await pushBroadcastService.recoverStaleSending({ now })
+        summary.recovered = recovered.length
+    } catch (error) {
+        console.error('❌ Ошибка восстановления зависших push-рассылок:', error)
+    }
 
     const dueBroadcasts = await pushBroadcastService.listPendingDue({ now })
     summary.picked = dueBroadcasts.length
 
     for (const candidate of dueBroadcasts) {
         try {
+            const claim = { status: 'sending', updated_at: now }
+            if (!candidate.started_at) claim.started_at = now
+
             const [captured] = await PushBroadcast.update(
-                { status: 'sending' },
+                claim,
                 { where: { id: candidate.id, status: 'pending' } }
             )
 
             if (captured !== 1) continue
 
             const { result } = await pushBroadcastService.sendBroadcast(candidate.id, { now })
+            if (!result) continue
 
-            if (result && result.sent > 0) {
-                summary.sent++
+            if (result.fatal) {
+                summary.failed += 1
             } else {
-                summary.failed++
+                summary.sent += 1
             }
         } catch (error) {
-            summary.failed++
+            summary.failed += 1
             console.error(`❌ Ошибка отправки push-рассылки #${candidate.id}:`, error)
 
+            const recovery = error?.fatal === true
+                ? { status: 'failed', updated_at: new Date() }
+                : { status: 'pending', updated_at: new Date() }
             try {
                 await PushBroadcast.update(
-                    { status: 'failed' },
+                    recovery,
                     { where: { id: candidate.id, status: 'sending' } }
                 )
             } catch (updateError) {
-                console.error(`❌ Не удалось пометить рассылку #${candidate.id} как failed:`, updateError)
+                console.error(
+                    `❌ Не удалось восстановить статус рассылки #${candidate.id} после ошибки:`,
+                    updateError
+                )
             }
         }
     }
@@ -84,10 +75,11 @@ export function startPushBroadcastJob() {
             if (!outcome.ran) return
 
             const summary = outcome.result
-            if (summary.picked > 0) {
+            if (summary.picked > 0 || summary.recovered > 0) {
                 console.log(
                     `📢 Push-рассылки: ${summary.picked} к отправке, ` +
-                    `${summary.sent} отправлено, ${summary.failed} с ошибкой`
+                    `${summary.sent} завершено, ${summary.failed} с ошибкой, ` +
+                    `${summary.recovered} восстановлено (stale > ${Math.round(STALE_SENDING_MS / 60000)} мин)`
                 )
             }
         } catch (error) {

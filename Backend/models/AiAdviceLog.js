@@ -14,7 +14,7 @@ const AiAdviceLog = sequelize.define('ai_advice_log', {
         onDelete: 'SET NULL'
     },
     kind: {
-        type: DataTypes.ENUM('species', 'watering', 'time'),
+        type: DataTypes.ENUM('species', 'watering', 'time', 'care'),
         allowNull: false
     },
     plant_name: {

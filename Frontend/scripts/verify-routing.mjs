@@ -1,4 +1,3 @@
-
 import { resolve } from 'node:path'
 import { loadRouting, resolveRequest } from './lib/routing.mjs'
 
@@ -25,6 +24,7 @@ const cases = [
   ['/register', 200, 'регистрация'],
   ['/home', 200, 'личный раздел'],
   ['/my-plants', 200, 'мои растения'],
+  ['/notifications', 200, 'центр уведомлений'],
   ['/add-plant', 200, 'добавление растения'],
   ['/edit-profile', 200, 'настройки профиля'],
   ['/reset-password', 200, 'восстановление пароля'],

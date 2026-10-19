@@ -1,4 +1,3 @@
-
 const RU_MONTHS_NOMINATIVE = [
   'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
   'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
@@ -45,13 +44,24 @@ export function toDate(value) {
   }
 
   if (typeof value === 'string') {
-    const match = ISO_DATE_PATTERN.exec(value)
-    if (match) {
-      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+    const dateOnlyMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+    if (dateOnlyMatch) {
+
+      return new Date(
+        Number(dateOnlyMatch[1]),
+        Number(dateOnlyMatch[2]) - 1,
+        Number(dateOnlyMatch[3])
+      )
     }
+
     const parsed = new Date(value)
     if (!Number.isNaN(parsed.getTime())) {
       return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate())
+    }
+
+    const match = ISO_DATE_PATTERN.exec(value)
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
     }
   }
 

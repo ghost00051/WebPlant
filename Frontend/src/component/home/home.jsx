@@ -20,7 +20,7 @@ import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
 import { syncUserTimeZone } from '../../utils/timeZone.js'
 import LogoMark from '../../assets/LogoMark.svg'
-import Notification from '../../assets/NotifBtn.svg'
+import NotificationIcon from '../../assets/NotifBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './home.css'
 import './home.desktop.css'
@@ -38,12 +38,17 @@ function Home() {
     )
 
     useEffect(() => {
+        let cancelled = false
+        let promptTimer = null
+
         const checkAuth = async () => {
             try {
                 const res = await fetch(`${API_URL}/users/me`, {
                     method: 'GET',
                     credentials: 'include'
                 })
+
+                if (cancelled) return
 
                 if (res.status === 401 || res.status === 404) {
                     setUser(null)
@@ -55,9 +60,11 @@ function Home() {
                 }
 
                 const userData = await res.json()
+                if (cancelled) return
                 setUser(userData)
 
                 void syncUserTimeZone(userData.timezone).then(timeZone => {
+                    if (cancelled) return
                     if (timeZone && timeZone !== userData.timezone) {
                         setUser(current => (current ? { ...current, timezone: timeZone } : current))
                     }
@@ -68,8 +75,11 @@ function Home() {
                     return
                 }
 
-                if (Notification.permission === 'granted') {
+
+
+                if (window.Notification.permission === 'granted') {
                     const subscription = await getActivePushSubscription()
+                    if (cancelled) return
                     if (subscription) {
                         void syncPushSubscription()
                     } else {
@@ -79,7 +89,7 @@ function Home() {
                     return
                 }
 
-                if (Notification.permission === 'denied') {
+                if (window.Notification.permission === 'denied') {
                     setLoading(false)
                     return
                 }
@@ -89,19 +99,24 @@ function Home() {
                     return
                 }
 
-                setTimeout(() => {
+                promptTimer = setTimeout(() => {
+                    if (cancelled) return
                     markPushPromptShown()
                     setShowPrompt(true)
                 }, 2000)
                 setLoading(false)
-
             } catch (error) {
                 console.error('❌ Ошибка проверки:', error)
-                setLoading(false)
+                if (!cancelled) setLoading(false)
             }
         }
 
         checkAuth()
+
+        return () => {
+            cancelled = true
+            if (promptTimer) clearTimeout(promptTimer)
+        }
     }, [navigate])
 
     useEffect(() => {
@@ -147,7 +162,7 @@ function Home() {
                             <span>Лейка</span>
                         </div>
                         <div className="desktopAccount">
-                            <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
+                            <ThemedIcon className="desktopNotifications" src={NotificationIcon} alt="Уведомления" />
                             <button
                                 type="button"
                                 className="desktopProfileButton"
@@ -185,7 +200,7 @@ function Home() {
                     <span>Лейка</span>
                 </div>
                 <div className="desktopAccount">
-                    <ThemedIcon className="desktopNotifications" src={Notification} alt="Уведомления" />
+                    <ThemedIcon className="desktopNotifications" src={NotificationIcon} alt="Уведомления" />
                     <button
                         type="button"
                         className="desktopProfileButton"

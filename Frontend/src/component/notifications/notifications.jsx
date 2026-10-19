@@ -16,6 +16,7 @@ import {
   isIOS,
   isStandalone,
   requestPermission,
+  setPushDisabledOnThisDevice,
   subscribeToPush
 } from '../../utils/pushNotifications.js'
 import './notifications.css'
@@ -64,6 +65,8 @@ function categoryFor (item) {
   if (item?.type === 'watering_due') return title.includes('пропущ') ? 'alert' : 'watering'
   if (item?.type === 'watering_day_before') return 'watering'
   if (item?.type === 'morning_summary') return 'watering'
+  if (item?.type === 'care_reminder') return 'care'
+  if (item?.type === 'care_tip') return 'advice'
   return 'system'
 }
 
@@ -115,7 +118,11 @@ function formatCardTime (value) {
 }
 
 function readableUrl (value) {
-  return typeof value === 'string' && value.startsWith('/') ? value : '/home'
+  if (typeof value !== 'string') return '/home'
+  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
+    return '/home'
+  }
+  return value
 }
 
 function Notifications () {
@@ -134,6 +141,7 @@ function Notifications () {
   })
   const [pushBusy, setPushBusy] = useState(false)
   const [pushError, setPushError] = useState('')
+  const [pushSuccess, setPushSuccess] = useState('')
 
   const loadPage = useCallback(async offset => {
     const response = await fetchWithTimeout(
@@ -206,7 +214,10 @@ function Notifications () {
       return {
         tone: 'warning',
         title: 'Уведомления отключены',
-        text: 'Разрешите уведомления в настройках браузера для этого сайта — иначе напоминания не придут.'
+        text: isIOS()
+          ? 'Откройте «Настройки» → «Уведомления» → «Лейка» и разрешите уведомления. Затем вернитесь и нажмите «Проверить снова».'
+          : 'Нажмите на значок замка или «Настройки сайта» в адресной строке, разрешите уведомления для этого сайта и нажмите «Проверить снова».',
+        action: 'recheck'
       }
     }
     if (permission !== 'granted') {
@@ -356,10 +367,28 @@ function Notifications () {
     navigate(readableUrl(item.url))
   }
 
-  const enablePush = async () => {
+  const subscribeAfterPermission = async () => {
     if (pushBusy) return
     setPushBusy(true)
     setPushError('')
+    setPushSuccess('')
+    try {
+      await subscribeToPush()
+      setPushDisabledOnThisDevice(false)
+      setPushSuccess('Уведомления включены на этом устройстве.')
+      setPermission('granted')
+    } catch (pushFailure) {
+      console.error('Не удалось включить уведомления:', pushFailure)
+      setPushError(pushFailure.message || 'Не удалось включить уведомления. Попробуйте ещё раз.')
+    } finally {
+      setPushBusy(false)
+    }
+  }
+
+  const enablePush = async () => {
+    if (pushBusy) return
+    setPushError('')
+    setPushSuccess('')
     try {
       const granted = await requestPermission()
       const nextPermission = typeof Notification !== 'undefined'
@@ -367,16 +396,28 @@ function Notifications () {
         : 'default'
       setPermission(nextPermission)
       if (!granted) {
-        setPushError('Разрешение не выдано. Включите уведомления в настройках браузера.')
+        setPushError('Разрешение не выдано. Включите уведомления в настройках браузера и нажмите «Проверить снова».')
         return
       }
-      await subscribeToPush()
+      await subscribeAfterPermission()
     } catch (pushFailure) {
       console.error('Не удалось включить уведомления:', pushFailure)
       setPushError(pushFailure.message || 'Не удалось включить уведомления. Попробуйте ещё раз.')
-    } finally {
-      setPushBusy(false)
     }
+  }
+
+  const recheckPermission = () => {
+    setPushError('')
+    setPushSuccess('')
+    const current = typeof Notification !== 'undefined'
+      ? Notification.permission
+      : 'default'
+    setPermission(current)
+    if (current === 'granted') {
+      void subscribeAfterPermission()
+      return
+    }
+    setPushError('Разрешение всё ещё не выдано. Измените настройки сайта и нажмите «Проверить снова».')
   }
 
   const openBottomTab = tabId => {
@@ -413,7 +454,7 @@ function Notifications () {
         </button>
       </header>
 
-      {(pushNotice || pushError) && (
+      {(pushNotice || pushError || pushSuccess) && (
         <section className={`notificationsPush${pushNotice?.tone === 'warning' ? ' is-warning' : ''}`}>
           <img src={notificationSystem} alt='' />
           <div className='notificationsPushContent'>
@@ -423,8 +464,9 @@ function Notifications () {
                 <p className='notificationsPushText'>{pushNotice.text}</p>
               </>
             )}
+            {pushSuccess && <p className='notificationsPushText' role='status'>{pushSuccess}</p>}
             {pushError && <p className='notificationsPushError' role='alert'>{pushError}</p>}
-            {pushNotice?.action && (
+            {pushNotice?.action === true && (
               <button
                 type='button'
                 className='notificationsPushAction'
@@ -432,6 +474,26 @@ function Notifications () {
                 disabled={pushBusy}
               >
                 {pushBusy ? 'Включаем…' : 'Разрешить уведомления'}
+              </button>
+            )}
+            {pushNotice?.action === 'recheck' && (
+              <button
+                type='button'
+                className='notificationsPushAction'
+                onClick={recheckPermission}
+                disabled={pushBusy}
+              >
+                {pushBusy ? 'Проверяем…' : 'Проверить снова'}
+              </button>
+            )}
+            {!pushNotice?.action && pushError && permission === 'granted' && (
+              <button
+                type='button'
+                className='notificationsPushAction'
+                onClick={subscribeAfterPermission}
+                disabled={pushBusy}
+              >
+                {pushBusy ? 'Подключаем…' : 'Повторить подписку'}
               </button>
             )}
           </div>

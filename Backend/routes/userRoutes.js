@@ -1,5 +1,5 @@
 import { Router } from "express"
-import rateLimit from 'express-rate-limit'
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import UserController from "../controllers/userController.js"
 import { requireAdmin } from '../middleware/admin.js'
 import passkeyController from '../controllers/passkeyController.js'
@@ -82,6 +82,16 @@ const passwordResetConfirmLimiter = rateLimit({
     ...rateLimitStoreOptions('user-password-reset-confirm')
 })
 
+const notificationPreferenceLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    limit: 60,
+    keyGenerator: req => String(req.user?.id || ipKeyGenerator(req.ip)),
+    message: { message: 'Слишком много изменений настроек уведомлений. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-notification-preferences')
+})
+
 router.post("/registration", registrationLimiter, UserController.registration)
 router.post("/login", loginLimiter, UserController.login)
 router.post("/logout", UserController.logout)
@@ -112,6 +122,7 @@ router.get(
 router.patch(
     '/me/notification-preferences',
     requireAuth,
+    notificationPreferenceLimiter,
     notificationPreferenceController.update
 )
 router.get("/check-username", usernameCheckLimiter, UserController.checkUsername)

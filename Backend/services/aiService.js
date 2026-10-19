@@ -3,8 +3,20 @@ import OpenAI from 'openai'
 import dotenv from 'dotenv'
 import { getAiCacheTtlSeconds, getAiChatCacheTtlSeconds, withAiCache } from '../utils/aiCache.js'
 import { isAiBudgetExceeded, trackAiCall } from '../utils/aiMetrics.js'
-import { appTimeZone, diffLocalDays, formatLocalDay } from '../utils/localDay.js'
+import { appTimeZone, diffLocalDays, formatLocalDay, localDayKey } from '../utils/localDay.js'
 import { loadSharp } from '../utils/plantPhotoThumb.js'
+import {
+    buildCareAdviceContext,
+    buildCarePlanContext,
+    buildDefaultCarePlan,
+    buildFallbackCareAdvice,
+    CARE_ADVICE_INSTRUCTIONS,
+    CARE_PLAN_INSTRUCTIONS,
+    normalizeCarePlan,
+    parseCareAdvice,
+    parseCarePlan,
+    validateCareAdvice
+} from '../utils/careKnowledge.js'
 import {
     buildIntervalReference,
     detectPlantGroup,
@@ -950,6 +962,283 @@ export async function suggestWateringTimeAdvice({
             recordAiCall({ scope: 'time', latencyMs: Date.now() - startedAt, error })
         }
         console.error('❌ Ошибка рекомендации времени полива, отдаю запасной вариант:', {
+            name: error.name,
+            status: error.status,
+            code: error.code,
+            requestId: error.request_id,
+            message: error.message || String(error)
+        })
+        return buildFallback(error?.code === 'AI_BUDGET_EXCEEDED' ? 'budget' : 'ai-error')
+    } finally {
+        deadline.dispose()
+    }
+}
+
+export async function suggestCarePlan({
+    plant,
+    group,
+    seasonInfo,
+    careHints = null,
+    timeZone = appTimeZone(),
+    now = new Date(),
+    deadlineMs = AI_ADVICE_DEADLINE_MS
+} = {}) {
+    const defaultPlan = buildDefaultCarePlan({ plant, group })
+    const buildFallback = reason => ({
+        plan: defaultPlan,
+        source: 'default',
+        fallbackReason: reason || undefined,
+        season: seasonInfo?.season || null,
+        timeZone
+    })
+
+    if (!plant) return buildFallback('no-plant')
+    if (!client) return buildFallback('not-configured')
+
+    const instructions = CARE_PLAN_INSTRUCTIONS
+    const context = buildCarePlanContext({
+        plant,
+        group,
+        seasonInfo,
+        careHints,
+        timeZone,
+        now
+    })
+    const startedAt = Date.now()
+    const deadline = createDeadline(deadlineMs)
+    let usage = null
+
+    try {
+        const { value, cached } = await withAiCache({
+            namespace: 'care-plan',
+            payload: {
+                plantId: plant.id,
+                plantName: plant.name || null,
+                species: plant.species || null,
+                location: plant.location || null,
+                careHints: careHints || null,
+                season: seasonInfo?.season || null,
+                group: group?.id || null,
+                model: MODEL
+            },
+            ttlSeconds: Math.min(getAiCacheTtlSeconds(), 30 * 24 * 60 * 60),
+            call: async () => {
+                await assertAiBudget('care')
+
+                const request = {
+                    model: `gpt://${FOLDER}/${MODEL}`,
+                    instructions,
+                    input: [{ role: 'user', content: context }],
+                    store: false
+                }
+                const requestOptions = { signal: deadline.signal }
+
+                let response = await adviceClient.responses.create({
+                    ...request,
+                    temperature: 0.2,
+                    max_output_tokens: 1200
+                }, requestOptions)
+                usage = response.usage || null
+
+                const readPlan = () => {
+                    const parsed = parseCarePlan(extractResponseText(response))
+                    return parsed
+                        ? normalizeCarePlan(parsed, { plant, group })
+                        : null
+                }
+
+                let plan = readPlan()
+                if (!plan && !deadline.expired()) {
+                    console.warn('⚠️ Повторный запрос плана ухода')
+                    response = await adviceClient.responses.create({
+                        ...request,
+                        temperature: 0.1,
+                        max_output_tokens: 1200
+                    }, requestOptions)
+                    usage = response.usage || null
+                    plan = readPlan()
+                }
+
+                if (!plan) {
+                    throw new Error('AI returned invalid care plan')
+                }
+
+                return plan
+            }
+        })
+
+        if (cached) {
+            console.log('♻️ План ухода взят из кэша Redis')
+        }
+
+        recordAiCall(cached
+            ? { scope: 'care', cached: true }
+            : { scope: 'care', latencyMs: Date.now() - startedAt, usage })
+
+        return {
+            plan: value,
+            source: cached ? 'cache' : 'ai',
+            season: seasonInfo?.season || null,
+            timeZone,
+            model: MODEL,
+            latencyMs: Date.now() - startedAt
+        }
+    } catch (error) {
+        if (error?.code !== 'AI_BUDGET_EXCEEDED') {
+            recordAiCall({ scope: 'care', latencyMs: Date.now() - startedAt, error })
+        }
+        console.error('❌ Ошибка плана ухода, использую базовые лимиты:', {
+            name: error.name,
+            status: error.status,
+            code: error.code,
+            message: error.message || String(error)
+        })
+        return buildFallback(error?.code === 'AI_BUDGET_EXCEEDED' ? 'budget' : 'ai-error')
+    } finally {
+        deadline.dispose()
+    }
+}
+
+export async function suggestCareAdvice({
+    plant,
+    candidates = [],
+    recentAdvice = [],
+    careHints = null,
+    seasonInfo = null,
+    group = null,
+    timeZone = appTimeZone(),
+    now = new Date(),
+    deadlineMs = AI_ADVICE_DEADLINE_MS
+} = {}) {
+    const buildFallback = reason => {
+        const value = buildFallbackCareAdvice({ plant, candidates, group })
+        if (!value) {
+            return {
+                decision: 'skip',
+                reason: 'no-candidates',
+                source: 'fallback',
+                fallbackReason: reason || undefined,
+                season: seasonInfo?.season || null,
+                timeZone
+            }
+        }
+        return {
+            ...value,
+            source: 'fallback',
+            fallbackReason: reason || undefined,
+            season: seasonInfo?.season || null,
+            timeZone
+        }
+    }
+
+    if (!plant || !candidates.length) return buildFallback('no-candidates')
+    if (!client) return buildFallback('not-configured')
+
+    const instructions = CARE_ADVICE_INSTRUCTIONS
+    const context = buildCareAdviceContext({
+        plant,
+        candidates,
+        recentAdvice,
+        careHints,
+        seasonInfo,
+        group,
+        now,
+        timeZone
+    })
+    const startedAt = Date.now()
+    const deadline = createDeadline(deadlineMs)
+    let usage = null
+
+    try {
+        const { value, cached } = await withAiCache({
+            namespace: 'care-advice',
+            payload: {
+                plantId: plant.id,
+                plantName: plant.name || null,
+                species: plant.species || null,
+                location: plant.location || null,
+                wateringIntervalDays: Number.isInteger(plant.watering_interval_days)
+                    ? plant.watering_interval_days
+                    : null,
+                nextWateringAt: plant.next_watering_at || null,
+                candidates: candidates.map(item => item.code),
+                recentAdvice: (recentAdvice || []).slice(0, 5).map(item => ({
+                    actionCode: item.actionCode || null,
+                    date: localDayKey(item.createdAt, timeZone)
+                })),
+                careHints: careHints || null,
+                season: seasonInfo?.season || null,
+                date: localDayKey(now, timeZone),
+                model: MODEL
+            },
+            ttlSeconds: Math.min(getAiCacheTtlSeconds(), 24 * 60 * 60),
+            call: async () => {
+                await assertAiBudget('care')
+
+                const request = {
+                    model: `gpt://${FOLDER}/${MODEL}`,
+                    instructions,
+                    input: [{ role: 'user', content: context }],
+                    store: false
+                }
+                const requestOptions = { signal: deadline.signal }
+
+                let response = await adviceClient.responses.create({
+                    ...request,
+                    temperature: 0.4,
+                    max_output_tokens: 900
+                }, requestOptions)
+                usage = response.usage || null
+
+                const validateResponse = () => {
+                    const parsed = parseCareAdvice(extractResponseText(response))
+                    return parsed
+                        ? validateCareAdvice(parsed, candidates)
+                        : { ok: false, reason: 'invalid-json' }
+                }
+
+                let validation = validateResponse()
+                if (!validation.ok && !deadline.expired()) {
+                    console.warn('⚠️ Повторный запрос совета по уходу', {
+                        reason: validation.reason
+                    })
+                    response = await adviceClient.responses.create({
+                        ...request,
+                        temperature: 0.2,
+                        max_output_tokens: 900
+                    }, requestOptions)
+                    usage = response.usage || null
+                    validation = validateResponse()
+                }
+
+                if (!validation.ok) {
+                    throw new Error(`AI returned invalid care advice: ${validation.reason}`)
+                }
+
+                return validation.advice
+            }
+        })
+
+        if (cached) {
+            console.log('♻️ Совет по уходу взят из кэша Redis')
+        }
+
+        recordAiCall(cached
+            ? { scope: 'care', cached: true }
+            : { scope: 'care', latencyMs: Date.now() - startedAt, usage })
+
+        return {
+            ...value,
+            source: cached ? 'cache' : 'ai',
+            season: seasonInfo?.season || null,
+            timeZone,
+            latencyMs: Date.now() - startedAt
+        }
+    } catch (error) {
+        if (error?.code !== 'AI_BUDGET_EXCEEDED') {
+            recordAiCall({ scope: 'care', latencyMs: Date.now() - startedAt, error })
+        }
+        console.error('❌ Ошибка совета по уходу, отдаю запасной вариант:', {
             name: error.name,
             status: error.status,
             code: error.code,

@@ -1,7 +1,7 @@
 import AiAdviceLog from '../models/AiAdviceLog.js'
 
 const MAX_TEXT = 255
-const ADVICE_KINDS = ['species', 'watering', 'time']
+const ADVICE_KINDS = ['species', 'watering', 'time', 'care']
 const ADVICE_SOURCES = ['ai', 'cache', 'fallback', 'unknown']
 
 function trimText(value) {

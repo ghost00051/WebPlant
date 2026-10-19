@@ -46,6 +46,14 @@ export function isRemindersPaused(metadata) {
     return sanitizePlantMetadata(metadata).reminders_paused === true
 }
 
+
+export function resumeReminders(metadata) {
+    const next = sanitizePlantMetadata(metadata)
+    delete next.reminders_paused
+    delete next.consecutive_skips
+    return next
+}
+
 export function hasMissedWatering(metadata) {
     const value = sanitizePlantMetadata(metadata)[MISSED_WATERING_METADATA_KEY]
     return typeof value === 'string' && Number.isFinite(new Date(value).getTime())

@@ -371,7 +371,6 @@ function AddPlants() {
         closeWateringAdvice()
     }
 
-    // Варианты ответа показываем только для последнего неотвеченного вопроса.
     const lastWateringMessage = wateringMessages[wateringMessages.length - 1]
     const currentQuestionOptions = lastWateringMessage?.role === 'assistant'
         ? (lastWateringMessage.options || [])
@@ -485,7 +484,14 @@ function AddPlants() {
                     watering_time_of_day: selectedWatering,
                     notify_morning: notifyMorning,
                     notify_day_before: notifyDayBefore,
-                    reminder_weekdays: selectedDays
+                    reminder_weekdays: selectedDays,
+                    metadata: wateringAnswers.length
+                        ? {
+                            care_hints: {
+                                watering_answers: wateringAnswers
+                            }
+                        }
+                        : undefined
                 }),
                 credentials: 'include'
             })

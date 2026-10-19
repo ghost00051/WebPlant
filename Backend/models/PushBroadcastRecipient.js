@@ -25,6 +25,27 @@ const PushBroadcastRecipient = sequelize.define('push_broadcast_recipient', {
         },
         onDelete: 'CASCADE'
     },
+    status: {
+        type: DataTypes.STRING(16),
+        allowNull: false,
+        defaultValue: 'pending',
+        validate: {
+            isIn: [['pending', 'sent', 'failed']]
+        }
+    },
+    attempts: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
+    sent_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    last_error: {
+        type: DataTypes.TEXT,
+        allowNull: true
+    },
     created_at: {
         type: DataTypes.DATE,
         allowNull: false,
@@ -38,6 +59,10 @@ const PushBroadcastRecipient = sequelize.define('push_broadcast_recipient', {
             name: 'idx_push_broadcast_recipients_unique',
             unique: true,
             fields: ['broadcast_id', 'user_id']
+        },
+        {
+            name: 'idx_push_broadcast_recipients_status',
+            fields: ['broadcast_id', 'status']
         }
     ]
 })

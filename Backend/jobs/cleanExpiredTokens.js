@@ -13,6 +13,8 @@ import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 
 const GUEST_DATA_RETENTION_MS = 180 * 24 * 60 * 60 * 1000
+const GUEST_PUSH_RETENTION_DAYS = 30
+const INVALIDATED_PUSH_RETENTION_DAYS = 30
 const VISIT_RETENTION_DAYS = 400
 const NOTIFICATION_RETENTION_DAYS = 180
 const CLEANUP_LOCK = 'job:cleanup-expired'
@@ -39,6 +41,14 @@ export async function cleanExpiredAuthData() {
     const adviceLogCutoff = retentionCutoff(readRetentionDays(process.env.AI_ADVICE_LOG_RETENTION_DAYS, 365))
     const notificationCutoff = retentionCutoff(
         readRetentionDays(process.env.NOTIFICATION_RETENTION_DAYS, NOTIFICATION_RETENTION_DAYS)
+    )
+
+
+    const guestPushCutoff = retentionCutoff(
+        readRetentionDays(process.env.GUEST_PUSH_RETENTION_DAYS, GUEST_PUSH_RETENTION_DAYS)
+    )
+    const invalidatedPushCutoff = retentionCutoff(
+        readRetentionDays(process.env.INVALIDATED_PUSH_RETENTION_DAYS, INVALIDATED_PUSH_RETENTION_DAYS)
     )
 
     const [
@@ -111,9 +121,25 @@ export async function cleanExpiredAuthData() {
     const deletedNotifications = notificationCutoff
         ? await Notification.destroy({ where: { created_at: { [Op.lt]: notificationCutoff } } })
         : 0
-    const deletedGuestSubscriptions = await PushSubscription.destroy({
-        where: { user_id: null, created_at: { [Op.lt]: guestDataCutoff } }
-    })
+    const deletedGuestSubscriptions = guestPushCutoff
+        ? await PushSubscription.destroy({
+            where: {
+                user_id: null,
+
+
+
+                created_at: { [Op.lt]: guestPushCutoff },
+                updated_at: { [Op.lt]: guestPushCutoff }
+            }
+        })
+        : 0
+
+
+    const deletedInvalidatedSubscriptions = invalidatedPushCutoff
+        ? await PushSubscription.destroy({
+            where: { invalidated_at: { [Op.ne]: null, [Op.lt]: invalidatedPushCutoff } }
+        })
+        : 0
 
     const deleted =
         deletedConsents + deletedGuestChatLogs + deletedUserChatLogs + deletedAdviceLogs +
@@ -128,7 +154,8 @@ export async function cleanExpiredAuthData() {
         `дней статистики посещений: ${deletedVisits}`
     )
     console.log(
-        `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}`
+        `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}, ` +
+        `карантинных push-подписок: ${deletedInvalidatedSubscriptions}`
     )
     return deleted
 }

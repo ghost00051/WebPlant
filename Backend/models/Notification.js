@@ -25,7 +25,13 @@ const Notification = sequelize.define('notification', {
         type: DataTypes.STRING(32),
         allowNull: false,
         validate: {
-            isIn: [['watering_due', 'watering_day_before', 'morning_summary']]
+            isIn: [[
+                'watering_due',
+                'watering_day_before',
+                'morning_summary',
+                'care_reminder',
+                'care_tip'
+            ]]
         }
     },
     title: {
@@ -44,6 +50,11 @@ const Notification = sequelize.define('notification', {
     dedupe_key: {
         type: DataTypes.STRING(255),
         allowNull: false
+    },
+    payload: {
+        type: DataTypes.JSONB,
+        allowNull: false,
+        defaultValue: {}
     },
     scheduled_for: {
         type: DataTypes.DATE,

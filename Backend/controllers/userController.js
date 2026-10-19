@@ -1,5 +1,6 @@
 import User from "../models/userModels.js"
 import UserLegalConsent from "../models/userLegalConsentModels.js"
+import NotificationPreference from "../models/NotificationPreference.js"
 import bcrypt from "bcrypt"
 import jwt from "jsonwebtoken"
 import dotenv from "dotenv"
@@ -32,7 +33,6 @@ import Plant from '../models/Plant.js'
 import {
     advanceZonedWatering,
     zonedDayHourAfter,
-    MISSED_GRACE_MS,
     WATERING_TIME_OF_DAY_HOURS
 } from '../utils/wateringSchedule.js'
 import { withNotificationsReset } from '../utils/plantMetadata.js'
@@ -196,6 +196,12 @@ class UserController {
                 privilege_level: 'free',
                 timezone: isValidTimeZone(timezone) ? timezone.trim() : null
             }, { transaction })
+
+            await NotificationPreference.findOrCreate({
+                where: { user_id: user.id },
+                defaults: { care_advice_enabled: true },
+                transaction
+            })
 
             if (!finalUsername) {
                 const base = normalizedName
@@ -492,10 +498,14 @@ class UserController {
                             : 7
                         let next = zonedDayHourAfter(plant.next_watering_at, 0, hour, nextTimeZone)
                         if (!next || !Number.isFinite(next.getTime())) continue
-                        if (next.getTime() <= Date.now() - MISSED_GRACE_MS) {
+
+
+
+
+                        if (next.getTime() <= Date.now()) {
                             next = advanceZonedWatering(next, interval, hour, nextTimeZone, new Date())
                         }
-                        if (!next) continue
+                        if (!next || !Number.isFinite(next.getTime())) continue
 
                         await plant.update({
                             next_watering_at: next,

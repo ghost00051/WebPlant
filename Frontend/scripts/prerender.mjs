@@ -4,7 +4,6 @@ import { createServer } from 'vite'
 import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
-
 const root = resolve(import.meta.dirname, '..')
 const outputDirectory = resolve(root, 'dist')
 const siteUrl = 'https://checktheplants.ru'
@@ -42,6 +41,10 @@ const privateRoutes = {
   'reset-password': {
     title: 'Восстановление пароля — Лейка',
     description: 'Укажите email аккаунта и получите ссылку для создания нового пароля «Лейки».'
+  },
+  notifications: {
+    title: 'Уведомления — Лейка',
+    description: 'Центр уведомлений «Лейки»: напоминания о поливе, советы по уходу и системные сообщения.'
   }
 }
 

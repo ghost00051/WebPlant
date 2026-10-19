@@ -9,12 +9,14 @@ import {
   registerPasskey
 } from '../../utils/passkey.js'
 import {
+  getActivePushSubscription,
   isIOS,
   isPushSupported,
   isStandalone,
   requestPermission,
   setPushDisabledOnThisDevice,
   subscribeToPush,
+  syncPushSubscription,
   unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
 import { API_URL } from '../../utils/api.js'
@@ -45,6 +47,10 @@ function Profile () {
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [summaryChanging, setSummaryChanging] = useState(false)
   const [summaryError, setSummaryError] = useState('')
+  const [careAdviceEnabled, setCareAdviceEnabled] = useState(true)
+  const [careAdviceLoading, setCareAdviceLoading] = useState(true)
+  const [careAdviceChanging, setCareAdviceChanging] = useState(false)
+  const [careAdviceError, setCareAdviceError] = useState('')
   const [themeError, setThemeError] = useState('')
   const [themeChanging, setThemeChanging] = useState(false)
   const [logoutError, setLogoutError] = useState('')
@@ -167,6 +173,7 @@ function Profile () {
       .then(preferences => {
         if (isMounted) {
           setMorningSummaryEnabled(preferences.morning_summary_enabled === true)
+          setCareAdviceEnabled(preferences.care_advice_enabled !== false)
         }
       })
       .catch(error => {
@@ -174,7 +181,10 @@ function Profile () {
         if (isMounted) setSummaryError('Не удалось загрузить настройку сводки.')
       })
       .finally(() => {
-        if (isMounted) setSummaryLoading(false)
+        if (isMounted) {
+          setSummaryLoading(false)
+          setCareAdviceLoading(false)
+        }
       })
 
     return () => {
@@ -192,12 +202,27 @@ function Profile () {
       }
 
       try {
-        const registration = await navigator.serviceWorker.ready
-        const subscription = await registration.pushManager.getSubscription()
-        if (subscription) {
-          await subscribeToPush()
-          if (isMounted) setPushEnabled(true)
+        const subscription = await getActivePushSubscription()
+        if (!isMounted) return
+
+        if (!subscription) {
+          setPushEnabled(false)
+          return
         }
+
+        setPushEnabled(true)
+
+
+        await syncPushSubscription({
+          onError: error => {
+            if (isMounted) {
+              setPushError(
+                error?.message ||
+                  'Не удалось синхронизировать push-подписку с сервером. Включите уведомления ещё раз.'
+              )
+            }
+          }
+        })
       } catch (error) {
         console.error('Ошибка проверки push-подписки:', error)
         if (isMounted) {
@@ -235,7 +260,9 @@ function Profile () {
 
         const granted = await requestPermission()
         if (!granted) {
-          throw new Error('Разрешение на уведомления не получено')
+          throw new Error(
+            'Разрешение на уведомления не получено. Разрешите уведомления в настройках браузера и попробуйте включить ещё раз.'
+          )
         }
 
         await subscribeToPush()
@@ -244,9 +271,23 @@ function Profile () {
         return
       }
 
+      let unsubscribeError = null
+      try {
+        await unsubscribeFromPush()
+      } catch (error) {
+        unsubscribeError = error
+      }
+
+
+
       setPushDisabledOnThisDevice(true)
-      await unsubscribeFromPush()
       setPushEnabled(false)
+      if (unsubscribeError) {
+        setPushError(
+          unsubscribeError.message ||
+            'Локально уведомления отключены, но не удалось сообщить серверу. Позже подписка будет удалена автоматически.'
+        )
+      }
     } catch (error) {
       console.error('Ошибка изменения push-подписки:', error)
       setPushError(
@@ -292,6 +333,37 @@ function Profile () {
     }
   }
 
+  const handleCareAdviceChange = async event => {
+    const enabled = event.target.checked
+    if (careAdviceChanging) return
+
+    setCareAdviceChanging(true)
+    setCareAdviceError('')
+    try {
+      const response = await fetch(
+        `${API_URL}/users/me/notification-preferences`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ care_advice_enabled: enabled })
+        }
+      )
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const preferences = await response.json()
+      setCareAdviceEnabled(preferences.care_advice_enabled !== false)
+    } catch (error) {
+      console.error('Ошибка изменения советов по уходу:', error)
+      setCareAdviceError(error.message || 'Не удалось изменить настройку советов.')
+    } finally {
+      setCareAdviceChanging(false)
+    }
+  }
+
   const handleThemeChange = async nextTheme => {
     if (themeChanging || themeMode === nextTheme) return
     setThemeChanging(true)
@@ -329,6 +401,11 @@ function Profile () {
   }
   const exitOfProduct = async () => {
     setLogoutError('')
+
+    await Promise.race([
+      unsubscribeFromPush().catch(() => {}),
+      new Promise(resolve => setTimeout(resolve, 3000))
+    ]).catch(() => {})
     try {
       const response = await fetchWithTimeout(`${API_URL}/users/logout`, {
         method: 'POST',
@@ -467,7 +544,9 @@ function Profile () {
                   (!isPushSupported()
                     ? 'Push-уведомления не поддерживаются этим браузером'
                     : Notification.permission === 'denied'
-                    ? 'Уведомления заблокированы в настройках браузера'
+                    ? isIOS()
+                      ? 'Уведомления отключены. Откройте «Настройки» → «Уведомления» → «Лейка», разрешите их и вернитесь в приложение.'
+                      : 'Уведомления отключены. Нажмите на значок замка/«Настройки сайта» в адресной строке, разрешите уведомления и обновите страницу.'
                     : isIOS() && !isStandalone()
                     ? 'На iPhone добавьте приложение на экран «Домой»'
                     : 'Напомним, когда пора полить')}
@@ -477,7 +556,7 @@ function Profile () {
             <input
               type='checkbox'
               checked={pushEnabled}
-              disabled={pushLoading || pushChanging || !isPushSupported()}
+              disabled={pushLoading || pushChanging || !isPushSupported() || Notification.permission === 'denied'}
               onChange={handlePushChange}
               aria-label='Push-уведомления'
               aria-busy={pushLoading || pushChanging}
@@ -509,6 +588,30 @@ function Profile () {
               onChange={handleMorningSummaryChange}
               aria-label='Утренняя сводка'
               aria-busy={summaryLoading || summaryChanging}
+            />
+            <span className='sliderSettings'></span>
+          </label>
+        </div>
+        <div className='pushSettings'>
+          <div>
+            <p>Советы по уходу</p>
+            <p role={careAdviceError ? 'alert' : 'status'}>
+              {careAdviceLoading
+                ? 'Проверяем настройку...'
+                : careAdviceError ||
+                  (careAdviceEnabled
+                    ? 'Когда пора подкормить, увлажнить или осмотреть растение — с учётом сезона и лимитов'
+                    : 'Советы по уходу отключены')}
+            </p>
+          </div>
+          <label className='appleSwitchSettings'>
+            <input
+              type='checkbox'
+              checked={careAdviceEnabled}
+              disabled={careAdviceLoading || careAdviceChanging}
+              onChange={handleCareAdviceChange}
+              aria-label='Советы по уходу'
+              aria-busy={careAdviceLoading || careAdviceChanging}
             />
             <span className='sliderSettings'></span>
           </label>

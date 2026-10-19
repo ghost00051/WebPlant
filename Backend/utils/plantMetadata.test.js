@@ -8,6 +8,7 @@ import {
     isRemindersPaused,
     markWateringMissed,
     registerAutoSkip,
+    resumeReminders,
     sanitizePlantMetadata,
     withNotificationsReset
 } from './plantMetadata.js'
@@ -60,6 +61,25 @@ test('clearWateringProgress: снимает прогресс, но сохран�
     assert.equal(hasWateringProgress({}), false)
     assert.equal(hasMissedWatering({ missed_since: '2026-10-19T06:00:00.000Z' }), true)
     assert.equal(hasMissedWatering({ missed_since: 'не дата' }), false)
+})
+
+test('resumeReminders: снимает паузу и счётчик, но сохраняет missed_since', () => {
+    const metadata = {
+        missed_since: '2026-10-19T06:00:00.000Z',
+        reminders_paused: true,
+        consecutive_skips: 3,
+        notifications: { on_day: '2026-10-20T06:00:00.000Z' },
+        note: 'ok'
+    }
+    const resumed = resumeReminders(metadata)
+    assert.deepEqual(resumed, {
+        missed_since: '2026-10-19T06:00:00.000Z',
+        notifications: { on_day: '2026-10-20T06:00:00.000Z' },
+        note: 'ok'
+    })
+    assert.equal(isRemindersPaused(resumed), false)
+
+    assert.equal(metadata.reminders_paused, true)
 })
 
 test('withNotificationsReset: сбрасывает только notifications', () => {

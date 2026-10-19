@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { API_URL } from '../../utils/api.js'
 import appIcon from '../../assets/IconLeaf.svg'
 import './adminPush.css'
@@ -6,7 +6,7 @@ import './dark-theme.css'
 
 const ADMIN_PUSH_BASE = `${API_URL}/admin/push`
 const SEARCH_DEBOUNCE_MS = 350
-const SEARCH_LIMIT = 50
+const RECIPIENTS_PAGE_SIZE = 50
 
 const BROADCAST_STATUS_LABELS = {
     pending: 'Запланирована',
@@ -59,6 +59,39 @@ function recipientName(user) {
     return user.name?.trim() || user.username || user.email || 'Без имени'
 }
 
+function createIdempotencyKey() {
+    const fallback = `push-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+    try {
+        if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+            return `push-${crypto.randomUUID()}`
+        }
+    } catch {
+        return fallback
+    }
+    return fallback
+}
+
+async function fetchRecipientsPage({ search, offset, limit }) {
+    const params = new URLSearchParams()
+    if (search.trim()) params.set('search', search.trim())
+    params.set('limit', String(limit))
+    params.set('offset', String(offset))
+
+    const response = await fetch(
+        `${ADMIN_PUSH_BASE}/recipients?${params.toString()}`,
+        { method: 'GET', credentials: 'include' }
+    )
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) {
+        throw new Error(data.message || `HTTP ${response.status}`)
+    }
+
+    return {
+        items: Array.isArray(data.items) ? data.items : [],
+        total: Number.isInteger(data.total) ? data.total : null
+    }
+}
+
 function AdminPushPanel() {
     const [roleState, setRoleState] = useState('checking')
     const [overview, setOverview] = useState(null)
@@ -79,6 +112,11 @@ function AdminPushPanel() {
     const [formError, setFormError] = useState('')
     const [statusMessage, setStatusMessage] = useState('')
     const [cancelingId, setCancelingId] = useState(null)
+    const [recipientsTotal, setRecipientsTotal] = useState(0)
+    const [recipientsLoadingMore, setRecipientsLoadingMore] = useState(false)
+    const [retryAvailable, setRetryAvailable] = useState(true)
+    const [retryingId, setRetryingId] = useState(null)
+    const attemptRef = useRef({ source: null, key: null })
 
     const loadOverview = useCallback(async () => {
         setOverviewLoading(true)
@@ -145,29 +183,22 @@ function AdminPushPanel() {
         const loadRecipients = async () => {
             setRecipientsLoading(true)
             setRecipientsError('')
+            setRecipientsLoadingMore(false)
             try {
-                const params = new URLSearchParams()
-                if (search.trim()) params.set('search', search.trim())
-                params.set('limit', String(SEARCH_LIMIT))
-                params.set('offset', '0')
-
-                const response = await fetch(
-                    `${ADMIN_PUSH_BASE}/recipients?${params.toString()}`,
-                    { method: 'GET', credentials: 'include' }
-                )
+                const page = await fetchRecipientsPage({
+                    search,
+                    offset: 0,
+                    limit: RECIPIENTS_PAGE_SIZE
+                })
                 if (!isMounted) return
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({}))
-                    throw new Error(errorData.message || `HTTP ${response.status}`)
-                }
-                const data = await response.json()
-                if (!isMounted) return
-                setRecipients(Array.isArray(data.items) ? data.items : [])
+                setRecipients(page.items)
+                setRecipientsTotal(page.total ?? page.items.length)
             } catch (error) {
                 if (!isMounted) return
                 console.error('Ошибка поиска получателей:', error)
                 setRecipientsError(error.message || 'Не удалось загрузить получателей.')
                 setRecipients([])
+                setRecipientsTotal(0)
             } finally {
                 if (isMounted) setRecipientsLoading(false)
             }
@@ -180,6 +211,34 @@ function AdminPushPanel() {
             clearTimeout(timer)
         }
     }, [roleState, targetMode, search])
+
+    const loadMoreRecipients = async () => {
+        if (recipientsLoading || recipientsLoadingMore || recipients.length >= recipientsTotal) {
+            return
+        }
+
+        setRecipientsLoadingMore(true)
+        setRecipientsError('')
+        try {
+            const page = await fetchRecipientsPage({
+                search,
+                offset: recipients.length,
+                limit: RECIPIENTS_PAGE_SIZE
+            })
+            setRecipients(current => {
+                const knownIds = new Set(current.map(user => user.id))
+                return [...current, ...page.items.filter(user => !knownIds.has(user.id))]
+            })
+            setRecipientsTotal(currentTotal =>
+                Math.max(currentTotal, page.total ?? recipients.length + page.items.length)
+            )
+        } catch (error) {
+            console.error('Ошибка догрузки получателей:', error)
+            setRecipientsError(error.message || 'Не удалось загрузить получателей.')
+        } finally {
+            setRecipientsLoadingMore(false)
+        }
+    }
 
     const toggleRecipient = user => {
         setSelectedUsers(previous => {
@@ -229,6 +288,37 @@ function AdminPushPanel() {
         }
     }
 
+    const handleRetryBroadcast = async broadcastId => {
+        if (retryingId !== null) return
+
+        setRetryingId(broadcastId)
+        setFormError('')
+        setStatusMessage('')
+        try {
+            const response = await fetch(
+                `${ADMIN_PUSH_BASE}/broadcasts/${broadcastId}/retry`,
+                { method: 'POST', credentials: 'include' }
+            )
+            if (response.status === 404 || response.status === 501) {
+
+                setRetryAvailable(false)
+                setStatusMessage('Повторная отправка недоступна на сервере. Создайте новую рассылку.')
+                return
+            }
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                throw new Error(data.message || `HTTP ${response.status}`)
+            }
+            setStatusMessage('Повторная отправка запущена. Прогресс виден в списке последних рассылок.')
+            await loadOverview()
+        } catch (error) {
+            console.error('Ошибка повторной отправки рассылки:', error)
+            setFormError(error.message || 'Не удалось повторно отправить рассылку.')
+        } finally {
+            setRetryingId(null)
+        }
+    }
+
     const handleSubmit = async event => {
         event.preventDefault()
         if (sending) return
@@ -264,20 +354,20 @@ function AdminPushPanel() {
         setFormError('')
         setStatusMessage('')
 
-        const idempotencySource = JSON.stringify({
+        const attemptSource = JSON.stringify({
             title: trimmedTitle,
             body: trimmedBody,
             url: url.trim() || '/',
             targetMode,
             selectedIds: targetMode === 'users' ? selectedIds : [],
-            includeGuests: targetMode === 'all' ? includeGuests : false
+            includeGuests: targetMode === 'all' ? includeGuests : false,
+            scheduledFor: scheduledIso
         })
-        let idempotencyHash = 2166136261
-        for (let index = 0; index < idempotencySource.length; index++) {
-            idempotencyHash ^= idempotencySource.charCodeAt(index)
-            idempotencyHash = Math.imul(idempotencyHash, 16777619)
-        }
-        const idempotencyKey = `push-${(idempotencyHash >>> 0).toString(16)}-${idempotencySource.length}`
+        const previousAttempt = attemptRef.current
+        const idempotencyKey = previousAttempt.source === attemptSource && previousAttempt.key
+            ? previousAttempt.key
+            : createIdempotencyKey()
+        attemptRef.current = { source: attemptSource, key: idempotencyKey }
 
         try {
             const response = await fetch(
@@ -303,7 +393,9 @@ function AdminPushPanel() {
             )
             const data = await response.json().catch(() => ({}))
             if (!response.ok) {
-                throw new Error(data.message || `HTTP ${response.status}`)
+                const requestError = new Error(data.message || `HTTP ${response.status}`)
+                requestError.status = response.status
+                throw requestError
             }
 
             if (scheduledIso) {
@@ -331,11 +423,20 @@ function AdminPushPanel() {
                 const sent = sentResult.sent ?? 0
                 const failed = sentResult.failed ?? 0
                 const removed = sentResult.removed ?? 0
+                const quarantined = sentResult.quarantined
+                    ?? sentResult.quarantinedCount
+                    ?? data.broadcast?.quarantined_count
+                    ?? 0
+                const partial = sentResult.partial === true
+                    ? ' Отправка частичная.'
+                    : ''
                 setStatusMessage(
-                    `Рассылка отправлена. Подписок всего: ${total}, отправлено: ${sent}, ошибок: ${failed}, удалено: ${removed}.`
+                    `Рассылка отправлена. Подписок всего: ${total}, отправлено: ${sent}, ошибок: ${failed}, удалено: ${removed}` +
+                    `${quarantined ? `, в карантине: ${quarantined}` : ''}.${partial}`
                 )
             }
 
+            attemptRef.current = { source: null, key: null }
             setTitle('')
             setBody('')
             setUrl('/')
@@ -347,12 +448,19 @@ function AdminPushPanel() {
             const networkFailure = error instanceof TypeError
                 || /network|fetch|abort|прерва/i.test(error?.message || '')
             if (networkFailure) {
+
                 setFormError(
                     'Связь прервалась до ответа сервера. Рассылка могла уже создаться — ' +
-                    'проверьте список последних рассылок ниже и не отправляйте повторно.'
+                    'проверьте список последних рассылок ниже; повторная отправка не создаст дубль.'
                 )
                 await loadOverview()
+            } else if (error.status === 409) {
+                attemptRef.current = { source: null, key: null }
+                setStatusMessage(
+                    error.message || 'Такая рассылка уже создана недавно — повторная отправка заблокирована.'
+                )
             } else {
+                attemptRef.current = { source: null, key: null }
                 setFormError(error.message || 'Не удалось отправить рассылку.')
             }
         } finally {
@@ -364,7 +472,7 @@ function AdminPushPanel() {
         return null
     }
 
-    const pushConfigured = overview ? overview.pushConfigured !== false : false
+    const pushConfigured = overview ? overview.pushConfigured !== false : true
     const stats = {
         total: overview?.subscriptions?.total ?? 0,
         users: overview?.subscriptions?.users ?? 0,
@@ -389,7 +497,18 @@ function AdminPushPanel() {
             <h2 id='adminPushTitle'>Мастер-панель: рассылка уведомлений</h2>
 
             {overviewError && (
-                <p className='adminPushMessage adminPushError' role='alert'>{overviewError}</p>
+                <div className='adminPushMessage adminPushError' role='alert'>
+                    <p>{overviewError}</p>
+                    <button
+                        type='button'
+                        className='adminPushSecondaryButton'
+                        disabled={overviewLoading}
+                        aria-busy={overviewLoading}
+                        onClick={loadOverview}
+                    >
+                        {overviewLoading ? 'Загружаем...' : 'Повторить загрузку'}
+                    </button>
+                </div>
             )}
 
             {overviewLoading && !overview && (
@@ -480,6 +599,9 @@ function AdminPushPanel() {
                         <div className='adminPushRecipientsToolbar'>
                             <p className='adminPushSelectedCount' role='status'>
                                 Выбрано: {selectedUsers.size}
+                                {recipientsTotal > recipients.length
+                                    ? ` · загружено ${recipients.length} из ${recipientsTotal}`
+                                    : ''}
                             </p>
                             <div className='adminPushRecipientsActions'>
                                 <button
@@ -546,6 +668,20 @@ function AdminPushPanel() {
                                     </li>
                                 ))}
                             </ul>
+                        )}
+
+                        {recipients.length < recipientsTotal && (
+                            <button
+                                type='button'
+                                className='adminPushSecondaryButton'
+                                disabled={recipientsLoadingMore}
+                                aria-busy={recipientsLoadingMore}
+                                onClick={loadMoreRecipients}
+                            >
+                                {recipientsLoadingMore
+                                    ? 'Загружаем...'
+                                    : `Показать ещё (${Math.max(0, recipientsTotal - recipients.length)})`}
+                            </button>
                         )}
 
                         {selectedOutsideSearch.length > 0 && (
@@ -668,7 +804,7 @@ function AdminPushPanel() {
                 <button
                     type='submit'
                     className='adminPushSubmitButton'
-                    disabled={sending || overviewLoading || !pushConfigured}
+                    disabled={sending || !pushConfigured}
                     aria-busy={sending}
                 >
                     {sending ? 'Отправляем...' : submitLabel}
@@ -694,6 +830,8 @@ function AdminPushPanel() {
                                     {(Number.isFinite(item.sent_count) || Number.isFinite(item.failed_count)) && (
                                         <p className='adminPushRecentCounts'>
                                             Отправлено: {item.sent_count ?? 0} · Ошибок: {item.failed_count ?? 0}
+                                            {Number.isFinite(item.removed_count) ? ` · Удалено: ${item.removed_count}` : ''}
+                                            {Number.isFinite(item.quarantined_count) ? ` · Карантин: ${item.quarantined_count}` : ''}
                                         </p>
                                     )}
                                 </div>
@@ -706,6 +844,17 @@ function AdminPushPanel() {
                                         onClick={() => handleCancelBroadcast(item.id)}
                                     >
                                         {cancelingId === item.id ? 'Отменяем...' : 'Отменить'}
+                                    </button>
+                                )}
+                                {item.status === 'failed' && retryAvailable && (
+                                    <button
+                                        type='button'
+                                        className='adminPushSecondaryButton'
+                                        disabled={retryingId === item.id}
+                                        aria-busy={retryingId === item.id}
+                                        onClick={() => handleRetryBroadcast(item.id)}
+                                    >
+                                        {retryingId === item.id ? 'Повторяем...' : 'Повторить'}
                                     </button>
                                 )}
                             </li>

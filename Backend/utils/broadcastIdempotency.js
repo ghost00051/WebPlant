@@ -48,6 +48,7 @@ export async function rememberIdempotentBroadcast(channel, key, broadcastId, {
                 'SET',
                 buildIdempotencyRedisKey(channel, key),
                 String(broadcastId),
+                'NX',
                 'PX',
                 String(ttlMs)
             ]),

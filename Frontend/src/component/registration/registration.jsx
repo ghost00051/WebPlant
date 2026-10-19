@@ -5,6 +5,7 @@ import './dark-theme.css'
 import './adaptiv.css'
 import {
   subscribeToPush,
+  isPushDisabledOnThisDevice,
   isPushSupported,
   isIOS,
   isStandalone
@@ -31,6 +32,16 @@ async function getResponseMessage (response, fallback) {
   } catch {
     return fallback
   }
+}
+
+const PUSH_REATTACH_TIMEOUT_MS = 3000
+
+
+function waitAtMost (promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(resolve, timeoutMs))
+  ])
 }
 
 function Registration ({ initialMode = 'login' }) {
@@ -111,6 +122,7 @@ function Registration ({ initialMode = 'login' }) {
     if (!isPushSupported()) return
     if (isIOS() && !isStandalone()) return
     if (Notification.permission !== 'granted') return
+    if (isPushDisabledOnThisDevice()) return
 
     try {
       await subscribeToPush()
@@ -154,7 +166,7 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка регистрации:', error)
@@ -190,7 +202,7 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка входа:', error)
@@ -207,7 +219,7 @@ function Registration ({ initialMode = 'login' }) {
     setFormError('')
     try {
       await loginWithPasskey(emailEntr.trim(), rememberMe)
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка входа по ключу доступа:', error)
