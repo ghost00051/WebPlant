@@ -30,6 +30,7 @@ services:
       - ./backups:/backups
     networks:
       - ctp_network
+      - pgadmin_net
     expose:
       - "5432"
     healthcheck:
@@ -37,8 +38,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    ports:
-      - "127.0.0.1:5433:5432"
 
   redis:
     image: redis:7-alpine
@@ -175,7 +174,10 @@ services:
     command: ["while :; do /bin/sh /usr/local/bin/backup.sh || echo 'Backup failed; will retry in 24 hours'; sleep 86400; done"]
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    image: ctp_nginx:local
     container_name: ctp_nginx
     restart: always
     depends_on:
@@ -185,17 +187,17 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro
-      - ./certbot/conf:/etc/letsencrypt:ro
+      - certbot_conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
     networks:
       - ctp_network
+      - pgadmin_net
 
   certbot:
     image: certbot/certbot
     container_name: ctp_certbot
     volumes:
-      - ./certbot/conf:/etc/letsencrypt
+      - certbot_conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
     entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
 
@@ -204,7 +206,13 @@ volumes:
     driver: local
   redis_data:
     driver: local
+  certbot_conf:
+    name: backend_certbot_conf
 
 networks:
   ctp_network:
     driver: bridge
+  pgadmin_net:
+    driver: bridge
+    internal: true
+    name: backend_pgadmin_net

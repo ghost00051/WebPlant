@@ -406,5 +406,6 @@ if (failed.length) {
   console.log('FAILED:')
   for (const failure of failed)
     console.log(` - ${failure.name}: ${failure.detail}`)
-  process.exit(1)
 }
+
+process.exit(failed.length ? 1 : 0)

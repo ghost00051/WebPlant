@@ -327,6 +327,19 @@ powershell -File Backend/k8s/scripts/switch-traffic.ps1 -Target compose
 Остановить лишний стек после переезда: `docker compose stop backend postgres backup`
 (nginx и certbot остаются на месте и продолжают держать TLS).
 
+> **Дубли push при двух запущенных бэкендах.** Пока оба бэкенда живы, а Redis у
+> них разный, напоминания уходят дважды: в базах продублированы одни и те же
+> пользователи и те же push-подписки (на 2026-10-19 совпадали 7 endpoint'ов из 8,
+> и оба стека отправили `morning_summary` в 06:00 одним и тем же людям). Общий
+> Redis защищает только от одновременного выполнения cron, но не от двух разных
+> наборов данных. Остановленный `ctp_backend` возвращается командой
+> `docker start ctp_backend`, а **не** `docker compose up -d backend`:
+> незакоммиченные правки `docker-compose.yml` (порты postgres, named volume для
+> certbot, сборка nginx из `./nginx`) могут пересоздать соседние контейнеры.
+> Пересборка только бэкенда — `docker compose up -d --build --no-deps backend`.
+> Контейнеру выставлен `--restart=no`, иначе он поднимался бы сам после
+> перезапуска Docker Desktop.
+
 Альтернатива для «полноценного» переезда: поднять в кластере ingress-контроллер
 (например, ingress-nginx) и cert-manager, освободив порты 80/443, — но это уже
 отдельная задача, потому что сейчас их занимает `ctp_nginx`.
@@ -389,6 +402,35 @@ $pass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64Strin
 $env:REDIS_TEST_URL = "redis://default:$pass@127.0.0.1:16379/0"
 cd Backend; node --test utils/distributedLock.test.js
 ```
+
+## Проверка подсистемы уведомлений
+
+Часть команд из ручного чек-листа приёмки пишет в боевую базу, поэтому
+безопасный путь — один скрипт:
+
+```powershell
+powershell -File Backend/scripts/verify-notifications.ps1
+```
+
+Он проверяет `/health` внутри пода, unique-индекс идемпотентности и API
+уведомлений на одноразовой БД. Что важно знать:
+
+* **Проба идемпотентности выполняется в `BEGIN … ROLLBACK`.** Голый `DO`-блок
+  коммитится: он оставляет рассылку со `status='pending'`, а `PushBroadcastJob`
+  (cron, раз в минуту) реально доставляет её подписчикам. Так 2026-10-19 в 08:59
+  ушёл push `title='verify'` на 9 устройств (broadcast `id=15`). Не запускайте
+  вариант без явной транзакции и без `ROLLBACK`.
+* **`_notif_smoke.mjs` намеренно отсутствует в образе** (`Backend/.dockerignore`):
+  он чеканит реальный `auth_sessions`-токен из `SECRET_KEY`. Скрипт кладёт его в
+  под на время прогона, сверяет md5, запускает на БД `webplant_notif_smoke*` и
+  удаляет файл. `node _notif_smoke.mjs` внутри пода упадёт с `MODULE_NOT_FOUND` —
+  это ожидаемо.
+* Одноразовую БД нельзя создавать заранее: тест откажется работать с уже
+  существующей базой и сам удалит свою.
+* Для рассылки `target_mode='all'` строки в `push_broadcast_recipients` не
+  создаются — это по дизайну: аудитория берётся из `push_subscriptions`, а
+  пер-получательский трекинг есть только у `target_mode='users'`. Поэтому «кому
+  именно дошло» по массовой рассылке видно только агрегатом `sent_count`.
 
 ## Удаление стека
 
