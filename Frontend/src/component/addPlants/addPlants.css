@@ -65,7 +65,7 @@ body {
     font-weight: 600;
     font-style: normal;
     color: #FFFFFF;
-    background-color: #7C9082;
+    background-color: #5C7463;
     padding: 4px 10px;
     border-radius: 14px;
 }
@@ -76,7 +76,7 @@ body {
     font-size: var(--font-size-md);
     font-weight: 600;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     background-color: #F0EDE8;
     padding: 4px 9px;
     border-radius: 14px;
@@ -86,7 +86,7 @@ body {
 .numbersOfSecondStep.active,
 .numbersOfThirdStep.active {
     color: #FFFFFF;
-    background-color: #7C9082;
+    background-color: #5C7463;
     transition: all 0.4s ease;
 }
 
@@ -151,7 +151,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     margin: 3% 0;
 }
 
@@ -175,7 +175,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 400;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
 }
 
 .add-photo-btn {
@@ -217,7 +217,7 @@ body {
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
     font-weight: 600;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     margin: 3% 0;
 }
 
@@ -308,7 +308,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 400;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
 }
 
 .speciesName {
@@ -337,7 +337,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #7C9082;
+    color: var(--theme-accent-text);
     background: none;
     border: none;
     height: fit-content;
@@ -429,7 +429,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
 }
 
 .popularTypes div button {
@@ -437,7 +437,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #7C9082;
+    color: var(--theme-accent-text);
     background-color: #7c908233;
     margin-right: 2%;
     border: none;
@@ -450,7 +450,7 @@ body {
     font-size: var(--font-size-md);
     font-weight: 500;
     font-style: normal;
-    background-color: #7C9082;
+    background-color: #5C7463;
     color: #FFFFFF;
     border: none;
     padding: 3% 0%;
@@ -504,7 +504,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #7FD1A0;
+    color: var(--theme-accent-text);
     background: none;
     border: none;
     height: fit-content;
@@ -579,7 +579,7 @@ body {
 
 .wateringAdviceHeader p {
     margin: 7px 0 0;
-    color: #777;
+    color: var(--theme-muted);
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-md);
     line-height: 1.45;
@@ -611,7 +611,7 @@ body {
 
 .wateringAdvicePlant {
     margin: 0 0 4px;
-    color: #777;
+    color: var(--theme-muted);
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
     line-height: 1.45;
@@ -642,7 +642,7 @@ body {
 .wateringAdviceMessage.user {
     align-self: flex-end;
     border-bottom-right-radius: 5px;
-    background: #7FD1A0;
+    background: #5C7463;
     color: #FFFFFF;
 }
 
@@ -669,7 +669,7 @@ body {
 }
 
 .wateringRecommendation .wateringRecommendationConfidence {
-    color: #777;
+    color: var(--theme-muted);
     font-size: var(--font-size-sm);
 }
 
@@ -679,7 +679,7 @@ body {
     padding: 10px 16px;
     border: 0;
     border-radius: 13px;
-    background: #7FD1A0;
+    background: #5C7463;
     color: #FFFFFF;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-md);
@@ -893,11 +893,11 @@ body {
 
 .customSchedule.active {
     background-color: #E9EFEA;
-    border-color: #7FD1A0;
+    border-color: var(--theme-accent-text);
 }
 
 .customSchedule.active p:first-child {
-    color: #7FD1A0;
+    color: var(--theme-accent-text);
 }
 
 .counterBtn {
@@ -951,7 +951,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     margin: 3% 0;
 }
 
@@ -985,7 +985,7 @@ body {
     font-size: var(--font-size-sm);
     font-weight: 500;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     margin: 3% 0;
 }
 
@@ -1071,7 +1071,7 @@ input:checked+.slider::before {
 .wateringWeekday.active {
     background-color: var(--color-white-tema);
     color: #FFFFFF;
-    border-color: #7FD1A0;
+    border-color: var(--theme-accent-text);
 }
 
 .wateringWeekday:disabled {
@@ -1092,7 +1092,7 @@ input:checked+.slider::before {
     margin: 10px 0 0;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-sm);
-    color: #8A8A8A;
+    color: var(--theme-muted);
 }
 
 .wateringWeekdayPreview span {
@@ -1112,6 +1112,51 @@ input:checked+.slider::before {
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-md);
     line-height: 1.5;
+}
+
+.addNamePlant input[aria-invalid='true'] {
+    outline: 2px solid #B42318;
+    outline-offset: 1px;
+}
+
+.fieldError {
+    margin: 6px 0 0;
+    color: #B42318;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.draftRestoreNotice {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    box-sizing: border-box;
+    margin: 0 7% 12px;
+    padding: 10px 12px;
+    border: 1px solid rgba(90, 110, 96, 0.22);
+    border-radius: 12px;
+    background: #EEF2EE;
+    color: #2D3A30;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.draftRestoreNotice p {
+    margin: 0;
+}
+
+.draftRestoreNotice button {
+    flex: 0 0 auto;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: var(--font-size-lg);
+    line-height: 1;
+    cursor: pointer;
 }
 
 @media (max-width: 360px) {
@@ -1210,7 +1255,7 @@ input:checked+.slider::before {
     font-size: var(--font-size-md);
     font-weight: 400;
     font-style: normal;
-    color: #8A8A8A;
+    color: var(--theme-muted);
     margin: 2px 0 0;
     white-space: nowrap;
     overflow: hidden;

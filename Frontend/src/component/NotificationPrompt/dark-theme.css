@@ -3,3 +3,31 @@ html[data-theme='dark'] .notification-prompt {
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .notification-prompt h2 {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notification-prompt-text,
+html[data-theme='dark'] .whetToWater p,
+html[data-theme='dark'] .driedOut p,
+html[data-theme='dark'] .notification-prompt-btn-primary {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .notification-prompt-btn-secondary {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .notification-prompt-buttons {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .line {
+    background-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notification-prompt-error {
+    background: #3a1f22;
+    color: #ffb3ad;
+}

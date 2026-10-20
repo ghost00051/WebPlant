@@ -5,13 +5,23 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const outputDirectory = resolve(root, 'dist')
+const outArg = process.argv.find(arg => arg.startsWith('--out='))
+const outputDirectory = resolve(root, outArg ? outArg.slice('--out='.length) : 'dist')
 const siteUrl = 'https://checktheplants.ru'
 const buildDate = new Date().toISOString().slice(0, 10)
-const HUB_LASTMOD = '2026-10-13'
-const PLANT_LASTMOD = '2026-10-13'
 const HOME_PATH = '/'
 const singleMode = process.argv.includes('--single')
+
+const PRIVATE_SKELETON_KIND = {
+  home: 'list',
+  'my-plants': 'list',
+  notifications: 'list',
+  login: 'form',
+  register: 'form',
+  'reset-password': 'form',
+  'add-plant': 'form',
+  'edit-profile': 'form'
+}
 
 const privateRoutes = {
   login: {
@@ -174,6 +184,74 @@ function buildSitemap(entries) {
   ].join('\n')
 }
 
+const SKELETON_CARD = [
+  '<div class="ctpSkeletonCard">',
+  '<span class="ctpSkeletonAvatar"></span>',
+  '<div class="ctpSkeletonStack">',
+  '<span class="ctpSkeletonLine ctpSkeletonLine--w70"></span>',
+  '<span class="ctpSkeletonLine ctpSkeletonLine--w45"></span>',
+  '</div>',
+  '</div>'
+].join('')
+
+function buildPrivateSkeleton(kind, route) {
+  const attr = `data-skeleton-route="${escapeHtml(route)}"`
+
+  if (kind === 'form') {
+    return [
+      `<div class="ctpSkeleton" ${attr} aria-hidden="true">`,
+      '<main class="ctpSkeletonAuth">',
+      '<div class="ctpSkeletonAuthCard">',
+      '<span class="ctpSkeletonLogo"></span>',
+      '<span class="ctpSkeletonTitle ctpSkeletonTitle--center"></span>',
+      '<p class="ctpSkeletonCaption">Загружаем раздел…</p>',
+      '<span class="ctpSkeletonField"></span>',
+      '<span class="ctpSkeletonField"></span>',
+      '<span class="ctpSkeletonButton"></span>',
+      '<span class="ctpSkeletonLine ctpSkeletonLine--w60"></span>',
+      '</div>',
+      '</main>',
+      '</div>'
+    ].join('')
+  }
+
+  return [
+    `<div class="ctpSkeleton" ${attr} aria-hidden="true">`,
+    '<header class="ctpSkeletonHeader">',
+    '<span class="ctpSkeletonBrand">',
+    '<span class="ctpSkeletonDot"></span>',
+    '<span class="ctpSkeletonLine ctpSkeletonLine--brand"></span>',
+    '</span>',
+    '<span class="ctpSkeletonPills">',
+    '<span class="ctpSkeletonPill"></span>',
+    '<span class="ctpSkeletonPill"></span>',
+    '</span>',
+    '</header>',
+    '<main class="ctpSkeletonBody">',
+    '<span class="ctpSkeletonTitle"></span>',
+    '<p class="ctpSkeletonCaption">Загружаем раздел…</p>',
+    `<div class="ctpSkeletonGrid">${SKELETON_CARD.repeat(3)}</div>`,
+    '</main>',
+    '</div>'
+  ].join('')
+}
+
+function minifyInlineCss(css) {
+  return css
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([{};])\s*/g, '$1')
+    .replace(/;\}/g, '}')
+    .trim()
+}
+
+function deferPrivatePageStyles(page) {
+  return page.replace(/<link rel="stylesheet"[^>]*>/g, tag => {
+    if (/\bmedia=/.test(tag)) return tag
+    return tag.replace(/>$/, ' media="print" onload="this.media=\'all\'">')
+  })
+}
+
 const vite = await createServer({
   configFile: resolve(root, 'vite.config.js'),
   root,
@@ -184,22 +262,14 @@ const vite = await createServer({
 
 try {
   const [
-    { default: LandingPage },
-    { default: PlantsIndexPage },
-    { default: PlantsDetailPage },
-    { default: CareIndexPage },
-    { default: CareDetailPage },
+    { AppContent },
     { MemoryRouter },
     siteMapModule,
     { PLANTS },
     { ARTICLES },
     seoMetaModule,
   ] = await Promise.all([
-    vite.ssrLoadModule('/src/component/landingPage/landingPage.jsx'),
-    vite.ssrLoadModule('/src/component/PlantsGuide/PlantsIndexPage.jsx'),
-    vite.ssrLoadModule('/src/component/PlantsGuide/PlantsDetailPage.jsx'),
-    vite.ssrLoadModule('/src/component/CareGuide/CareIndexPage.jsx'),
-    vite.ssrLoadModule('/src/component/CareGuide/CareDetailPage.jsx'),
+    vite.ssrLoadModule('/src/App.jsx'),
     import('react-router-dom'),
     vite.ssrLoadModule('/src/data/siteMap.js'),
     vite.ssrLoadModule('/src/data/plants.js'),
@@ -211,10 +281,18 @@ try {
   const { getPlantMeta, getArticleMeta } = seoMetaModule
 
   const template = await readFile(resolve(outputDirectory, 'index.html'), 'utf8')
+  const skeletonCss = await readFile(
+    resolve(root, 'src/styles/private-skeleton.css'),
+    'utf8'
+  )
 
-  function renderPage(element, path) {
+  function renderPage(path) {
     const markup = renderToString(
-      createElement(MemoryRouter, { initialEntries: [path] }, element)
+      createElement(
+        MemoryRouter,
+        { initialEntries: [path] },
+        createElement(AppContent)
+      )
     )
     return template.replace(
       '<div id="root"></div>',
@@ -225,7 +303,7 @@ try {
   const sitemapEntries = []
 
   {
-    const page = setPageMetadata(renderPage(createElement(LandingPage), HOME_PATH), {
+    const page = setPageMetadata(renderPage(HOME_PATH), {
       title: 'Лейка — календарь полива и уход за комнатными растениями',
       description:
         'Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».',
@@ -251,11 +329,11 @@ try {
       ])]
     })
     await writeFile(resolve(outputDirectory, 'index.html'), page)
-    sitemapEntries.push({ path: '/', lastmod: HUB_LASTMOD, changefreq: 'weekly', priority: '1.0' })
+    sitemapEntries.push({ path: '/', lastmod: buildDate, changefreq: 'weekly', priority: '1.0' })
   }
 
   {
-    const page = setPageMetadata(renderPage(createElement(PlantsIndexPage), PLANTS_PATH), {
+    const page = setPageMetadata(renderPage(PLANTS_PATH), {
       title: 'Комнатные растения: справочник по поливу и уходу — Лейка',
       description:
         'Частота полива, требования к свету и влажности, типичные проблемы популярных комнатных растений. Справочник «Лейки».',
@@ -279,7 +357,7 @@ try {
     await writeFile(resolve(outputDirectory, 'plants.html'), page)
     sitemapEntries.push({
       path: PLANTS_PATH,
-      lastmod: HUB_LASTMOD,
+      lastmod: buildDate,
       changefreq: 'monthly',
       priority: '0.9'
     })
@@ -304,7 +382,7 @@ try {
         headline: `${plant.name}: полив и уход`,
         description: meta.description,
         inLanguage: 'ru',
-        dateModified: plant.updated || PLANT_LASTMOD,
+        dateModified: plant.updated || buildDate,
         image: [plant.image ? `${siteUrl}${plant.image}` : `${siteUrl}/og-image.png`],
         mainEntityOfPage: `${siteUrl}${path}`,
         author: {
@@ -324,7 +402,7 @@ try {
     }
 
     const page = setPageMetadata(
-      renderPage(createElement(PlantsDetailPage, { slug: plant.slug }), path),
+      renderPage(path),
       {
         title: meta.title,
         description: meta.description,
@@ -336,14 +414,14 @@ try {
     await writeFile(resolve(outputDirectory, `plants-${plant.slug}.html`), page)
     sitemapEntries.push({
       path,
-      lastmod: plant.updated || PLANT_LASTMOD,
+      lastmod: plant.updated || buildDate,
       changefreq: 'monthly',
       priority: '0.8'
     })
   }
 
   {
-    const page = setPageMetadata(renderPage(createElement(CareIndexPage), CARE_PATH), {
+    const page = setPageMetadata(renderPage(CARE_PATH), {
       title: 'Уход за комнатными растениями: статьи и руководства — Лейка',
       description:
         'Как понять, пора ли поливать, что делать при переливе, как подготовить растения к отпуску и другие руководства по уходу.',
@@ -367,7 +445,7 @@ try {
     await writeFile(resolve(outputDirectory, 'care.html'), page)
     sitemapEntries.push({
       path: CARE_PATH,
-      lastmod: HUB_LASTMOD,
+      lastmod: buildDate,
       changefreq: 'weekly',
       priority: '0.9'
     })
@@ -415,7 +493,7 @@ try {
     }
 
     const page = setPageMetadata(
-      renderPage(createElement(CareDetailPage, { slug: article.slug }), path),
+      renderPage(path),
       {
         title: meta.title,
         description: meta.description,
@@ -429,12 +507,28 @@ try {
   }
 
   for (const [route, meta] of Object.entries(privateRoutes)) {
-    const page = setPageMetadata(template, {
-      title: meta.title,
-      description: meta.description,
-      canonical: `${siteUrl}/${route}`,
-      indexable: false
-    })
+    const skeleton = buildPrivateSkeleton(
+      PRIVATE_SKELETON_KIND[route] || 'list',
+      route
+    )
+    const inlineSkeletonCss = minifyInlineCss(skeletonCss)
+    const pageWithSkeleton = template
+      .replace(
+        '</head>',
+        `  <style id="app-private-skeleton">${inlineSkeletonCss}</style>\n</head>`
+      )
+      .replace(
+        '<div id="root"></div>',
+        `<div id="root" data-skeleton="true">${skeleton}</div>`
+      )
+    const page = deferPrivatePageStyles(
+      setPageMetadata(pageWithSkeleton, {
+        title: meta.title,
+        description: meta.description,
+        canonical: `${siteUrl}/${route}`,
+        indexable: false
+      })
+    )
     await writeFile(resolve(outputDirectory, `${route}.html`), page)
   }
 

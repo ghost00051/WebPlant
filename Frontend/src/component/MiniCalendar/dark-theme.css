@@ -4,6 +4,11 @@ html[data-theme='dark'] .mini-calendar {
     color: var(--theme-text);
 }
 
+html[data-theme='dark'] .mini-calendar__title,
+html[data-theme='dark'] .mini-calendar__title span {
+    color: var(--theme-text);
+}
+
 html[data-theme='dark'] .mini-calendar__day.is-today,
 html[data-theme='dark'] .mini-calendar__day.is-selected {
     background: var(--theme-accent-soft);
@@ -13,6 +18,12 @@ html[data-theme='dark'] .mini-calendar__day.is-selected {
 @media (min-width: 1024px) {
     html[data-theme='dark'] .mini-calendar__month-day {
         color: var(--theme-text);
+    }
+
+    html[data-theme='dark'] .mini-calendar__month-day.is-today {
+        background: #5C7463;
+        border-color: #5C7463;
+        color: #ffffff;
     }
 
     html[data-theme='dark'] .mini-calendar__month-day.is-outside {

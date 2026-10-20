@@ -21,17 +21,49 @@ import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import { API_URL } from '../../utils/api.js'
 import { syncUserTimeZone } from '../../utils/timeZone.js'
 import LogoMark from '../../assets/LogoMark.svg'
-import NotificationIcon from '../../assets/NotifBtn.svg'
-import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import NotificationsBell from './NotificationsBell.jsx'
+import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import './home.css'
 import './home.desktop.css'
 import './dark-theme.css'
+
+function AppHeader ({ user, onProfileClick }) {
+    const accountName = user.name || user.username || user.email
+
+    return (
+        <header className='desktopAppHeader'>
+            <div className='desktopBrand'>
+                <img src={LogoMark} alt='' />
+                <span>Лейка</span>
+            </div>
+            <div className='desktopAccount'>
+                <NotificationsBell className='desktopNotifications' />
+                <button
+                    type='button'
+                    className='desktopProfileButton'
+                    onClick={onProfileClick}
+                    aria-label={`Профиль: ${accountName}`}
+                >
+                    <span className='desktopAvatar'>
+                        {(accountName || '?').charAt(0).toUpperCase()}
+                    </span>
+                    <span className='desktopProfileText'>
+                        <strong>{accountName}</strong>
+                        <small>Садовод-любитель</small>
+                    </span>
+                </button>
+            </div>
+        </header>
+    )
+}
 
 function Home() {
     const navigate = useNavigate()
     const location = useLocation()
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [authError, setAuthError] = useState('')
+    const [authAttempt, setAuthAttempt] = useState(0)
     const [showPrompt, setShowPrompt] = useState(false)
     const requestedTab = location.state?.activeTab
     const [activeTab, setActiveTab] = useState(
@@ -44,6 +76,7 @@ function Home() {
         let promptTimer = null
 
         const checkAuth = async () => {
+            let userData
             try {
                 const res = await fetch(`${API_URL}/users/me`, {
                     method: 'GET',
@@ -61,23 +94,33 @@ function Home() {
                     throw new Error(`Ошибка проверки авторизации: HTTP ${res.status}`)
                 }
 
-                const userData = await res.json()
+                userData = await res.json()
+            } catch (error) {
+                console.error('❌ Ошибка проверки:', error)
                 if (cancelled) return
-                setUser(userData)
+                setUser(null)
+                setAuthError(
+                    'Сервер не ответил. Проверьте подключение и попробуйте ещё раз.'
+                )
+                setLoading(false)
+                return
+            }
 
-                void syncUserTimeZone(userData.timezone).then(timeZone => {
-                    if (cancelled) return
-                    if (timeZone && timeZone !== userData.timezone) {
-                        setUser(current => (current ? { ...current, timezone: timeZone } : current))
-                    }
-                })
+            if (cancelled) return
+            setUser(userData)
 
+            void syncUserTimeZone(userData.timezone).then(timeZone => {
+                if (cancelled) return
+                if (timeZone && timeZone !== userData.timezone) {
+                    setUser(current => (current ? { ...current, timezone: timeZone } : current))
+                }
+            })
+
+            try {
                 if (!isPushSupported()) {
                     setLoading(false)
                     return
                 }
-
-
 
                 if (window.Notification.permission === 'granted') {
                     const subscription = await getActivePushSubscription()
@@ -108,7 +151,7 @@ function Home() {
                 }, 2000)
                 setLoading(false)
             } catch (error) {
-                console.error('❌ Ошибка проверки:', error)
+                console.error('❌ Ошибка настройки уведомлений:', error)
                 if (!cancelled) setLoading(false)
             }
         }
@@ -119,7 +162,14 @@ function Home() {
             cancelled = true
             if (promptTimer) clearTimeout(promptTimer)
         }
-    }, [navigate])
+    }, [navigate, authAttempt])
+
+    const retryAuth = () => {
+        setAuthError('')
+        setShowPrompt(false)
+        setLoading(true)
+        setAuthAttempt(value => value + 1)
+    }
 
     useEffect(() => {
         document.documentElement.classList.add('app-shell')
@@ -132,7 +182,31 @@ function Home() {
         }
     }, [])
 
-    if (loading) return <div>Загрузка...</div>
+    if (loading) {
+        return (
+            <main className='homeLoading' aria-busy='true'>
+                <p role='status'>Загружаем раздел…</p>
+            </main>
+        )
+    }
+    if (authError) {
+        return (
+            <main className='homeAuthError'>
+                <div className='homeAuthErrorContent' role='alert'>
+                    <img className='homeAuthErrorLogo' src={LogoMark} alt='' />
+                    <h1 className='homeAuthErrorTitle'>Не удалось загрузить раздел</h1>
+                    <p className='homeAuthErrorText'>{authError}</p>
+                    <button
+                        type='button'
+                        className='homeAuthErrorRetry'
+                        onClick={retryAuth}
+                    >
+                        Повторить
+                    </button>
+                </div>
+            </main>
+        )
+    }
     if (!user) return null
 
     const renderScreen = () => {
@@ -156,88 +230,53 @@ function Home() {
 
     if (activeTab === 'chat') {
         return (
-            <>
-                <div className='godOfBlocksChat'>
-                    <header className="desktopAppHeader">
-                        <div className="desktopBrand">
-                            <img src={LogoMark} alt="" />
-                            <span>Лейка</span>
-                        </div>
-                        <div className="desktopAccount">
-                            <ThemedIcon className="desktopNotifications" src={NotificationIcon} alt="Уведомления" />
-                            <button
-                                type="button"
-                                className="desktopProfileButton"
-                                onClick={() => setActiveTab('profile')}
-                            >
-                                <span className="desktopAvatar">
-                                    {(user.name || user.username || user.email || '?').charAt(0).toUpperCase()}
-                                </span>
-                                <span className="desktopProfileText">
-                                    <strong>{user.name || user.username || user.email}</strong>
-                                    <small>Садовод-любитель</small>
-                                </span>
-                            </button>
-                        </div>
-                    </header>
-                    <HistoryChat
-                        sessions={chat.sessions}
-                        activeSessionId={chat.sessionId}
-                        isLoading={chat.isLoadingSessions}
-                        isOpen={chat.isHistoryOpen}
-                        onSelect={chat.selectSession}
-                        onNewChat={chat.startNewChat}
-                        onDelete={chat.deleteSession}
-                        onClose={chat.closeHistory}
-                    />
-                    <Chat
-                        sessionId={chat.sessionId}
-                        onOpenHistory={chat.openHistory}
-                        onNewChat={chat.startNewChat}
-                        onSessionsChanged={chat.refreshSessions}
-                    />
-                    <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
-                    <Tools onTabChange={handleTabChange} activeTab={activeTab} />
-                    {showPrompt && (
-                        <NotificationPrompt
-                            userId={user.id}
-                            onClose={() => setShowPrompt(false)}
+            <div className='godOfBlocksChat'>
+                <AppHeader user={user} onProfileClick={() => setActiveTab('profile')} />
+                <HistoryChat
+                    sessions={chat.sessions}
+                    activeSessionId={chat.sessionId}
+                    isLoading={chat.isLoadingSessions}
+                    isOpen={chat.isHistoryOpen}
+                    onSelect={chat.selectSession}
+                    onNewChat={chat.startNewChat}
+                    onDelete={chat.deleteSession}
+                    onClose={chat.closeHistory}
+                />
+                <main className='chatMain'>
+                    <div
+                        className='chatTabPanel'
+                        role='tabpanel'
+                        id={TAB_PANEL_ID('chat')}
+                        aria-labelledby={TAB_ELEMENT_ID('chat')}
+                    >
+                        <Chat
+                            sessionId={chat.sessionId}
+                            onOpenHistory={chat.openHistory}
+                            onNewChat={chat.startNewChat}
+                            onSessionsChanged={chat.refreshSessions}
                         />
-                    )}
-                </div>
-            </>
+                    </div>
+                </main>
+                <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
+                <Tools onTabChange={handleTabChange} activeTab={activeTab} />
+                {showPrompt && (
+                    <NotificationPrompt
+                        userId={user.id}
+                        onClose={() => setShowPrompt(false)}
+                    />
+                )}
+            </div>
         )
     }
     return (
         <div className="gofOfMain">
-            <header className="desktopAppHeader">
-                <div className="desktopBrand">
-                    <img src={LogoMark} alt="" />
-                    <span>Лейка</span>
-                </div>
-                <div className="desktopAccount">
-                    <ThemedIcon className="desktopNotifications" src={NotificationIcon} alt="Уведомления" />
-                    <button
-                        type="button"
-                        className="desktopProfileButton"
-                        onClick={() => setActiveTab('profile')}
-                    >
-                        <span className="desktopAvatar">
-                            {(user.name || user.username || user.email || '?').charAt(0).toUpperCase()}
-                        </span>
-                        <span className="desktopProfileText">
-                            <strong>{user.name || user.username || user.email}</strong>
-                            <small>Садовод-любитель</small>
-                        </span>
-                    </button>
-                </div>
-            </header>
+            <AppHeader user={user} onProfileClick={() => setActiveTab('profile')} />
             <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
             {activeTab === 'home' && <AiTicker />}
-            <div key={activeTab} className="screenTransition">
+            <main key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}
-            </div>
+            </main>
             <Tools onTabChange={handleTabChange} activeTab={activeTab} />
             {showPrompt && (
                 <NotificationPrompt

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackBtn from '../../assets/BackBtn.svg'
 import notificationWater from '../../assets/notification-water.svg'
@@ -30,6 +30,9 @@ const FILTER_TABS = [
   { id: 'care', label: 'Уход' },
   { id: 'advice', label: 'Советы' }
 ]
+
+const FILTER_TAB_ID = filterId => `notificationsFilter-${filterId}`
+const FILTER_PANEL_ID = 'notificationsPanel'
 
 const CATEGORIES = {
   watering: { icon: notificationWater, label: 'Полить' },
@@ -142,6 +145,37 @@ function Notifications () {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushError, setPushError] = useState('')
   const [pushSuccess, setPushSuccess] = useState('')
+  const filterRefs = useRef(new Map())
+
+  const setFilterRef = tabId => node => {
+    if (node) {
+      filterRefs.current.set(tabId, node)
+    } else {
+      filterRefs.current.delete(tabId)
+    }
+  }
+
+  const handleFilterKeyDown = (event, index) => {
+    let nextIndex = null
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = index + 1
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = index - 1
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = FILTER_TABS.length - 1
+    }
+
+    if (nextIndex === null) return
+
+    event.preventDefault()
+    const nextTab =
+      FILTER_TABS[(nextIndex + FILTER_TABS.length) % FILTER_TABS.length]
+    filterRefs.current.get(nextTab.id)?.focus()
+    setFilter(nextTab.id)
+  }
 
   const loadPage = useCallback(async offset => {
     const response = await fetchWithTimeout(
@@ -501,95 +535,112 @@ function Notifications () {
       )}
 
       <div className='notificationsFilters' role='tablist' aria-label='Фильтр уведомлений'>
-        {FILTER_TABS.map(tab => (
+        {FILTER_TABS.map((tab, index) => (
           <button
             key={tab.id}
+            ref={setFilterRef(tab.id)}
             type='button'
             role='tab'
+            id={FILTER_TAB_ID(tab.id)}
             aria-selected={filter === tab.id}
+            aria-controls={FILTER_PANEL_ID}
+            tabIndex={filter === tab.id ? 0 : -1}
             className={filter === tab.id ? 'is-active' : ''}
             onClick={() => setFilter(tab.id)}
+            onKeyDown={event => handleFilterKeyDown(event, index)}
           >
             {tab.label}
           </button>
         ))}
       </div>
 
-      {error && (
-        <div className='notificationsError' role='alert'>
-          <p>{error}</p>
-          <button type='button' onClick={loadInitial}>Повторить</button>
-        </div>
-      )}
+      <div
+        className='notificationsPanel'
+        id={FILTER_PANEL_ID}
+        role='tabpanel'
+        aria-labelledby={FILTER_TAB_ID(filter)}
+      >
+        {error && (
+          <div className='notificationsError' role='alert'>
+            <p>{error}</p>
+            <button type='button' onClick={loadInitial}>Повторить</button>
+          </div>
+        )}
 
-      {isLoading ? (
-        <p className='notificationsStatus' role='status'>Загружаем уведомления…</p>
-      ) : groups.length === 0 && !error ? (
-        <div className='notificationsEmpty'>
-          <p>{EMPTY_TEXTS[filter]}</p>
-        </div>
-      ) : (
-        groups.map(group => (
-          <section key={group.id} className='notificationsGroup'>
-            <div className='notificationsGroupHeader'>
-              <h2>{group.title}</h2>
-              {group.meta && <span>{group.meta}</span>}
-            </div>
-            <ul className='notificationsList'>
-              {group.items.map(item => {
-                const category = categoryFor(item)
-                const meta = CATEGORIES[category]
-                const actionLabel = actionLabelFor(item, category)
+        {isLoading ? (
+          <p className='notificationsStatus' role='status'>Загружаем уведомления…</p>
+        ) : groups.length === 0 && !error ? (
+          <div className='notificationsEmpty'>
+            <p>{EMPTY_TEXTS[filter]}</p>
+          </div>
+        ) : (
+          groups.map(group => (
+            <section key={group.id} className='notificationsGroup'>
+              <div className='notificationsGroupHeader'>
+                <h2>{group.title}</h2>
+                {group.meta && <span>{group.meta}</span>}
+              </div>
+              <ul className='notificationsList'>
+                {group.items.map(item => {
+                  const category = categoryFor(item)
+                  const meta = CATEGORIES[category]
+                  const actionLabel = actionLabelFor(item, category)
 
-                return (
-                  <li
-                    key={item.id}
-                    className={`notificationsCard${item.read_at ? '' : ' is-unread'}`}
-                  >
-                    <button
-                      type='button'
-                      className='notificationsCardButton'
-                      onClick={() => openNotification(item)}
+                  return (
+                    <li
+                      key={item.id}
+                      className={`notificationsCard${item.read_at ? '' : ' is-unread'}`}
                     >
-                      <span className={`notificationsIcon notificationsIcon--${category}`}>
-                        <img src={meta.icon} alt='' />
-                      </span>
-                      <span className='notificationsCardBody'>
-                        <span className='notificationsCardTop'>
-                          <span className='notificationsCardTitle'>{item.title}</span>
-                          {!item.read_at && (
-                            <span className='notificationsUnread' aria-hidden='true' />
-                          )}
+                      <button
+                        type='button'
+                        className='notificationsCardButton'
+                        onClick={() => openNotification(item)}
+                      >
+                        <span className={`notificationsIcon notificationsIcon--${category}`}>
+                          <img src={meta.icon} alt='' />
                         </span>
-                        <span className='notificationsCardText'>{item.body}</span>
-                        <span className='notificationsCardFooter'>
-                          <span className='notificationsTime'>
-                            {formatCardTime(item.created_at)}
+                        <span className='notificationsCardBody'>
+                          <span className='notificationsCardTop'>
+                            <span className='notificationsCardTitle'>{item.title}</span>
+                            {!item.read_at && (
+                              <span className='notificationsUnreadLabel'>
+                                Новое
+                                <span className='notificationsVisuallyHidden'>
+                                  {' '}(не прочитано)
+                                </span>
+                              </span>
+                            )}
                           </span>
-                          <span className={`notificationsAction notificationsAction--${category}`}>
-                            {actionLabel}
+                          <span className='notificationsCardText'>{item.body}</span>
+                          <span className='notificationsCardFooter'>
+                            <span className='notificationsTime'>
+                              {formatCardTime(item.created_at)}
+                            </span>
+                            <span className={`notificationsAction notificationsAction--${category}`}>
+                              {actionLabel}
+                            </span>
                           </span>
                         </span>
-                      </span>
-                    </button>
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        ))
-      )}
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          ))
+        )}
 
-      {nextOffset !== null && !isLoading && (
-        <button
-          type='button'
-          className='notificationsMore'
-          onClick={loadMore}
-          disabled={isLoadingMore}
-        >
-          {isLoadingMore ? 'Загружаем…' : 'Показать более ранние'}
-        </button>
-      )}
+        {nextOffset !== null && !isLoading && (
+          <button
+            type='button'
+            className='notificationsMore'
+            onClick={loadMore}
+            disabled={isLoadingMore}
+          >
+            {isLoadingMore ? 'Загружаем…' : 'Показать более ранние'}
+          </button>
+        )}
+      </div>
 
       <nav className='notificationsBottomNav' aria-label='Основная навигация'>
         {TABS.map(tab => (

@@ -86,3 +86,18 @@ html[data-theme='dark'] .formForPlant .wateringRecommendation .wateringRecommend
     color: var(--theme-muted);
 }
 
+html[data-theme='dark'] .formForPlant .draftRestoreNotice {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .fieldError,
+html[data-theme='dark'] .formForPlant .addPlantError {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .formForPlant .addNamePlant input[aria-invalid='true'] {
+    outline-color: var(--theme-danger);
+}
+

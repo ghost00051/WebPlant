@@ -13,6 +13,8 @@ import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { DEFAULT_TIME_ZONE } from '../../utils/timeZone.js'
+import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import {
   buildDayView,
   dayOfMonth,
@@ -42,6 +44,89 @@ function plantWordForm (count) {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
     return 'растения'
   return 'растений'
+}
+
+function plural (count, forms) {
+  const value = Math.abs(Number(count))
+  if (!Number.isFinite(value)) return forms[2]
+  const mod10 = value % 10
+  const mod100 = value % 100
+  if (mod10 === 1 && mod100 !== 11) return forms[0]
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1]
+  return forms[2]
+}
+
+const DAY_WORD_FORMS = ['день', 'дня', 'дней']
+
+function pluralizeDays (count) {
+  return plural(count, DAY_WORD_FORMS)
+}
+
+function wateringEveryLabel (intervalDays) {
+  const value = Number(intervalDays)
+  if (!Number.isInteger(value) || value < 1) return '—'
+  if (value === 1) return 'Каждый день'
+  return `Каждые ${value} ${pluralizeDays(value)}`
+}
+
+function wateringIntervalLabel (intervalDays) {
+  const value = Number(intervalDays)
+  if (!Number.isInteger(value) || value < 1) return '—'
+  if (value === 1) return 'Раз в день'
+  return `Раз в ${value} ${pluralizeDays(value)}`
+}
+
+function getZonedDateParts (date, timeZone) {
+  const safeDate = date instanceof Date && Number.isFinite(date.getTime()) ? date : new Date()
+  const preferredTimeZone = timeZone || DEFAULT_TIME_ZONE
+
+  const readParts = tz => {
+    try {
+      const parts = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: tz,
+        hour: '2-digit',
+        hourCycle: 'h23',
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long'
+      }).formatToParts(safeDate)
+      const values = {}
+      for (const part of parts) {
+        if (part.type !== 'literal') values[part.type] = part.value
+      }
+      const hours = Number(values.hour)
+      if (!Number.isFinite(hours)) return null
+      return {
+        hours: hours % 24,
+        day: values.day || String(safeDate.getDate()),
+        month: values.month || '',
+        weekday: values.weekday || ''
+      }
+    } catch {
+      return null
+    }
+  }
+
+  const zoned =
+    readParts(preferredTimeZone) ||
+    (preferredTimeZone !== DEFAULT_TIME_ZONE ? readParts(DEFAULT_TIME_ZONE) : null)
+  if (zoned) return zoned
+
+  console.warn('Не удалось определить дату в часовом поясе профиля, используется локальное время')
+  return {
+    hours: safeDate.getHours(),
+    day: String(safeDate.getDate()),
+    month: '',
+    weekday: ''
+  }
+}
+
+function getGreeting (hours) {
+  if (!Number.isFinite(hours)) return 'Добрый день!'
+  if (hours < 5) return 'Доброй ночи!'
+  if (hours < 12) return 'Доброе утро!'
+  if (hours < 18) return 'Добрый день!'
+  return 'Добрый вечер!'
 }
 
 function badgeValue (count) {
@@ -438,16 +523,10 @@ function HomePage ({ user, onTabChange }) {
   }
 
   const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
-  const hours = now.getHours()
-  const greeting =
-    hours >= 5 && hours < 12
-      ? 'Доброе утро!'
-      : hours >= 12 && hours < 18
-      ? 'Добрый день!'
-      : 'Добрый вечер!'
-  const dateLabel = `${capitalize(weekdayName(now))}, ${dayOfMonth(
-    now
-  )} ${monthGenitive(now)}`
+  const timeZone = user?.timezone || DEFAULT_TIME_ZONE
+  const zonedNow = useMemo(() => getZonedDateParts(now, timeZone), [now, timeZone])
+  const greeting = getGreeting(zonedNow.hours)
+  const todayLabel = `Сегодня, ${zonedNow.day} ${zonedNow.month}`.trim()
   const displayName = user?.name || user?.username || 'садовод'
 
   const allPlantsMap = useMemo(() => {
@@ -613,12 +692,17 @@ function HomePage ({ user, onTabChange }) {
   }
 
   return (
-    <div className='homePageDashboard'>
+    <div
+      className='homePageDashboard'
+      role='tabpanel'
+      id={TAB_PANEL_ID('home')}
+      aria-labelledby={TAB_ELEMENT_ID('home')}
+    >
       <div className='headerOfHOmePagw'>
         <div className='nameHeaderOfHomePage'>
           <img src={LogoMark} alt='' />
           <p>{greeting}</p>
-          <p>Мои растения</p>
+          <h1 className='homePageMobileTitle'>Мои растения</h1>
         </div>
         <div
           className='notificationsButtonWrap'
@@ -640,13 +724,13 @@ function HomePage ({ user, onTabChange }) {
         <div>
           <h1>Мои растения</h1>
           <p>
-            {greeting.replace('!', '')}, {displayName} · {dateLabel}
+            {greeting.replace('!', '')}, {displayName}
           </p>
         </div>
         <div className='desktopHeaderActions'>
           <span className='desktopDateBadge'>
             <img src={CalendarIcon} alt='' />
-            Сегодня, {dayOfMonth(now)} {monthGenitive(now)}
+            {todayLabel}
           </span>
           <button
             type='button'
@@ -736,10 +820,7 @@ function HomePage ({ user, onTabChange }) {
                         <div className='plant-details'>
                           <span>{item.species}</span>
                           <span className='separator'>·</span>
-                          <span>
-                            Каждые {fullInfo?.watering_interval_days ?? '—'}{' '}
-                            дней
-                          </span>
+                          <span>{wateringEveryLabel(fullInfo?.watering_interval_days)}</span>
                         </div>
                         <div className='watering-badge'>
                           <img src={droplets} alt='' />
@@ -822,7 +903,7 @@ function HomePage ({ user, onTabChange }) {
                               </div>
                               <span className='spanOfBlockchildOfmenuOfSoffSchedule'></span>
                               <div>
-                                <p>Раз в {view.watering_interval_days} дней</p>
+                                <p>{wateringIntervalLabel(view.watering_interval_days)}</p>
                               </div>
                             </div>
                           </div>

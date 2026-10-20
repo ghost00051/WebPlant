@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint, unit, build, verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Установка зависимостей (npm ci)
+        run: npm ci
+
+      - name: Линтер (eslint, 0 ошибок)
+        run: npm run lint
+
+      - name: Unit-тесты (node --test)
+        run: npm test
+
+      - name: Сборка (Vite + prerender + build-manifest)
+        run: npm run build
+
+      - name: Проверки сборки, роутинга, CSP и манифеста
+        run: npm run verify
+
+      - name: Манифест сборки (версия/коммит)
+        run: |
+          cat dist/build-info.json
+          node -e "const m=require('./dist/build-info.json'); if(!m.version||!m.commit||!m.builtAt||!m.routes) process.exit(1)"
+
+      - name: Артефакт build-info.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-info
+          path: Frontend/dist/build-info.json
+          retention-days: 14
+
+  backend:
+    name: Backend (unit-тесты)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Установка зависимостей (npm ci)
+        run: npm ci
+
+      - name: Unit-тесты (node --test)
+        run: npm test
+
+  a11y-smoke:
+    name: A11y/E2E smoke (опционально, аудит-харнесс)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ hashFiles('state/frontend-audit/tools/audit.mjs') != '' }}
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Google Chrome
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Установка зависимостей (npm ci)
+        run: npm ci
+
+      - name: Сборка dist для smoke-прогонов
+        run: npm run build
+
+      - name: axe-smoke: /, /login, /home
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          node ../state/frontend-audit/tools/audit.mjs axe / --mock=guest --w=1440
+          node ../state/frontend-audit/tools/audit.mjs axe /login --mock=guest --w=1440
+          node ../state/frontend-audit/tools/audit.mjs axe /home --mock=user --w=1440
+
+      - name: E2E (логин, полив, добавление растения, CSP)
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          WEBPLANT_E2E_REQUIRED: '1'
+        run: npm run test:e2e
+
+      - name: Admin smoke (если Frontend/admin в чекауте)
+        if: ${{ hashFiles('Frontend/admin/index.html') != '' }}
+        run: npm run verify:admin

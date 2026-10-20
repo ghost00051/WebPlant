@@ -33,6 +33,250 @@ export function buildServiceWorkerUrl() {
     return `/sw.js?api=${encodeURIComponent(API_URL)}`
 }
 
+
+const SW_UPDATE_BANNER_ID = 'webplantSwUpdateBanner'
+const SW_UPDATE_DISMISSED_KEY = 'sw_update_dismissed_version'
+const SW_UPDATE_CHECK_INTERVAL_MS = 30 * 60 * 1000
+const SW_UPDATE_RELOAD_FALLBACK_MS = 8000
+
+let swUpdateReloadRequested = false
+let swUpdateReloading = false
+let swUpdateCheckTimer = null
+let swUpdateControllerBound = false
+let swUpdateVisibilityBound = false
+let swUpdateDismissedInSession = false
+
+function readDismissedSwUpdate() {
+    try {
+        return window.sessionStorage.getItem(SW_UPDATE_DISMISSED_KEY) || ''
+    } catch {
+        return ''
+    }
+}
+
+function rememberDismissedSwUpdate() {
+    swUpdateDismissedInSession = true
+    try {
+        window.sessionStorage.setItem(SW_UPDATE_DISMISSED_KEY, '1')
+    } catch (error) {
+        console.warn('Не удалось сохранить отказ от обновления:', error)
+    }
+}
+
+function injectSwUpdateStyles() {
+    const styleId = `${SW_UPDATE_BANNER_ID}Styles`
+    if (document.getElementById(styleId)) return
+
+    const style = document.createElement('style')
+    style.id = styleId
+    style.textContent = `
+#${SW_UPDATE_BANNER_ID} {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
+    z-index: 900;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 14px;
+    box-sizing: border-box;
+    width: min(380px, calc(100% - 32px));
+    padding: 12px 14px;
+    border: 1px solid #E3E9E3;
+    border-radius: 14px;
+    background: #FFFFFF;
+    box-shadow: 0 10px 30px rgba(45, 55, 47, 0.18);
+    color: #2D2D2D;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.4;
+}
+#${SW_UPDATE_BANNER_ID} [data-sw-update-text] { flex: 1 1 160px; min-width: 0; }
+#${SW_UPDATE_BANNER_ID} [data-sw-update-title] { margin: 0; font-weight: 650; }
+#${SW_UPDATE_BANNER_ID} [data-sw-update-note] { margin: 2px 0 0; color: #656862; font-size: 12px; }
+#${SW_UPDATE_BANNER_ID} [data-sw-update-actions] { display: flex; gap: 8px; margin-left: auto; }
+#${SW_UPDATE_BANNER_ID} button { min-height: 36px; padding: 6px 12px; border-radius: 10px; font-family: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+#${SW_UPDATE_BANNER_ID} button:focus-visible { outline: 2px solid #526A59; outline-offset: 2px; }
+#${SW_UPDATE_BANNER_ID} [data-sw-update-confirm] { border: 1px solid #526A59; background: #526A59; color: #FFFFFF; }
+#${SW_UPDATE_BANNER_ID} [data-sw-update-later] { border: 1px solid #E3E9E3; background: #FFFFFF; color: #526A59; }
+#${SW_UPDATE_BANNER_ID} button:disabled { opacity: 0.65; cursor: wait; }
+@media (max-width: 480px) {
+    #${SW_UPDATE_BANNER_ID} { left: 10px; right: 10px; width: auto; }
+    #${SW_UPDATE_BANNER_ID} [data-sw-update-actions] { width: 100%; margin-left: 0; }
+    #${SW_UPDATE_BANNER_ID} button { flex: 1 1 0; }
+}
+`
+    document.head.appendChild(style)
+}
+
+function positionSwUpdateBanner(banner) {
+    let bottom = 16
+    try {
+        const cookieBanner = document.querySelector('.cookieConsentBanner')
+        const rect = cookieBanner?.getBoundingClientRect?.()
+        if (rect && rect.height > 0 && rect.top < window.innerHeight) {
+            bottom = Math.max(16, Math.round(window.innerHeight - rect.top + 12))
+        }
+    } catch {
+        bottom = 16
+    }
+    banner.style.bottom = `${bottom}px`
+}
+
+function showSwUpdateBanner(waitingWorker) {
+    if (!waitingWorker || typeof waitingWorker.postMessage !== 'function') return
+    if (!document.body) return
+    if (swUpdateDismissedInSession) return
+    if (readDismissedSwUpdate()) return
+    if (document.getElementById(SW_UPDATE_BANNER_ID)) return
+
+    injectSwUpdateStyles()
+
+    const banner = document.createElement('div')
+    banner.id = SW_UPDATE_BANNER_ID
+    banner.setAttribute('role', 'status')
+    banner.setAttribute('aria-live', 'polite')
+
+    const text = document.createElement('div')
+    text.dataset.swUpdateText = ''
+
+    const title = document.createElement('p')
+    title.dataset.swUpdateTitle = ''
+    title.textContent = 'Доступна новая версия'
+
+    const note = document.createElement('p')
+    note.dataset.swUpdateNote = ''
+    note.textContent = 'Обновите страницу, чтобы получить исправления.'
+
+    text.append(title, note)
+
+    const actions = document.createElement('div')
+    actions.dataset.swUpdateActions = ''
+
+    const confirm = document.createElement('button')
+    confirm.type = 'button'
+    confirm.dataset.swUpdateConfirm = ''
+    confirm.textContent = 'Обновить'
+
+    const later = document.createElement('button')
+    later.type = 'button'
+    later.dataset.swUpdateLater = ''
+    later.textContent = 'Позже'
+    later.setAttribute('aria-label', 'Скрыть уведомление об обновлении')
+
+    actions.append(confirm, later)
+    banner.append(text, actions)
+
+    let fallbackTimer = null
+
+    const removeBanner = () => {
+        if (fallbackTimer) window.clearTimeout(fallbackTimer)
+        window.removeEventListener('resize', position)
+        banner.remove()
+    }
+
+    const position = () => positionSwUpdateBanner(banner)
+
+    confirm.addEventListener('click', () => {
+        if (swUpdateReloadRequested) return
+        swUpdateReloadRequested = true
+        confirm.disabled = true
+        later.disabled = true
+        confirm.textContent = 'Обновляем…'
+
+        try {
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' })
+        } catch (error) {
+            console.warn('Не удалось отправить SKIP_WAITING воркеру:', error)
+        }
+
+        fallbackTimer = window.setTimeout(() => {
+            if (swUpdateReloading) return
+            swUpdateReloadRequested = false
+            confirm.disabled = false
+            later.disabled = false
+            confirm.textContent = 'Обновить'
+            note.textContent = 'Не удалось обновить автоматически — обновите страницу вручную.'
+        }, SW_UPDATE_RELOAD_FALLBACK_MS)
+    })
+
+    later.addEventListener('click', () => {
+        rememberDismissedSwUpdate()
+        removeBanner()
+    })
+
+    document.body.appendChild(banner)
+    position()
+    window.addEventListener('resize', position, { passive: true })
+}
+
+function handleSwControllerChange() {
+    if (!swUpdateReloadRequested || swUpdateReloading) return
+    swUpdateReloading = true
+    try {
+        window.location.reload()
+    } catch (error) {
+        swUpdateReloading = false
+        console.warn('Не удалось перезагрузить страницу после обновления:', error)
+    }
+}
+
+export function setupServiceWorkerUpdates(registration) {
+    if (typeof window === 'undefined' || !registration) return
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker) return
+
+    const hadController = Boolean(navigator.serviceWorker.controller)
+
+    if (!swUpdateControllerBound) {
+        swUpdateControllerBound = true
+        try {
+            navigator.serviceWorker.addEventListener('controllerchange', handleSwControllerChange)
+        } catch (error) {
+            console.warn('Не удалось подписаться на controllerchange:', error)
+        }
+    }
+
+    const trackWorker = worker => {
+        if (!worker) return
+
+        const onStateChange = () => {
+            if (worker.state !== 'installed') return
+            if (!hadController && !navigator.serviceWorker.controller) return
+            showSwUpdateBanner(worker)
+        }
+
+        if (worker.state === 'installed') onStateChange()
+        else worker.addEventListener('statechange', onStateChange)
+    }
+
+    try {
+        registration.addEventListener('updatefound', () => trackWorker(registration.installing))
+    } catch (error) {
+        console.warn('Не удалось подписаться на updatefound:', error)
+    }
+
+    trackWorker(registration.installing)
+    if (registration.waiting && hadController) showSwUpdateBanner(registration.waiting)
+
+    const checkForUpdate = () => {
+        if (!registration.active) return
+        registration.update().catch(error => {
+            console.warn('Не удалось проверить обновление Service Worker:', error)
+        })
+    }
+
+    if (!swUpdateCheckTimer) {
+        swUpdateCheckTimer = window.setInterval(checkForUpdate, SW_UPDATE_CHECK_INTERVAL_MS)
+    }
+
+    if (!swUpdateVisibilityBound) {
+        swUpdateVisibilityBound = true
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') checkForUpdate()
+        })
+    }
+}
+
 export async function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) {
         throw new Error('Service Worker не поддерживается')
@@ -42,7 +286,13 @@ export async function registerServiceWorker() {
         scope: '/'
     })
 
-    console.log('✅ Service Worker зарегистрирован:', registration.scope)
+
+    try {
+        setupServiceWorkerUpdates(registration)
+    } catch (error) {
+        console.warn('Не удалось включить проверку обновлений Service Worker:', error)
+    }
+
     return registration
 }
 
@@ -94,7 +344,6 @@ export async function requestPermission() {
     if (Notification.permission === 'denied') return false
 
     const permission = await Notification.requestPermission()
-    console.log('🔔 Разрешение:', permission)
     return permission === 'granted'
 }
 

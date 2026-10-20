@@ -1,17 +1,38 @@
 .pwaInstallHint {
+    position: fixed;
+    z-index: 700;
+    right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: max(16px, env(safe-area-inset-bottom, 0px));
     display: flex;
     align-items: flex-start;
     gap: 12px;
     box-sizing: border-box;
-    width: 100%;
-    max-width: 520px;
-    padding: 14px 44px 14px 14px;
-    position: relative;
+    width: min(360px, calc(100% - 32px));
+    max-width: 360px;
+    padding: 14px 48px 14px 14px;
     border: 1px solid #E3E9E3;
     border-radius: 16px;
     background: #F2F6F1;
+    box-shadow: 0 10px 32px rgba(45, 55, 47, 0.16);
     color: #2D2D2D;
     font-family: 'Inter', sans-serif;
+    animation: pwaHintIn 0.24s ease;
+}
+
+.gofOfMain .pwaInstallHint {
+    bottom: calc(92px + env(safe-area-inset-bottom, 0px));
+}
+
+@keyframes pwaHintIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .pwaInstallHintIcon {
@@ -47,15 +68,21 @@
 }
 
 .pwaInstallHintAction {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 44px;
+    min-width: 44px;
     margin-top: 8px;
-    padding: 0;
+    padding: 8px 14px;
     border: 0;
-    background: none;
-    color: #526A59;
+    border-radius: 10px;
+    background: #DFE9E0;
+    color: #3C5344;
     font-family: inherit;
     font-size: var(--font-size-sm);
     font-weight: 700;
-    text-align: left;
+    text-align: center;
     cursor: pointer;
 }
 
@@ -72,11 +99,11 @@
 
 .pwaInstallHintDismiss {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 2px;
+    right: 2px;
     display: grid;
-    width: 30px;
-    height: 30px;
+    width: 44px;
+    height: 44px;
     place-items: center;
     padding: 0;
     border: 0;
@@ -91,13 +118,22 @@
 
 @media (max-width: 480px) {
     .pwaInstallHint {
+        left: 10px;
+        right: 10px;
+        width: auto;
+        max-width: none;
         gap: 10px;
-        padding: 12px 40px 12px 12px;
+        padding: 12px 44px 12px 12px;
+    }
+
+    .gofOfMain .pwaInstallHint {
+        bottom: calc(88px + env(safe-area-inset-bottom, 0px));
     }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .pwaInstallHint {
+        animation: none;
         scroll-behavior: auto;
     }
 }

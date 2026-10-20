@@ -84,7 +84,6 @@ export function useChatSessions(userId, enabled = true) {
   }, [userId])
 
   const openHistory = useCallback(() => {
-    document.activeElement?.blur?.()
     setIsHistoryOpen(true)
   }, [])
 

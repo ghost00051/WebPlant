@@ -1,8 +1,25 @@
+import { useEffect, useRef, useState } from 'react'
 import NewChatBtn from '../../assets/NewChatBtn.svg'
 import ChevronLeft from '../../assets/chevron-left.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { dayOfMonth, monthGenitive } from '../../utils/date.js'
 import './historyChat.css'
+
+const FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])'
+].join(',')
+
+function getFocusableElements(container) {
+  if (!container) return []
+  return [...container.querySelectorAll(FOCUSABLE_SELECTOR)].filter(
+    element => element.getClientRects().length > 0 && !element.hasAttribute('inert')
+  )
+}
 
 function isSameLocalDay(left, right) {
   return left.getFullYear() === right.getFullYear() &&
@@ -51,6 +68,69 @@ function HistoryChat({
   onDelete,
   onClose
 }) {
+  const drawerRef = useRef(null)
+  const previousFocusRef = useRef(null)
+  const [isDrawerMode, setIsDrawerMode] = useState(false)
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return undefined
+    }
+    const query = window.matchMedia('(max-width: 1023px)')
+    const update = () => setIsDrawerMode(query.matches)
+    update()
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', update)
+      return () => query.removeEventListener('change', update)
+    }
+    query.addListener(update)
+    return () => query.removeListener(update)
+  }, [])
+
+  const drawerOpen = isDrawerMode && isOpen
+
+  useEffect(() => {
+    if (!drawerOpen) {
+      const previous = previousFocusRef.current
+      previousFocusRef.current = null
+      if (previous && typeof previous.focus === 'function' && document.contains(previous)) {
+        previous.focus()
+      }
+      return
+    }
+
+    previousFocusRef.current = document.activeElement
+    const drawer = drawerRef.current
+    const [first] = getFocusableElements(drawer)
+    if (first) {
+      first.focus()
+    } else {
+      drawer?.focus?.()
+    }
+  }, [drawerOpen])
+
+  const handleKeyDown = event => {
+    if (event.key === 'Escape') {
+      event.stopPropagation()
+      onClose?.()
+      return
+    }
+    if (event.key !== 'Tab' || !drawerOpen) return
+
+    const focusable = getFocusableElements(drawerRef.current)
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault()
+      last.focus()
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault()
+      first.focus()
+    }
+  }
+
   return (
     <>
       {isOpen && (
@@ -62,11 +142,15 @@ function HistoryChat({
         />
       )}
       <aside
+        ref={drawerRef}
         className={`HistoryChat${isOpen ? ' is-open' : ''}`}
-        aria-label='История чатов'
-        onKeyDown={event => {
-          if (event.key === 'Escape') onClose?.()
-        }}
+        role={drawerOpen ? 'dialog' : undefined}
+        aria-modal={drawerOpen ? 'true' : undefined}
+        aria-labelledby={drawerOpen ? 'historyChatTitle' : undefined}
+        aria-label={drawerOpen ? undefined : 'История чатов'}
+        aria-hidden={isDrawerMode && !isOpen ? 'true' : undefined}
+        inert={isDrawerMode && !isOpen ? '' : undefined}
+        onKeyDown={handleKeyDown}
       >
         <div className='historyChatHeader'>
           <div className='historyChatHeaderLeft'>
@@ -79,7 +163,7 @@ function HistoryChat({
             >
               <ThemedIcon src={ChevronLeft} alt='' />
             </button>
-            <p className='historyChatTitle'>История чата</p>
+            <p className='historyChatTitle' id='historyChatTitle'>История чата</p>
           </div>
           <button
             type='button'

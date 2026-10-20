@@ -19,6 +19,13 @@
     margin-top: 2%;
 }
 
+.addPlantPageTitle {
+    margin: 0;
+    font: inherit;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
 .addPlantPageHeader button {
     display: grid;
     width: 40px;

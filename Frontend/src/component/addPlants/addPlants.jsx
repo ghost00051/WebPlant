@@ -16,12 +16,55 @@ import {
 } from '../../utils/date.js'
 
 const MAX_PHOTOS = 2
+const DRAFT_STORAGE_KEY = 'webplant-add-plant-draft'
+const DRAFT_TTL_MS = 12 * 60 * 60 * 1000
 
-/**
- * У обращений к ИИ нет смысла ждать бесконечно: на бэкенде стоит сквозной дедлайн
- * (AI_ADVICE_DEADLINE_MS, по умолчанию 30 с), поэтому фронт обрывает запрос чуть позже
- * и показывает понятную ошибку вместо вечного спиннера.
- */
+function getSessionStorage() {
+    try {
+        return typeof window === 'undefined' ? null : window.sessionStorage
+    } catch {
+        return null
+    }
+}
+
+function readDraft() {
+    const storage = getSessionStorage()
+    if (!storage) return null
+    try {
+        const raw = storage.getItem(DRAFT_STORAGE_KEY)
+        if (!raw) return null
+        const draft = JSON.parse(raw)
+        if (!draft || typeof draft !== 'object') return null
+        if (Number.isFinite(draft.savedAt) && Date.now() - draft.savedAt > DRAFT_TTL_MS) {
+            storage.removeItem(DRAFT_STORAGE_KEY)
+            return null
+        }
+        return draft
+    } catch {
+        return null
+    }
+}
+
+function writeDraft(draft) {
+    const storage = getSessionStorage()
+    if (!storage) return
+    try {
+        storage.setItem(DRAFT_STORAGE_KEY, JSON.stringify({ ...draft, savedAt: Date.now() }))
+    } catch {
+        return
+    }
+}
+
+function clearDraft() {
+    const storage = getSessionStorage()
+    if (!storage) return
+    try {
+        storage.removeItem(DRAFT_STORAGE_KEY)
+    } catch {
+        return
+    }
+}
+
 const AI_REQUEST_TIMEOUT_MS = 35000
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
@@ -72,23 +115,70 @@ const WEEKDAY_LABELS = new Map(WEEKDAY.map(day => [day.id, day.label]))
 const formatPreviewDate = date =>
     `${String(date.getDate()).padStart(2, '0')}.${String(date.getMonth() + 1).padStart(2, '0')}`
 
+function pluralDays(count) {
+    const value = Math.abs(Number(count))
+    if (!Number.isFinite(value)) return 'дней'
+    const mod10 = value % 10
+    const mod100 = value % 100
+    if (mod10 === 1 && mod100 !== 11) return 'день'
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
+    return 'дней'
+}
+
+function everyDaysLabel(intervalDays) {
+    const value = Number(intervalDays)
+    if (!Number.isInteger(value) || value < 1) return 'каждый день'
+    if (value === 1) return 'каждый день'
+    return `каждые ${value} ${pluralDays(value)}`
+}
+
 function AddPlants() {
     const navigate = useNavigate()
+    const [initialDraft] = useState(readDraft)
     const [previews, setPreviews] = useState([])
     const filesRef = useRef([])
     const urlsRef = useRef([])
     const timeoutRef = useRef(null)
+    const nameInputRef = useRef(null)
+    const [saveCompleted, setSaveCompleted] = useState(false)
 
     const [step, setStep] = useState(1)
     const [leaving, setLeaving] = useState(null)
-    const [days, setDays] = useState(7)
-    const [selectedPreset, setSelectedPreset] = useState('custom')
-    const [selectedWatering, setSelectedWatering] = useState('morning')
-    const [selectedDays, setSelectedDays] = useState(() => getReminderWeekdays(7))
-    const [notifyMorning, setNotifyMorning] = useState(true)
-    const [notifyDayBefore, setNotifyDayBefore] = useState(false)
-    const [name, setName] = useState('')
-    const [species, setSpecies] = useState('')
+    const [days, setDays] = useState(() => {
+        const restored = Number(initialDraft?.days)
+        return Number.isInteger(restored) && restored >= 1 && restored <= 365 ? restored : 7
+    })
+    const [selectedPreset, setSelectedPreset] = useState(() =>
+        PRESETS.some(preset => preset.id === initialDraft?.selectedPreset)
+            ? initialDraft.selectedPreset
+            : 'custom'
+    )
+    const [selectedWatering, setSelectedWatering] = useState(() =>
+        WATERING.some(option => option.id === initialDraft?.selectedWatering)
+            ? initialDraft.selectedWatering
+            : 'morning'
+    )
+    const [selectedDays, setSelectedDays] = useState(() => {
+        if (Array.isArray(initialDraft?.selectedDays)) {
+            return initialDraft.selectedDays.filter(id => Number.isInteger(id) && id >= 0 && id <= 6)
+        }
+        const restored = Number(initialDraft?.days)
+        return getReminderWeekdays(Number.isInteger(restored) && restored >= 1 ? restored : 7)
+    })
+    const [notifyMorning, setNotifyMorning] = useState(() =>
+        typeof initialDraft?.notifyMorning === 'boolean' ? initialDraft.notifyMorning : true
+    )
+    const [notifyDayBefore, setNotifyDayBefore] = useState(() =>
+        typeof initialDraft?.notifyDayBefore === 'boolean' ? initialDraft.notifyDayBefore : false
+    )
+    const [name, setName] = useState(() =>
+        typeof initialDraft?.name === 'string' ? initialDraft.name : ''
+    )
+    const [species, setSpecies] = useState(() =>
+        typeof initialDraft?.species === 'string' ? initialDraft.species : ''
+    )
+    const [draftRestored, setDraftRestored] = useState(Boolean(initialDraft))
+    const [nameError, setNameError] = useState('')
     const [isSuggestingSpecies, setIsSuggestingSpecies] = useState(false)
     const [speciesSuggestionError, setSpeciesSuggestionError] = useState('')
     const [isWateringDialogOpen, setIsWateringDialogOpen] = useState(false)
@@ -148,6 +238,16 @@ function AddPlants() {
     const weekdayPreview = canRestrictWeekdays ? [] : upcomingWateringDays(days, new Date(), 4)
     const previewWeekdays = new Set(weekdayPreview.map(item => item.weekday))
 
+    const draftHasContent =
+        Boolean(name.trim()) ||
+        Boolean(species.trim()) ||
+        days !== 7 ||
+        selectedPreset !== 'custom' ||
+        selectedWatering !== 'morning' ||
+        !notifyMorning ||
+        notifyDayBefore ||
+        selectedDays.join(',') !== getReminderWeekdays(days).join(',')
+
     const goToStep = (next) => {
         setLeaving(step)
         if (timeoutRef.current) clearTimeout(timeoutRef.current)
@@ -158,15 +258,31 @@ function AddPlants() {
         }, 350)
     }
 
+    const validateName = () => {
+        if (!name.trim()) return 'Введите название растения'
+        if (name.trim().length > 255) return 'Название должно содержать не более 255 символов'
+        return ''
+    }
+
+    const focusNameInput = () => {
+        setStep(1)
+        window.setTimeout(() => {
+            const input = nameInputRef.current
+            if (!input) return
+            input.focus()
+            input.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        }, 80)
+    }
+
     const goNextFromStep1 = () => {
-        if (!name.trim()) {
-            setSubmitError('Введите название растения')
+        const message = validateName()
+        if (message) {
+            setNameError(message)
+            setSubmitError('')
+            focusNameInput()
             return
         }
-        if (name.trim().length > 255) {
-            setSubmitError('Название должно содержать не более 255 символов')
-            return
-        }
+        setNameError('')
         setSubmitError('')
         goToStep(2)
     }
@@ -436,19 +552,61 @@ function AddPlants() {
             urlsRef.current = []
         }
     }, [])
+
+    useEffect(() => {
+        if (!draftHasContent || saveCompleted) {
+            clearDraft()
+            return
+        }
+        writeDraft({
+            name,
+            species,
+            days,
+            selectedPreset,
+            selectedWatering,
+            selectedDays,
+            notifyMorning,
+            notifyDayBefore,
+            step
+        })
+    }, [
+        draftHasContent,
+        saveCompleted,
+        name,
+        species,
+        days,
+        selectedPreset,
+        selectedWatering,
+        selectedDays,
+        notifyMorning,
+        notifyDayBefore,
+        step
+    ])
+
+    useEffect(() => {
+        if (!draftHasContent || saveCompleted) return undefined
+        const handleBeforeUnload = event => {
+            event.preventDefault()
+            event.returnValue = ''
+            return ''
+        }
+        window.addEventListener('beforeunload', handleBeforeUnload)
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+    }, [draftHasContent, saveCompleted])
+
     const addPlant = async (event) => {
         event.preventDefault()
         if (isSubmitting) return
 
-        if (!name.trim()) {
-            setSubmitError('Введите название растения')
-            return
-        }
-        if (name.trim().length > 255) {
-            setSubmitError('Название должно содержать не более 255 символов')
+        const validationMessage = validateName()
+        if (validationMessage) {
+            setNameError(validationMessage)
+            setSubmitError('')
+            focusNameInput()
             return
         }
 
+        setNameError('')
         setIsSubmitting(true)
         setSubmitError('')
 
@@ -499,6 +657,8 @@ function AddPlants() {
             const responseData = await response.json().catch(() => ({}))
 
             if (response.ok) {
+                setSaveCompleted(true)
+                clearDraft()
                 urlsRef.current.forEach(url => URL.revokeObjectURL(url))
                 urlsRef.current = []
                 filesRef.current = []
@@ -525,6 +685,20 @@ function AddPlants() {
     return (
         <div className='formForPlant'>
             <p className='headerOfBlockAddPlants'>Новое растение</p>
+            {draftRestored && (
+                <div className='draftRestoreNotice' role='status'>
+                    <p>
+                        Черновик восстановлен — можно продолжить с того же места. Фотографии нужно добавить заново.
+                    </p>
+                    <button
+                        type='button'
+                        onClick={() => setDraftRestored(false)}
+                        aria-label='Скрыть уведомление о черновике'
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
             <div className='godOfbarCheckFilling'>
                 <div className="barCheckFilling">
                     <span className='numbersOfFirstStep'>1</span>
@@ -535,7 +709,7 @@ function AddPlants() {
                 </div>
             </div>
             <div>
-                <form onSubmit={addPlant}>
+                <form onSubmit={addPlant} noValidate>
                     <div className={`firstStepCheck ${step === 1 ? 'active' : ''} ${leaving === 1 ? 'leaving' : ''}`}>
                         <div className='headerfirstStepCheck'>
                             <p>Шаг 1 из 3 · Вид и название</p>
@@ -595,18 +769,28 @@ function AddPlants() {
                             <div className='nameOfPlant'>
                                 <p>Название</p>
                                 <input
+                                    id='plantName'
                                     type="text"
                                     placeholder='Монстера Анна'
                                     maxLength={255}
                                     aria-label="Название растения"
+                                    aria-invalid={nameError ? 'true' : undefined}
+                                    aria-describedby={nameError ? 'plantNameError' : undefined}
+                                    ref={nameInputRef}
                                     disabled={isSuggestingSpecies}
                                     value={name}
                                     onChange={(e) => {
                                         setName(e.target.value)
                                         setSubmitError('')
+                                        if (nameError) setNameError('')
                                     }}
                                     required
                                 />
+                                {nameError && (
+                                    <p id='plantNameError' className='fieldError' role='alert'>
+                                        {nameError}
+                                    </p>
+                                )}
                             </div>
                             <div className='speciesName'>
                                 <div>
@@ -703,7 +887,7 @@ function AddPlants() {
                                     <div className={`customSchedule ${selectedPreset === 'custom' ? 'active' : ''}`}>
                                         <div>
                                             <p>Свой график</p>
-                                            <p>Поливать каждые {days} дней</p>
+                                            <p>Поливать {everyDaysLabel(days)}</p>
                                         </div>
                                         <div style={{ display: 'flex', gap: 8 }}>
                                             <button type='button' className='counterBtn' onClick={dec} aria-label="Уменьшить">
@@ -900,7 +1084,7 @@ function AddPlants() {
                                 <p className='wateringAdvicePlant'>
                                     Растение: <strong>{name.trim()}</strong>
                                     {species.trim() && ` · ${species.trim()}`}
-                                    {' · полив каждые '}{days}{' дн.'}
+                                    {' · полив '}{everyDaysLabel(days)}
                                 </p>
                                 {isAskingWateringTime && (
                                     <div className='wateringAdviceMessage assistant' role='status'>

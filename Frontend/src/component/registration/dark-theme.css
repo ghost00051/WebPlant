@@ -7,3 +7,24 @@ html[data-theme='dark'] .borderOther {
     border-color: var(--theme-border);
     background: var(--theme-surface);
 }
+
+html[data-theme='dark'] .authHomeLink {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .authHomeLink:hover {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .authBrandLink:focus-visible,
+html[data-theme='dark'] .authHomeLink:focus-visible {
+    outline-color: var(--theme-focus-ring);
+}
+
+html[data-theme='dark'] .formError {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .consentOption input[aria-invalid='true'] {
+    outline-color: var(--theme-danger);
+}

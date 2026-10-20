@@ -114,10 +114,17 @@ ok(
   sitemapLocs.every(loc => loc.startsWith(`${siteUrl}/`) || loc === `${siteUrl}/`)
 )
 ok('sitemap: нет дублей адресов', new Set(sitemapLocs).size === sitemapLocs.length)
-ok(
-  'sitemap: нет дат в будущем',
-  [...sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].every(m => m[1] <= today)
-)
+{
+  const lastmods = [...sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map(m => m[1])
+  ok(
+    'sitemap: нет дат в будущем',
+    lastmods.every(lastmod => lastmod <= today)
+  )
+  ok(
+    'sitemap: lastmod автоматический (есть дата текущей сборки)',
+    lastmods.includes(today)
+  )
+}
 ok(
   'sitemap: нет закрытых разделов',
   !sitemapLocs.some(loc =>
@@ -199,6 +206,17 @@ for (const file of htmlFiles) {
 
 console.log('\nЗакрытые разделы:\n')
 
+const PRIVATE_TITLES = {
+  'notifications.html': 'Уведомления — Лейка',
+  'reset-password.html': 'Восстановление пароля — Лейка',
+  'home.html': 'Мой сад — Лейка',
+  'my-plants.html': 'Мои растения — Лейка',
+  'add-plant.html': 'Добавление растения — Лейка',
+  'edit-profile.html': 'Настройки профиля — Лейка',
+  'login.html': 'Вход — Лейка',
+  'register.html': 'Регистрация — Лейка'
+}
+
 for (const file of PRIVATE_PAGES) {
   const html = await readPage(file)
   if (!html) {
@@ -208,9 +226,32 @@ for (const file of PRIVATE_PAGES) {
   const robots = metaContent(html, 'name', 'robots')
   const hasNoindex = Boolean(robots && robots.includes('noindex'))
   const hasJsonLd = jsonLdBlocks(html).length > 0
+  const title = extract(html, /<title>([\s\S]*?)<\/title>/i)
   ok(`${file}: noindex`, hasNoindex)
   ok(`${file}: без структурированных данных`, !hasJsonLd)
   ok(`${file}: без пререндера`, !html.includes('data-prerendered="true"'))
+  if (PRIVATE_TITLES[file]) {
+    ok(`${file}: корректный title (${PRIVATE_TITLES[file]})`, title === PRIVATE_TITLES[file])
+  }
+}
+
+{
+  const seoSource = await readFile(
+    resolve(root, 'src/component/SeoMetadata/SeoMetadata.jsx'),
+    'utf8'
+  )
+  ok(
+    'SeoMetadata: /notifications в PRIVATE_META',
+    /'\/notifications':[\s\S]*?indexable: false/.test(seoSource)
+  )
+  ok(
+    'SeoMetadata: /reset-password в PRIVATE_META',
+    /'\/reset-password':[\s\S]*?indexable: false/.test(seoSource)
+  )
+  ok(
+    'SeoMetadata: неизвестный путь → noindex, а не HOME_META',
+    /return UNKNOWN_META/.test(seoSource)
+  )
 }
 
 {
@@ -218,6 +259,22 @@ for (const file of PRIVATE_PAGES) {
   const robots = html ? metaContent(html, 'name', 'robots') : null
   ok('404.html: noindex', Boolean(robots && robots.includes('noindex')))
   ok('404.html: не подменяет главную', Boolean(html && !html.includes('data-prerendered')))
+  ok(
+    '404.html: ссылки на справочник и статьи об уходе',
+    Boolean(html && html.includes('href="/plants"') && html.includes('href="/care"'))
+  )
+  ok(
+    '404.html: блок «Возможно, вы искали» с рекомендациями',
+    Boolean(html && html.includes('Возможно, вы искали') && html.includes('/plants/monstera'))
+  )
+  ok(
+    '404.html: отдельное состояние для /admin',
+    Boolean(html && html.includes('id="adminNote"') && html.includes('/admin'))
+  )
+  ok(
+    '404.html: контрастная схема для светлой и тёмной темы',
+    Boolean(html && html.includes('prefers-color-scheme: dark'))
+  )
 }
 
 {
@@ -327,6 +384,103 @@ function pngSize(buffer) {
     }
   }
   ok('moment отсутствует в сборке', momentFound === null)
+}
+
+{
+  const html = await readFile(join(dist, 'index.html'), 'utf8')
+  const fontPreloads = [...html.matchAll(/<link rel="preload"[^>]*>/g)]
+    .map(match => match[0])
+    .filter(tag => /as="font"/.test(tag))
+    .map(tag => {
+      const href = /href="([^"]+)"/.exec(tag)
+      return href ? href[1] : null
+    })
+    .filter(Boolean)
+  ok('index.html: preload ровно одного шрифта', fontPreloads.length === 1)
+  ok(
+    'index.html: preload только кириллического сабсета',
+    fontPreloads.length === 1 && fontPreloads[0] === '/fonts/inter-cyrillic.woff2'
+  )
+  ok(
+    'index.html: латинский сабсет не preload-ится',
+    !fontPreloads.some(href => href.includes('inter-latin'))
+  )
+  ok(
+    'index.html: preconnect к API',
+    /<link rel="preconnect" href="https:\/\/server\.checktheplants\.ru"/.test(html)
+  )
+  ok(
+    'index.html: preconnect без сторонней аналитики',
+    !/rel="preconnect"[^>]*(googletagmanager|google-analytics|mc\.yandex)/.test(html)
+  )
+  ok('index.html: skip-link на месте', html.includes('class="skipLink"'))
+  ok('index.html: контейнер #main-content на месте', html.includes('id="main-content"'))
+  ok(
+    'index.html: skip-link ведёт на существующий якорь',
+    /class="skipLink" href="#main-content"/.test(html) && html.includes('id="main-content"')
+  )
+}
+
+{
+  const fontsCss = await readFile(join(dist, 'fonts/inter.css'), 'utf8')
+  const cyrRule = (fontsCss.match(/inter-cyrillic\.woff2[^}]*}/) || [''])[0]
+  const latinRule = (fontsCss.match(/inter-latin\.woff2[^}]*}/) || [''])[0]
+
+  ok('inter.css: кириллица покрыта U+0400-045F', cyrRule.includes('U+0400-045F'))
+  ok('inter.css: latin-сабсет без кириллицы', !latinRule.includes('0400'))
+  ok('inter.css: latin-сабсет покрывает U+0020-007E', latinRule.includes('U+0020-007E'))
+  ok('inter.css: latin-сабсет сохраняет типографику', latinRule.includes('U+2013-2014'))
+  ok(
+    'inter.css: font-display:swap у двух сабсетов',
+    (fontsCss.match(/font-display:swap/g) || []).length === 2
+  )
+  ok(
+    'inter.css: weight 400 700 у двух сабсетов',
+    (fontsCss.match(/font-weight:400 700/g) || []).length === 2
+  )
+
+  const latinFont = await stat(join(dist, 'fonts/inter-latin.woff2'))
+    .then(stats => stats.size)
+    .catch(() => 0)
+  const cyrillicFont = await stat(join(dist, 'fonts/inter-cyrillic.woff2'))
+    .then(stats => stats.size)
+    .catch(() => 0)
+
+  ok(`шрифты: latin-сабсет ≤ 40 КБ (${latinFont} Б)`, latinFont > 0 && latinFont <= 40 * 1024)
+  ok(
+    `шрифты: cyrillic-сабсет без роста (${cyrillicFont} Б)`,
+    cyrillicFont > 0 && cyrillicFont <= 32 * 1024
+  )
+  ok(
+    `шрифты: суммарный вес ≤ 70 КБ (${latinFont + cyrillicFont} Б)`,
+    latinFont + cyrillicFont > 0 && latinFont + cyrillicFont <= 70 * 1024
+  )
+}
+
+{
+  const assets = await readdir(join(dist, 'assets'))
+  const entryChunks = assets.filter(name => /^index-.*\.js$/.test(name))
+  ok('PERF-04: ровно один entry-чанк index-*.js', entryChunks.length === 1)
+  if (entryChunks.length === 1) {
+    const entryCode = await readFile(join(dist, 'assets', entryChunks[0]), 'utf8')
+    ok(
+      'PERF-04: entry не содержит код страницы /notifications',
+      !entryCode.includes('notificationsMarkAll')
+    )
+    ok(
+      'PERF-04: entry не содержит код страницы /reset-password',
+      !entryCode.includes('resetPasswordHero')
+    )
+    ok(
+      'FUNC-07: нет дубля console.log успешной регистрации SW',
+      !entryCode.includes('SW зарегистрирован') &&
+      !entryCode.includes('Service Worker зарегистрирован')
+    )
+    ok(
+      'FUNC-07: ошибка регистрации SW по-прежнему логируется',
+      entryCode.includes('Ошибка SW')
+    )
+  }
 }
 
 console.log(`\nПроверок выполнено: ${assertions}`)

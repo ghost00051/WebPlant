@@ -45,6 +45,9 @@
 .aiTickerGroup {
     display: flex;
     flex: 0 0 auto;
+    width: max-content;
+    min-width: 100vw;
+    justify-content: space-evenly;
 }
 
 .aiTickerItem {

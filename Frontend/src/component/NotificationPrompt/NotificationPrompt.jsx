@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
   isIOS,
   isStandalone,
@@ -7,6 +7,13 @@ import {
   setPushDisabledOnThisDevice,
   subscribeToPush
 } from '../../utils/pushNotifications.js'
+import {
+  OVERLAY_IDS,
+  OVERLAY_PRIORITIES,
+  getActiveOverlay,
+  requestOverlay,
+  subscribeOverlays
+} from '../../utils/overlayQueue.js'
 import './NotificationPrompt.css'
 import './dark-theme.css'
 import dropletIcon from '../../assets/droplet.svg'
@@ -14,9 +21,13 @@ import alertIcon from '../../assets/alert-triangle.svg'
 import appIcon from '../../assets/AppIcon.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 
+const PROMPT_FALLBACK_DELAY_MS = 30000
+const USER_ACTION_EVENTS = ['click', 'keydown', 'scroll', 'touchstart']
+
 function NotificationPrompt({ onClose }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [armed, setArmed] = useState(false)
   const needsIOSInstall = isIOS() && !isStandalone()
 
   const dialogRef = useRef(null)
@@ -25,15 +36,61 @@ function NotificationPrompt({ onClose }) {
   const previouslyFocusedRef = useRef(null)
   const onCloseRef = useRef(onClose)
 
+  const activeOverlay = useSyncExternalStore(
+    subscribeOverlays,
+    getActiveOverlay,
+    () => null
+  )
+
   useEffect(() => {
     onCloseRef.current = onClose
   }, [onClose])
 
   useEffect(() => {
+    let cancelled = false
+    let fallbackTimer = null
+
+    const arm = () => {
+      if (cancelled) return
+      setArmed(true)
+      cleanup()
+    }
+
+    const cleanup = () => {
+      if (fallbackTimer) {
+        window.clearTimeout(fallbackTimer)
+        fallbackTimer = null
+      }
+      for (const eventName of USER_ACTION_EVENTS) {
+        window.removeEventListener(eventName, arm)
+      }
+    }
+
+    for (const eventName of USER_ACTION_EVENTS) {
+      window.addEventListener(eventName, arm, { passive: true })
+    }
+    fallbackTimer = window.setTimeout(arm, PROMPT_FALLBACK_DELAY_MS)
+
+    return () => {
+      cancelled = true
+      cleanup()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!armed) return undefined
+    return requestOverlay(OVERLAY_IDS.push, OVERLAY_PRIORITIES.push)
+  }, [armed])
+
+  const visible = armed && activeOverlay === OVERLAY_IDS.push
+
+  useEffect(() => {
+    if (!visible) return undefined
+
     previouslyFocusedRef.current = document.activeElement
 
-    const initialFocus = primaryButtonRef.current || secondaryButtonRef.current
-    if (initialFocus) initialFocus.focus()
+    const dialogNode = dialogRef.current
+    if (dialogNode && typeof dialogNode.focus === 'function') dialogNode.focus()
 
     const handleKeyDown = event => {
       if (event.key === 'Escape') {
@@ -72,7 +129,7 @@ function NotificationPrompt({ onClose }) {
         previous.focus()
       }
     }
-  }, [])
+  }, [visible])
 
   const handleAccept = async () => {
     if (needsIOSInstall) return
@@ -99,7 +156,6 @@ function NotificationPrompt({ onClose }) {
       setPushDisabledOnThisDevice(false)
       await subscribeToPush()
       markPushPromptAnswered('accepted')
-      console.log('✅ Подписка сохранена на сервере')
       onClose()
     } catch (err) {
 
@@ -117,8 +173,10 @@ function NotificationPrompt({ onClose }) {
     onClose()
   }
 
+  if (!visible) return null
+
   return (
-    <div className='notification-prompt-overlay'>
+    <div className='notification-prompt-overlay' data-overlay='push'>
       <div
         className='notification-prompt'
         ref={dialogRef}
@@ -126,6 +184,7 @@ function NotificationPrompt({ onClose }) {
         aria-modal='true'
         aria-labelledby='notification-prompt-title'
         aria-describedby='notification-prompt-description'
+        tabIndex={-1}
       >
         <div className='godOfNotifications'>
           <div className='notification-prompt-icon'>

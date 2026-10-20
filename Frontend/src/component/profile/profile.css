@@ -16,8 +16,14 @@
   padding: 0 clamp(14px, 4vw, 24px);
 }
 
-.headerBlocskProfils p {
+.headerBlocskProfils p,
+.headerBlocskProfils h1 {
   margin: 0;
+}
+
+.headerBlocskProfils h1 {
+  font: inherit;
+  line-height: 1.2;
 }
 
 .blocksDescriptionProfile {
@@ -48,7 +54,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-xl);
   font-weight: bold;
-  color: var(--color-white-team);
+  color: var(--theme-accent-text);
   margin: 0;
   line-height: 1;
 }
@@ -67,7 +73,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
   font-weight: 400;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -77,8 +83,8 @@
   margin: 8px 0 0;
   padding: 3px 10px;
   border-radius: 999px;
-  background-color: var(--color-white-team);
-  border: 1px solid var(--color-white-team);
+  background-color: var(--theme-accent-text);
+  border: 1px solid var(--color-white-tema);
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-xs, 12px);
   font-weight: 600;
@@ -88,7 +94,7 @@
 .adminPushLoading {
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
-  color: #8a8a8a;
+  color: var(--theme-muted);
   margin: 16px 0;
 }
 
@@ -183,7 +189,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-xs);
   font-weight: 500;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   margin: 0;
 }
 
@@ -191,7 +197,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-lg);
   font-weight: bold;
-  color: var(--color-white-team);
+  color: var(--theme-accent-text);
   margin: 0;
 }
 
@@ -240,7 +246,7 @@
   font-family: 'Inter', sans-serif;
   font-size: 13px;
   font-weight: 300;
-  color: #7fd1a0;
+  color: var(--theme-accent-text);
   text-decoration: none;
 }
 
@@ -256,7 +262,7 @@
 
 .profileAppVersion {
   padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px));
-  color: #8a8a8a;
+  color: var(--theme-muted);
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-xs);
   text-align: center;
@@ -315,7 +321,7 @@
   font-family: 'Inter', sans-serif;
   font-size: 11px;
   font-weight: 300;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   margin: 4px 0 0;
   line-height: 1.45;
 }
@@ -369,7 +375,7 @@
 }
 
 .appleSwitchSettings input:focus-visible + .sliderSettings {
-  outline: 2px solid #2d2d2d;
+  outline: 2px solid var(--theme-focus-ring);
   outline-offset: 3px;
 }
 
@@ -433,7 +439,7 @@
 
 .themeModeDescription {
   margin: 10px 0 0;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-xs);
 }
@@ -474,4 +480,196 @@
   font-weight: bold;
   font-style: normal;
   color: white;
+}
+
+.interestPlantValue {
+  font-variant-numeric: tabular-nums;
+}
+
+.interestPlantHint {
+  margin: 4px 0 0;
+  max-width: 22ch;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: center;
+}
+
+.accountData {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 16px clamp(12px, 4vw, 24px) 0;
+  padding: clamp(16px, 4vw, 24px);
+  border-radius: 20px;
+  background-color: #ffffff;
+}
+
+.accountData h2 {
+  margin: 0;
+  color: #2d2d2d;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+}
+
+.accountDataText {
+  margin: 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.accountDataActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accountDataExport,
+.accountDataDelete {
+  min-height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accountDataExport {
+  border: 1px solid var(--theme-border);
+  background: var(--theme-raised);
+  color: var(--theme-text);
+}
+
+.accountDataDelete {
+  border: 1px solid var(--theme-danger);
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+.accountDataExport:disabled,
+.accountDataDelete:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.accountDataStatus,
+.accountDataError {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+.accountDataStatus {
+  color: var(--theme-accent-text);
+}
+
+.accountDataError {
+  color: var(--theme-danger);
+}
+
+.accountDialogOverlay {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(20 24 22 / 58%);
+}
+
+.accountDialog {
+  width: min(100%, 520px);
+  max-height: min(90dvh, 760px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 24px;
+  border: 1px solid var(--theme-border);
+  border-radius: 20px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
+  font-family: 'Inter', sans-serif;
+}
+
+.accountDialog h2 {
+  margin: 0 0 10px;
+  font-size: 20px;
+  line-height: 1.25;
+}
+
+.accountDialog p {
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.accountDialogLabel {
+  display: block;
+  margin: 6px 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.accountDialogInput {
+  width: 100%;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  font: inherit;
+}
+
+.accountDialogError {
+  margin: 8px 0 0;
+  color: var(--theme-danger);
+  font-size: 13px;
+}
+
+.accountDialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.accountDialogActions button {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--theme-raised);
+  color: var(--theme-text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.accountDialogActions button.accountDialogConfirm {
+  background: var(--theme-danger);
+  color: var(--theme-page);
+}
+
+.accountDialogActions button:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.accountDialogActions button.accountDialogConfirm:disabled {
+  cursor: wait;
+}
+
+.accountDialog button:focus-visible,
+.accountDialog input:focus-visible,
+.accountData button:focus-visible {
+  outline: 3px solid var(--theme-focus-ring);
+  outline-offset: 2px;
 }

@@ -5,9 +5,19 @@ import { readLocalConsent } from './cookieConsent.js'
 const VISITOR_STORAGE_KEY = 'webplant-visitor-id'
 const VISITOR_ID_PATTERN = /^[A-Za-z0-9._:-]{8,64}$/
 const RETRY_DELAYS_MS = [3000, 10000, 30000]
+const MAX_VISIT_PATH_LENGTH = 160
 
 let sent = false
 let retryTimers = []
+
+function sanitizeVisitPath(rawPath) {
+    if (typeof rawPath !== 'string' || !rawPath.trim()) return '/'
+    const withoutFragment = rawPath.split('#')[0]
+    const pathname = withoutFragment.split('?')[0]
+    if (!pathname) return '/'
+    const normalized = pathname.startsWith('/') ? pathname : `/${pathname}`
+    return normalized.slice(0, MAX_VISIT_PATH_LENGTH) || '/'
+}
 
 function readVisitorId() {
     try {
@@ -47,7 +57,7 @@ export function trackVisit(path) {
 
     const body = JSON.stringify({
         visitorId,
-        path: path || `${window.location.pathname}${window.location.search}`.slice(0, 300)
+        path: sanitizeVisitPath(path || window.location.pathname)
     })
 
     try {

@@ -49,6 +49,96 @@ function createGreeting() {
   }
 }
 
+function renderInlineMarkdown(text, keyPrefix) {
+  const nodes = []
+  const pattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\n]+\*|_[^_\n]+_)/g
+  let lastIndex = 0
+  let match = pattern.exec(text)
+  let index = 0
+
+  while (match) {
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
+    const token = match[0]
+    const key = `${keyPrefix}-i${index}`
+    index += 1
+    if (token.startsWith('**') || token.startsWith('__')) {
+      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+    } else if (token.startsWith('`')) {
+      nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
+    } else {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>)
+    }
+    lastIndex = match.index + token.length
+    match = pattern.exec(text)
+  }
+
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
+  return nodes
+}
+
+function MarkdownText({ text }) {
+  const source = String(text || '').replace(/\r\n?/g, '\n')
+  if (!source.trim()) return null
+
+  const blocks = []
+  let list = null
+
+  const flushList = () => {
+    if (!list) return
+    blocks.push(list)
+    list = null
+  }
+
+  source.split('\n').forEach(line => {
+    const trimmed = line.trim()
+    if (!trimmed) {
+      flushList()
+      return
+    }
+
+    const bullet = /^[-*•]\s+(.*)$/.exec(trimmed)
+    const ordered = /^(\d+)[.)]\s+(.*)$/.exec(trimmed)
+
+    if (bullet || ordered) {
+      const isOrdered = Boolean(ordered)
+      if (!list || list.ordered !== isOrdered) {
+        flushList()
+        list = { ordered: isOrdered, items: [] }
+      }
+      list.items.push(ordered ? ordered[2] : bullet[1])
+      return
+    }
+
+    flushList()
+    blocks.push({ type: 'p', text: trimmed })
+  })
+  flushList()
+
+  return (
+    <>
+      {blocks.map((block, blockIndex) => {
+        if (block.type === 'p') {
+          return (
+            <p key={`md-p-${blockIndex}`}>
+              {renderInlineMarkdown(block.text, `md-p-${blockIndex}`)}
+            </p>
+          )
+        }
+        const items = block.items.map((item, itemIndex) => (
+          <li key={`md-li-${blockIndex}-${itemIndex}`}>
+            {renderInlineMarkdown(item, `md-li-${blockIndex}-${itemIndex}`)}
+          </li>
+        ))
+        return block.ordered ? (
+          <ol key={`md-list-${blockIndex}`}>{items}</ol>
+        ) : (
+          <ul key={`md-list-${blockIndex}`}>{items}</ul>
+        )
+      })}
+    </>
+  )
+}
+
 function historyItemToMessage(item) {
   const photoUrls = Array.isArray(item.photoUrls) && item.photoUrls.length
     ? item.photoUrls
@@ -169,6 +259,8 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
   const inputRef = useRef(null)
   const atBottomRef = useRef(true)
   const sessionRef = useRef(sessionId)
+  const activeRequestRef = useRef(null)
+  const cancelledRef = useRef(false)
 
   const scrollToBottom = () => {
     const list = listRef.current
@@ -393,8 +485,11 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
     setMessages(prev => [...prev, userMsg])
     setInput('')
     setIsTyping(true)
+    setIsAnalyzingPhoto(false)
+    cancelledRef.current = false
 
     const controller = new AbortController()
+    activeRequestRef.current = { controller, kind: 'message' }
     const timer = window.setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS)
 
     try {
@@ -429,16 +524,19 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
       }
       notifySessionsChanged()
     } catch (e) {
-      const timedOut = e?.name === 'AbortError'
-      console.error('Chat error:', e)
+      const cancelled = cancelledRef.current
+      const timedOut = e?.name === 'AbortError' && !cancelled
+      if (!cancelled) console.error('Chat error:', e)
       if (sessionRef.current === requestSession) {
         setMessages(prev => [
           ...prev,
           {
             id: createLocalId('e'),
             role: 'assistant',
-            text: timedOut
-              ? '⏳ Алиса не успела ответить. Попробуйте ещё раз — я на связи.'
+            text: cancelled
+              ? 'Ответ отменён. Можно спросить ещё раз.'
+              : timedOut
+              ? '⏳ ИИ-помощник не успел ответить. Попробуйте ещё раз — я на связи.'
               : e?.message && e.message !== 'Failed to fetch'
               ? `⚠️ ${e.message}`
               : '⚠️ Что-то пошло не так. Попробуй ещё раз.',
@@ -448,8 +546,19 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
       }
     } finally {
       window.clearTimeout(timer)
+      if (activeRequestRef.current?.controller === controller) {
+        activeRequestRef.current = null
+      }
       if (sessionRef.current === requestSession) setIsTyping(false)
     }
+  }
+
+  const cancelAiResponse = () => {
+    const active = activeRequestRef.current
+    if (!active) return
+    cancelledRef.current = true
+    active.controller.abort()
+    setIsTyping(false)
   }
 
   const sendPhoto = async () => {
@@ -485,8 +594,10 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
     setAttachError('')
     setIsTyping(true)
     setIsAnalyzingPhoto(true)
+    cancelledRef.current = false
 
     const controller = new AbortController()
+    activeRequestRef.current = { controller, kind: 'photo' }
     const timer = window.setTimeout(() => controller.abort(), PHOTO_TIMEOUT_MS)
 
     try {
@@ -539,25 +650,31 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
 
       notifySessionsChanged()
     } catch (e) {
-      const timedOut = e?.name === 'AbortError'
-      console.error('Photo chat error:', e)
+      const cancelled = cancelledRef.current
+      const timedOut = e?.name === 'AbortError' && !cancelled
+      if (!cancelled) console.error('Photo chat error:', e)
       if (sessionRef.current === requestSession) {
         setMessages(prev => [
           ...prev,
           {
             id: createLocalId('e'),
             role: 'assistant',
-            text: timedOut
-              ? '⏳ Разбор фото занял слишком много времени. Попробуйте ещё раз — модель иногда думает долго.'
-              : e?.message && e.message !== 'Failed to fetch'
-                ? `⚠️ ${e.message}`
-                : '⚠️ Не удалось разобрать фото. Попробуйте другое фото.',
+            text: cancelled
+              ? 'Разбор фото отменён.'
+              : timedOut
+                ? '⏳ Разбор фото занял слишком много времени. Попробуйте ещё раз — модель иногда думает долго.'
+                : e?.message && e.message !== 'Failed to fetch'
+                  ? `⚠️ ${e.message}`
+                  : '⚠️ Не удалось разобрать фото. Попробуйте другое фото.',
             createdAt: new Date().toISOString()
           }
         ])
       }
     } finally {
       window.clearTimeout(timer)
+      if (activeRequestRef.current?.controller === controller) {
+        activeRequestRef.current = null
+      }
       if (sessionRef.current === requestSession) {
         setIsTyping(false)
         setIsAnalyzingPhoto(false)
@@ -638,7 +755,15 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
           </button>
         </div>
       </div>
-      <div className='chatMessages' ref={listRef} onScroll={handleMessagesScroll}>
+      <div
+        className='chatMessages'
+        ref={listRef}
+        onScroll={handleMessagesScroll}
+        role='log'
+        aria-live='polite'
+        aria-relevant='additions'
+        aria-label='Сообщения чата'
+      >
         {messages.map(m => (
           <div
             key={m.id}
@@ -671,8 +796,12 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
               )}
               {m.diagnosis ? (
                 <DiagnosisCard diagnosis={m.diagnosis} />
-              ) : (
+              ) : m.role === 'user' ? (
                 <p className='chatBubbleText'>{m.text}</p>
+              ) : (
+                <div className='chatBubbleText chatBubbleMarkdown'>
+                  <MarkdownText text={m.text} />
+                </div>
               )}
               {m.advice && (
                 <div className='chatAiAdviceBox'>
@@ -696,18 +825,31 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
         )}
 
         {isTyping && (
-          <div className='chatRow'>
-            <div className='chatBubble chatBubbleAi chatBubbleTyping'>
+          <div className='chatRow chatRowTyping'>
+            <div className='chatBubble chatBubbleAi chatBubbleTyping' aria-hidden='true'>
               <span className='chatDot' />
               <span className='chatDot' />
               <span className='chatDot' />
-              {isAnalyzingPhoto && (
-                <span className='chatTypingLabel'>Изучаю фото…</span>
-              )}
+              <span className='chatTypingLabel'>
+                {isAnalyzingPhoto ? 'Изучаю фото…' : 'Печатает…'}
+              </span>
             </div>
+            <button
+              type='button'
+              className='chatCancelBtn'
+              onClick={cancelAiResponse}
+            >
+              Отмена
+            </button>
           </div>
         )}
       </div>
+
+      <span className='visuallyHidden' role='status' aria-live='polite'>
+        {isTyping
+          ? (isAnalyzingPhoto ? 'Изучаю фото растения…' : 'ИИ-помощник печатает ответ…')
+          : ''}
+      </span>
 
       <div className='chatInputArea'>
         {attachError && (
@@ -754,6 +896,7 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
           <textarea
             ref={inputRef}
             className='chatInputField'
+            aria-label='Сообщение ИИ-помощнику'
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}

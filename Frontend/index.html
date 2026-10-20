@@ -61,19 +61,16 @@
       }
     })()
   </script>
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-H4WTEHYZ2K"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag() { dataLayer.push(arguments); }
-    gtag('js', new Date());
-
-    gtag('config', 'G-H4WTEHYZ2K');
-  </script>
-
-  <link rel="stylesheet" href="/indes.css">
+  <link rel="preconnect" href="https://server.checktheplants.ru" crossorigin>
+  <link rel="stylesheet" href="/base.css">
   <link rel="preload" href="/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/fonts/inter.css">
+  <style>
+    .skipLink{position:fixed;top:12px;left:12px;z-index:2100;transform:translateY(-160%)}
+    .skipLink:focus,.skipLink:focus-visible{transform:translateY(0)}
+    html.app-shell .appMain,body.app-shell .appMain{height:100%;min-height:0}
+    .appMain{display:block}
+  </style>
 
   <script type="application/ld+json">
     {

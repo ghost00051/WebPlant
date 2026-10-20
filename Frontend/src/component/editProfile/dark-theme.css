@@ -7,3 +7,33 @@ html[data-theme='dark'] .editProfilePage .editProfile {
     background: var(--theme-surface);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .editProfileTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .editProfilePage .editProfile input {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .editProfileError {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .editProfileSuccess {
+    color: #9FD8B8;
+    background: rgba(127, 209, 160, 0.12);
+    border-color: rgba(127, 209, 160, 0.32);
+}
+
+html[data-theme='dark'] .imgOfName {
+    background-color: var(--theme-accent);
+    color: var(--theme-on-accent);
+}
+
+html[data-theme='dark'] .saveOfEditProfile {
+    background-color: var(--theme-accent);
+    color: #10301F;
+}

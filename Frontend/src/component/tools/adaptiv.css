@@ -3,12 +3,12 @@
         --tabbar-height: 80px;
     }
 
-    .tabbar li {
-        height: 68px;
+    .tabbarButton {
+        min-height: 68px;
         gap: 5px;
     }
 
-    .tabbar li img {
+    .tabbarButton > img {
         width: 26px;
         height: 26px;
     }

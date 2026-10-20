@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import './profile.css'
 import Pencil from '../../assets/pencil.svg'
@@ -19,6 +19,7 @@ import {
   syncPushSubscription,
   unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
+import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
@@ -54,6 +55,16 @@ function Profile () {
   const [themeError, setThemeError] = useState('')
   const [themeChanging, setThemeChanging] = useState(false)
   const [logoutError, setLogoutError] = useState('')
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportStatus, setExportStatus] = useState('')
+  const [exportError, setExportError] = useState('')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const deleteTriggerRef = useRef(null)
+  const deleteDialogRef = useRef(null)
+  const deleteInputRef = useRef(null)
   const navigate = useNavigate()
 
   const getProfile = useCallback(async () => {
@@ -424,9 +435,172 @@ function Profile () {
     navigate('/login')
   }
 
+  const exportData = async () => {
+    if (exportBusy) return
+
+    setExportBusy(true)
+    setExportStatus('')
+    setExportError('')
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/me/export`, {
+        method: 'GET',
+        credentials: 'include'
+      })
+      if (response.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error(
+            'Экспорт данных пока недоступен. Функция появится после обновления сервера.'
+          )
+        }
+        const data = await response.json().catch(() => ({}))
+        throw new Error(
+          data.message || `Не удалось подготовить экспорт: HTTP ${response.status}`
+        )
+      }
+      const data = await response.json().catch(() => null)
+      if (!data || typeof data !== 'object') {
+        throw new Error('Сервер вернул некорректные данные для экспорта.')
+      }
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json'
+      })
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `leyka-data-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+
+      setExportStatus('Файл с вашими данными скачивается.')
+    } catch (error) {
+      console.error('Ошибка экспорта данных:', error)
+      setExportError(error.message || 'Не удалось экспортировать данные. Попробуйте ещё раз.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const openDeleteDialog = () => {
+    if (deleteBusy) return
+    setDeleteConfirmText('')
+    setDeleteError('')
+    setDeleteDialogOpen(true)
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleteBusy) return
+    setDeleteDialogOpen(false)
+    setDeleteError('')
+    deleteTriggerRef.current?.focus?.()
+  }
+
+  const confirmDeleteAccount = async () => {
+    if (deleteBusy) return
+    if (deleteConfirmText.trim().toUpperCase() !== 'УДАЛИТЬ') {
+      setDeleteError('Введите слово УДАЛИТЬ, чтобы подтвердить удаление.')
+      return
+    }
+
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/me`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error(
+            'Удаление аккаунта пока недоступно. Функция появится после обновления сервера.'
+          )
+        }
+        const data = await response.json().catch(() => ({}))
+        throw new Error(
+          data.message || `Не удалось удалить аккаунт: HTTP ${response.status}`
+        )
+      }
+
+      setDeleteDialogOpen(false)
+      await fetchWithTimeout(`${API_URL}/users/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      }).catch(() => {})
+      navigate('/', { replace: true })
+    } catch (error) {
+      console.error('Ошибка удаления аккаунта:', error)
+      setDeleteError(error.message || 'Не удалось удалить аккаунт. Попробуйте ещё раз.')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!deleteDialogOpen) return undefined
+
+    const dialog = deleteDialogRef.current
+    const previouslyFocused = deleteTriggerRef.current
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+    const getFocusable = () =>
+      Array.from(dialog?.querySelectorAll(focusableSelector) ?? [])
+        .filter(element => element.offsetParent !== null)
+
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!deleteBusy) {
+          setDeleteDialogOpen(false)
+          setDeleteError('')
+          deleteTriggerRef.current?.focus?.()
+        }
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const items = getFocusable()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    const frame = window.requestAnimationFrame(() => deleteInputRef.current?.focus?.())
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus?.()
+    }
+  }, [deleteDialogOpen, deleteBusy])
+
 
   if (!profile) {
-    return <p>Загрузка...</p>
+    return (
+      <div
+        className='profilePage'
+        role='tabpanel'
+        id={TAB_PANEL_ID('profile')}
+        aria-labelledby={TAB_ELEMENT_ID('profile')}
+      >
+        <p>Загрузка...</p>
+      </div>
+    )
   }
 
   const displayName =
@@ -434,9 +608,14 @@ function Profile () {
   const isAdmin = profile.role === 'ADMIN'
 
   return (
-    <div className='profilePage'>
+    <div
+      className='profilePage'
+      role='tabpanel'
+      id={TAB_PANEL_ID('profile')}
+      aria-labelledby={TAB_ELEMENT_ID('profile')}
+    >
       <div className='headerBlocskProfils'>
-        <p>Личный кабинет</p>
+        <h1>Личный кабинет</h1>
       </div>
       <div className='blocksDescriptionProfile'>
         <div className='nameBlocksDescriptionProfile'>
@@ -516,8 +695,17 @@ function Profile () {
           <p>Поливов в истории</p>
         </div>
         <div className='interestPlant'>
-          {completion && <p>{completion.percent}%</p>}
+          <p className='interestPlantValue'>
+            {Number.isFinite(completion?.percent) ? `${completion.percent}%` : '—'}
+          </p>
           <p>Поливов вовремя</p>
+          {!Number.isFinite(completion?.percent) && (
+            <p className='interestPlantHint'>
+              {completion
+                ? 'Появится после первого полива.'
+                : 'Считаем статистику…'}
+            </p>
+          )}
         </div>
       </div>
       {isAdmin && (
@@ -661,6 +849,43 @@ function Profile () {
             : `Тема задана вручную: ${theme === 'dark' ? 'тёмная' : 'светлая'}`}
         </p>
       </div>
+      <section className='accountData' aria-labelledby='accountDataTitle'>
+        <h2 id='accountDataTitle'>Данные и аккаунт</h2>
+        <p className='accountDataText'>
+          Скачайте копию своих данных в формате JSON или удалите аккаунт вместе
+          со всеми растениями и историей полива.
+        </p>
+        <div className='accountDataActions'>
+          <button
+            type='button'
+            className='accountDataExport'
+            onClick={exportData}
+            disabled={exportBusy}
+            aria-busy={exportBusy}
+          >
+            {exportBusy ? 'Готовим файл…' : 'Экспорт данных'}
+          </button>
+          <button
+            type='button'
+            className='accountDataDelete'
+            ref={deleteTriggerRef}
+            onClick={openDeleteDialog}
+            disabled={deleteBusy}
+          >
+            Удалить аккаунт
+          </button>
+        </div>
+        {exportStatus && (
+          <p className='accountDataStatus' role='status'>
+            {exportStatus}
+          </p>
+        )}
+        {exportError && (
+          <p className='accountDataError' role='alert'>
+            {exportError}
+          </p>
+        )}
+      </section>
       <div className='exitButton'>
         {logoutError && (
           <p className='themePreferenceError' role='alert'>
@@ -669,6 +894,66 @@ function Profile () {
         )}
         <button onClick={() => exitOfProduct()}>Выйти</button>
       </div>
+      {deleteDialogOpen && (
+        <div
+          className='accountDialogOverlay'
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeDeleteDialog()
+          }}
+        >
+          <section
+            className='accountDialog'
+            role='alertdialog'
+            aria-modal='true'
+            aria-labelledby='deleteAccountTitle'
+            aria-describedby='deleteAccountDescription'
+            ref={deleteDialogRef}
+          >
+            <h2 id='deleteAccountTitle'>Удалить аккаунт безвозвратно?</h2>
+            <p id='deleteAccountDescription'>
+              Будут удалены профиль, растения, история полива и настройки.
+              Отменить это действие нельзя. Копию данных можно сохранить заранее
+              кнопкой «Экспорт данных».
+            </p>
+            <label className='accountDialogLabel' htmlFor='deleteAccountConfirm'>
+              Введите слово УДАЛИТЬ, чтобы подтвердить
+            </label>
+            <input
+              id='deleteAccountConfirm'
+              ref={deleteInputRef}
+              className='accountDialogInput'
+              type='text'
+              autoComplete='off'
+              spellCheck={false}
+              value={deleteConfirmText}
+              onChange={event => {
+                setDeleteConfirmText(event.target.value)
+                if (deleteError) setDeleteError('')
+              }}
+              aria-invalid={deleteError ? 'true' : undefined}
+              aria-describedby={deleteError ? 'deleteAccountError' : undefined}
+            />
+            {deleteError && (
+              <p className='accountDialogError' id='deleteAccountError' role='alert'>
+                {deleteError}
+              </p>
+            )}
+            <div className='accountDialogActions'>
+              <button type='button' onClick={closeDeleteDialog} disabled={deleteBusy}>
+                Отмена
+              </button>
+              <button
+                type='button'
+                className='accountDialogConfirm'
+                onClick={confirmDeleteAccount}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? 'Удаляем…' : 'Удалить аккаунт'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <footer className='profileAppVersion'>
         <p>Версия приложения {import.meta.env.VITE_APP_VERSION}</p>
         <p className='profileFeedback'>

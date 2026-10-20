@@ -1,0 +1,12 @@
+{
+  "_comment": "Образец конфигурации деплоя БЕЗ секретов. Скопируйте в deploy.config.json (он в .gitignore и .ydignore) или задайте переменные окружения DEPLOY_* — env имеет приоритет над файлом. Пароль хранить в файле не рекомендуется: используйте DEPLOY_PASSWORD или secret-store. Путь к конфигу можно переопределить через DEPLOY_CONFIG_PATH.",
+  "protocol": "ftp",
+  "host": "ftp.example.com",
+  "port": 21,
+  "user": "deploy-user",
+  "password": "",
+  "remoteRoot": "/www/example.com",
+  "accountRoot": "/www/example.com",
+  "siteUrl": "https://example.com",
+  "build": true
+}

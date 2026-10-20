@@ -4,6 +4,14 @@ html[data-theme='dark'] .tabbar {
     border-color: var(--theme-border);
 }
 
-html[data-theme='dark'] .tabbar li:not(.active) .tabbarButton img {
+html[data-theme='dark'] .tabbarButton:not(.is-active) > img {
     filter: brightness(0) invert(0.82);
+}
+
+html[data-theme='dark'] .tabbarButton.is-active {
+    background-color: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .tabbarButton:hover {
+    background-color: var(--theme-raised);
 }

@@ -1,6 +1,7 @@
 import { Router } from "express"
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import UserController from "../controllers/userController.js"
+import AccountController from "../controllers/accountController.js"
 import { requireAdmin } from '../middleware/admin.js'
 import passkeyController from '../controllers/passkeyController.js'
 import passwordResetController from '../controllers/passwordResetController.js'
@@ -92,6 +93,26 @@ const notificationPreferenceLimiter = rateLimit({
     ...rateLimitStoreOptions('user-notification-preferences')
 })
 
+const accountExportLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 10,
+    keyGenerator: req => String(req.user?.id || ipKeyGenerator(req.ip)),
+    message: { message: 'Слишком много запросов экспорта данных. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-account-export')
+})
+
+const accountDeleteLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 5,
+    keyGenerator: req => String(req.user?.id || ipKeyGenerator(req.ip)),
+    message: { message: 'Слишком много попыток удаления аккаунта. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-account-delete')
+})
+
 router.post("/registration", registrationLimiter, UserController.registration)
 router.post("/login", loginLimiter, UserController.login)
 router.post("/logout", UserController.logout)
@@ -113,6 +134,8 @@ router.post(
 )
 
 router.get("/me", requireAuth, UserController.getCurrentUser)
+router.get('/me/export', requireAuth, accountExportLimiter, AccountController.exportData)
+router.delete('/me', requireAuth, accountDeleteLimiter, AccountController.deleteMe)
 router.patch("/me", requireAuth, UserController.updateProfile)
 router.get(
     '/me/notification-preferences',

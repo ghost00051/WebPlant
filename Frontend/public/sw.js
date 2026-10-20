@@ -1,4 +1,5 @@
-const CACHE_NAME = 'ctp-v5'
+const CACHE_VERSION = 'v6'
+const CACHE_NAME = `ctp-${CACHE_VERSION}`
 const DEFAULT_API_BASE = '/api'
 const VALID_API_PROTOCOLS = ['http:', 'https:']
 
@@ -37,7 +38,7 @@ function resolveApiBase() {
 const API_BASE = resolveApiBase()
 
 self.addEventListener('install', (event) => {
-    console.log('🔧 SW: install', { apiBase: API_BASE })
+    console.log('🔧 SW: install', { apiBase: API_BASE, cache: CACHE_NAME })
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) =>
             Promise.all(
@@ -49,21 +50,56 @@ self.addEventListener('install', (event) => {
             )
         )
     )
-    self.skipWaiting()
+})
+
+self.addEventListener('message', (event) => {
+    const data = event.data || {}
+
+    if (data.type === 'SKIP_WAITING') {
+        console.log('🔧 SW: SKIP_WAITING — активируем новую версию', { cache: CACHE_NAME })
+        self.skipWaiting()
+        return
+    }
+
+    if (data.type === 'GET_VERSION' && event.source) {
+        try {
+            event.source.postMessage({
+                type: 'SW_VERSION',
+                version: CACHE_VERSION,
+                cacheName: CACHE_NAME
+            })
+        } catch (error) {
+            console.warn('⚠️ SW: не удалось отправить версию клиенту:', error)
+        }
+    }
 })
 
 self.addEventListener('activate', (event) => {
-    console.log('🔧 SW: activate')
-    event.waitUntil(
-        caches.keys().then((cacheNames) =>
-            Promise.all(
+    console.log('🔧 SW: activate', { cache: CACHE_NAME })
+    event.waitUntil((async () => {
+        try {
+            const cacheNames = await caches.keys()
+            await Promise.all(
                 cacheNames
                     .filter((name) => name !== CACHE_NAME)
                     .map((name) => caches.delete(name))
             )
-        )
-    )
-    self.clients.claim()
+        } catch (error) {
+            console.warn('⚠️ SW: не удалось удалить старые кэши:', error)
+        }
+
+        try {
+            await self.clients.claim()
+        } catch (error) {
+            console.warn('⚠️ SW: clients.claim failed:', error)
+        }
+
+        await notifyClients({
+            type: 'SW_UPDATED',
+            version: CACHE_VERSION,
+            cacheName: CACHE_NAME
+        })
+    })())
 })
 
 function isCacheableAsset(request) {

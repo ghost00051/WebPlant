@@ -2,12 +2,18 @@ import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import BackBtn from '../../assets/BackBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import './myPlant.css'
 import './dark-theme.css'
 import search from '../../assets/search.svg'
 import xcircle from '../../assets/x-circle.svg'
 import { API_URL } from '../../utils/api.js'
-import { weekdayRestrictionApplies } from '../../utils/date.js'
+import {
+    dayOfMonth,
+    diffInDays,
+    monthGenitive,
+    weekdayRestrictionApplies
+} from '../../utils/date.js'
 
 const WEEKDAYS = [
     { id: 1, label: 'Пн' },
@@ -24,6 +30,69 @@ const WATERING_TIMES = [
     { id: 'day', label: 'День' },
     { id: 'evening', label: 'Вечер' }
 ]
+
+const DAY_WORD_FORMS = ['день', 'дня', 'дней']
+
+function plural(count, forms) {
+    const value = Math.abs(Number(count))
+    if (!Number.isFinite(value)) return forms[2]
+    const mod10 = value % 10
+    const mod100 = value % 100
+    if (mod10 === 1 && mod100 !== 11) return forms[0]
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return forms[1]
+    return forms[2]
+}
+
+function daysWord(count) {
+    return plural(count, DAY_WORD_FORMS)
+}
+
+function mainPhotoUrl(item) {
+    if (!item) return null
+    if (Array.isArray(item.photos) && item.photos.length) {
+        const main = item.photos.find(photo => photo?.is_main) || item.photos[0]
+        if (main?.url) return main.url
+    }
+    return item.photo_url || item.photo_thumb_url || null
+}
+
+function plantRoom(item) {
+    return item?.location || item?.room || ''
+}
+
+function formatDayMonth(value) {
+    const date = value instanceof Date ? value : new Date(value)
+    if (!Number.isFinite(date.getTime())) return ''
+    return `${dayOfMonth(date)} ${monthGenitive(date)}`
+}
+
+function wateringStatus(item) {
+    if (!item?.next_watering_at) return null
+    const next = new Date(item.next_watering_at)
+    if (!Number.isFinite(next.getTime())) return null
+
+    const diff = diffInDays(next, new Date())
+
+    if (diff < 0) {
+        const late = Math.abs(diff)
+        return {
+            tone: 'overdue',
+            label: late === 1 ? 'Полив просрочен на 1 день' : `Полив просрочен на ${late} ${daysWord(late)}`,
+            date: formatDayMonth(next)
+        }
+    }
+    if (diff === 0) {
+        return { tone: 'today', label: 'Полить сегодня', date: formatDayMonth(next) }
+    }
+    if (diff === 1) {
+        return { tone: 'soon', label: 'Полить завтра', date: formatDayMonth(next) }
+    }
+    return {
+        tone: 'soon',
+        label: `Полить через ${diff} ${daysWord(diff)}`,
+        date: formatDayMonth(next)
+    }
+}
 
 async function readResponse(response) {
     return response.json().catch(() => ({}))
@@ -263,27 +332,79 @@ function MyPlant() {
 
             {!isLoading && !listError && plant.length > 0 && (
                 <div className='gridBlocksOfPlant'>
-                    {filteredPlants.map(item => (
-                        <article key={item.id} className='plantRenderOfPants'>
-                            <p>{item.name}</p>
-                            <p>{item.species || 'Вид не указан'}</p>
-                            <div className='buttonEditPlants'>
-                                <button type='button' onClick={() => openEditor(item)}>
-                                    Изменить
-                                </button>
-                                <button
-                                    type='button'
-                                    className='deletePlantButton'
-                                    onClick={() => {
-                                        setDeleteTarget(item)
-                                        setDeleteError('')
-                                    }}
-                                >
-                                    Удалить
-                                </button>
-                            </div>
-                        </article>
-                    ))}
+                    {filteredPlants.map(item => {
+                        const photo = mainPhotoUrl(item)
+                        const room = plantRoom(item)
+                        const status = wateringStatus(item)
+                        const lastWatered = item.last_watered_at
+                            ? formatDayMonth(item.last_watered_at)
+                            : ''
+                        const interval = Number(item.watering_interval_days)
+
+                        return (
+                            <article key={item.id} className='plantRenderOfPants'>
+                                <div className='plantCardTop'>
+                                    <PlantPhoto
+                                        className='plantCardPhoto'
+                                        src={photo || undefined}
+                                        alt={photo ? `Фото растения «${item.name}»` : ''}
+                                    />
+                                    <div className='plantCardTitles'>
+                                        <h2>{item.name}</h2>
+                                        <p className='plantCardSpecies'>
+                                            {item.species || 'Вид не указан'}
+                                        </p>
+                                        <p className='plantCardRoom'>
+                                            {room ? `Комната: ${room}` : 'Комната не указана'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <dl className='plantCardMeta'>
+                                    <div>
+                                        <dt>Последний полив</dt>
+                                        <dd>{lastWatered || 'нет данных'}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>Следующий полив</dt>
+                                        <dd>
+                                            {status
+                                                ? `${status.date}${
+                                                    Number.isInteger(interval) && interval > 0
+                                                        ? ` · раз в ${interval} ${daysWord(interval)}`
+                                                        : ''
+                                                }`
+                                                : 'не запланирован'}
+                                        </dd>
+                                    </div>
+                                </dl>
+                                {status ? (
+                                    <p className={`plantCardStatus plantCardStatus--${status.tone}`}>
+                                        <span className='plantCardStatusDot' aria-hidden='true' />
+                                        {status.label}
+                                    </p>
+                                ) : (
+                                    <p className='plantCardStatus plantCardStatus--unknown'>
+                                        Полив не запланирован
+                                    </p>
+                                )}
+                                <div className='buttonEditPlants'>
+                                    <button type='button' onClick={() => openEditor(item)}>
+                                        Изменить
+                                    </button>
+                                    <button
+                                        type='button'
+                                        className='deletePlantButton'
+                                        onClick={() => {
+                                            setDeleteTarget(item)
+                                            setDeleteError('')
+                                        }}
+                                    >
+                                        Удалить
+                                    </button>
+                                </div>
+                            </article>
+                        )
+                    })}
                     {filteredPlants.length === 0 && (
                         <p className='plantListMessage' role='status'>
                             По запросу «{searchQuery}» ничего не найдено.

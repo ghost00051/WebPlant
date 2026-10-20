@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import BackBtn from '../../assets/BackBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import './editProfile.css'
@@ -18,6 +18,8 @@ function EditProfile() {
     const [phone, setPhone] = useState("")
     const [submitting, setSubmitting] = useState(false)
     const [successMessage, setSuccessMessage] = useState('')
+    const [errorField, setErrorField] = useState('')
+    const emailInputRef = useRef(null)
 
     const parseJsonSafely = async (response) => {
         const text = await response.text()
@@ -43,14 +45,23 @@ function EditProfile() {
         return '+' + d
     }
 
+    const focusEmailField = () => {
+        window.setTimeout(() => {
+            emailInputRef.current?.focus()
+        }, 0)
+    }
+
     const handleEditProfile = async (event) => {
         event.preventDefault()
         setError(null)
         setSuccessMessage('')
+        setErrorField('')
 
         const email = rendEmail.trim().toLowerCase()
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             setError('Укажите корректный email')
+            setErrorField('email')
+            focusEmailField()
             return
         }
 
@@ -160,19 +171,26 @@ function EditProfile() {
     }, [])
 
     return (
-        <div className='editProfilePage'>
+        <main className='editProfilePage'>
             <div className='editProfileHeader'>
-                <ThemedIcon
-                    src={BackBtn}
-                    alt="Назад"
+                <button
+                    type='button'
+                    className='editProfileBackBtn'
+                    aria-label='Назад'
+                    title='Назад'
                     onClick={() => navigate(-1)}
-                    style={{ cursor: 'pointer' }}
-                />
-                <p>Редактировать профиль</p>
+                >
+                    <ThemedIcon src={BackBtn} alt='' />
+                </button>
+                <h1 className='editProfileTitle'>Редактировать профиль</h1>
             </div>
 
             {loading && <p>Загрузка...</p>}
-            {error && <p className='editProfileError'>{error}</p>}
+            {error && (
+                <p id='editProfileError' className='editProfileError' role='alert'>
+                    {error}
+                </p>
+            )}
             {successMessage && (
                 <p className='editProfileSuccess' role='status' aria-live='polite'>
                     {successMessage}
@@ -187,7 +205,7 @@ function EditProfile() {
                 </div>
             )}
             <div>
-                <form onSubmit={handleEditProfile} >
+                <form onSubmit={handleEditProfile} noValidate>
                     <div className='editProfile'>
                         <label>
                             <p>Имя</p>
@@ -216,9 +234,25 @@ function EditProfile() {
                         <label>
                             <p>Email</p>
                             <input
+                                id='editProfileEmail'
+                                ref={emailInputRef}
                                 type="email"
                                 value={rendEmail}
-                                onChange={(e) => setRendEmail(e.target.value)}
+                                aria-invalid={
+                                    errorField === 'email' ? 'true' : undefined
+                                }
+                                aria-describedby={
+                                    errorField === 'email'
+                                        ? 'editProfileError'
+                                        : undefined
+                                }
+                                onChange={(e) => {
+                                    setRendEmail(e.target.value)
+                                    if (errorField === 'email') {
+                                        setError(null)
+                                        setErrorField('')
+                                    }
+                                }}
                             />
                         </label>
                         <label>
@@ -236,7 +270,7 @@ function EditProfile() {
                     </button>
                 </form>
             </div>
-        </div>
+        </main>
     )
 }
 

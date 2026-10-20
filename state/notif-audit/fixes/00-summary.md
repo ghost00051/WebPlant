@@ -99,3 +99,27 @@
 - `state/notif-audit/fixes/03-security-fixes.md`
 - `state/notif-audit/fixes/04-client-fixes.md`
 - Итоговый аудит: `Уведомления-Аудит.md`
+
+## 7. Деплой на сервер 192.168.0.103 (19.10.2026)
+
+| Шаг | Статус |
+|---|---|
+| `git pull` до `449e904` на `C:\Dev\WebPlant` | **OK** (HEAD совпадает с локальным/remote) |
+| Бэкап БД Kubernetes перед миграцией | **OK** — `Backend/backups/k8s_before_notif_deploy.dump` (318 КБ) |
+| Сборка backend-образа `webplant-backend:1.2.6-449e904-dirty-62ea832c` | **OK** |
+| Загрузка образа в 6 нод kind | **OK** |
+| Миграции k8s PostgreSQL | **OK** — применены 15 файлов, включая `20261022`, `20261023`; таблиц: 21 |
+| Раскатка backend (1 реплика) | **OK** — под `backend-...` Running, `/health`: `status=ok`, `deployTarget=kubernetes`, `redis=ok`, `backgroundJobs=True` |
+| Redis k8s | **OK** — отвечает, ключей: 74 |
+| Gateway/nginx на server.checktheplants.ru | **OK** — пересоздан, reload nginx |
+| Frontend `Frontend/dist` → FTP `checktheplants.ru` | **OK** — 94/94 файла загружены и сверены; `sw.js` = `ctp-v5`; `https://checktheplants.ru/notifications` — **200** |
+
+**Инцидент доступа:** после серии SSH/SMB-попыток локальная учётная запись `SERVER\yvan03` ушла в lockout (сервер отвечает RST на SSH, SMB: «account is currently locked out»). Финальные проверки, требующие shell (API-smoke на одноразовой БД, точечные SQL-запросы, проверка логов нового пода), отложены до авторазблокировки/разблокировки админом. Косвенно схема проверена: production-старт backend выполняет schema-check всех моделей и не упал; миграции применены; `/health` подтверждает Redis.
+
+**Осталось проверить после разблокировки аккаунта:**
+1. `node _notif_smoke.mjs` на throwaway-БД `webplant_notif_smoke_verify` (создать/удалить через `kubectl exec postgres-0`).
+2. Точечные SQL: новые колонки `push_*`, отсутствие `status='sending'`, работа unique-индекса `idempotency_key`.
+3. Redis-lock через `withDistributedLock` внутри пода.
+4. Логи нового пода: строки `reminderTick`/`morningSummaryTick`/`careAdviceTick`, отсутствие ошибок schema/VAPID.
+5. Проверить nginx/gateway и публичный `/health` через `server.checktheplants.ru` (из нашей сети TLS-хендшейк к публичному API не проходит — возможно, geo/сетевое ограничение; нужен взгляд с сервера).
+

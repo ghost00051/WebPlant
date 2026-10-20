@@ -52,7 +52,7 @@ export function buildResetUrl(token, frontendUrl) {
     const base = getPrimaryFrontendUrl(frontendUrl)
     if (!base) throw new Error('FRONTEND_URL is not configured')
     if (!isValidResetTokenFormat(token)) throw new Error('Invalid reset token')
-    return `${base}${RESET_LINK_PATH}?token=${encodeURIComponent(token)}`
+    return `${base}${RESET_LINK_PATH}#token=${encodeURIComponent(token)}`
 }
 
 export function maskEmail(email) {

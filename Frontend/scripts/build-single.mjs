@@ -1,12 +1,10 @@
-import { copyFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+﻿import { copyFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..')
 const outputDirectory = resolve(root, 'dist')
 const siteUrl = 'https://checktheplants.ru'
-const HUB_LASTMOD = '2026-10-13'
-const PLANT_LASTMOD = '2026-10-13'
 const buildDate = new Date().toISOString().slice(0, 10)
 
 const { PLANTS } = await import(new URL('../src/data/plants.js', import.meta.url).href)
@@ -57,12 +55,12 @@ const shell = (await readFile(indexPath, 'utf8')).replace(
 await writeFile(indexPath, shell)
 
 const sitemapEntries = [
-  { path: HOME_PATH, lastmod: HUB_LASTMOD, changefreq: 'weekly', priority: '1.0' },
-  { path: PLANTS_PATH, lastmod: HUB_LASTMOD, changefreq: 'monthly', priority: '0.9' },
-  { path: CARE_PATH, lastmod: HUB_LASTMOD, changefreq: 'weekly', priority: '0.9' },
+  { path: HOME_PATH, lastmod: buildDate, changefreq: 'weekly', priority: '1.0' },
+  { path: PLANTS_PATH, lastmod: buildDate, changefreq: 'monthly', priority: '0.9' },
+  { path: CARE_PATH, lastmod: buildDate, changefreq: 'weekly', priority: '0.9' },
   ...PLANTS.map(plant => ({
     path: plantPath(plant.slug),
-    lastmod: plant.updated || PLANT_LASTMOD,
+    lastmod: plant.updated || buildDate,
     changefreq: 'monthly',
     priority: '0.8'
   })),

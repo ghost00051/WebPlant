@@ -161,8 +161,9 @@ class UserController {
                 )
             })
             if (candidate) {
+                await bcrypt.hash(String(password || 'neutral-response'), 10)
                 return res.status(409).json({
-                    message: "Пользователь с таким email уже существует"
+                    message: "Не удалось создать аккаунт с этим email. Если аккаунт уже есть — войдите или восстановите пароль."
                 })
             }
 
@@ -279,7 +280,7 @@ class UserController {
             }
             if (e instanceof UniqueConstraintError) {
                 return res.status(409).json({
-                    message: "Пользователь с таким email или именем уже существует"
+                    message: "Не удалось создать аккаунт. Если аккаунт уже есть — войдите или восстановите пароль."
                 })
             }
             console.error("❌ Ошибка регистрации:", e)

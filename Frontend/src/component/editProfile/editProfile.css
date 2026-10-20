@@ -22,21 +22,66 @@
 .editProfileHeader {
     display: flex;
     align-items: center;
-    gap: 25px;
+    gap: 16px;
 }
 
-.editProfileHeader p {
+.editProfileBackBtn {
+    display: grid;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    cursor: pointer;
+}
+
+.editProfileBackBtn:hover {
+    background: rgba(90, 110, 96, 0.12);
+}
+
+.editProfileBackBtn img {
+    display: block;
+    width: 24px;
+    height: 24px;
+}
+
+.editProfileTitle {
+    margin: 0;
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-xl);
     font-weight: bold;
     color: #2D2D2D;
-    margin: 0;
 }
 
 .headerOfImgNames {
     display: flex;
     justify-content: center;
     margin-top: 24px;
+}
+
+.imgOfName {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background-color: #7FD1A0;
+    color: #10301F;
+    box-shadow: 0 10px 24px rgba(45, 55, 47, 0.16);
+}
+
+.imgOfName p {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: 36px;
+    font-weight: 600;
+    line-height: 1;
+    text-transform: uppercase;
 }
 
 .editProfile {
@@ -67,6 +112,13 @@
     width: 100%;
     box-sizing: border-box;
     padding: 14px 16px;
+    color: #2D2D2D;
+}
+
+.editProfile input[aria-invalid='true'] {
+    border-color: #C0392B;
+    outline: 2px solid #C0392B;
+    outline-offset: 1px;
 }
 
 .editProfileError {
@@ -92,8 +144,8 @@
 .saveOfEditProfile {
     font-family: 'Inter', sans-serif;
     font-size: var(--font-size-base);
-    font-weight: 400;
-    color: #FFFFFF;
+    font-weight: 600;
+    color: #10301F;
     margin-bottom: 0;
     margin-top: 20px;
     padding: 14px 0;
@@ -123,7 +175,7 @@
         gap: 14px;
     }
 
-    .editProfileHeader p {
+    .editProfileTitle {
         font-size: var(--font-size-lg);
     }
 

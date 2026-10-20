@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, forwardRef, useImperativeHandle } from 'react'
+import { useState, useMemo, useCallback, forwardRef, useImperativeHandle, useRef } from 'react'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
 import ArrowLeft from '../../assets/ArrowLeft.svg'
 import ArrowRight from '../../assets/ArrowRight.svg'
@@ -9,6 +9,7 @@ import {
   diffInDays,
   isBefore,
   isSameDay,
+  monthGenitive,
   monthNominative,
   resolveWateringMarkers,
   startOfISOWeek,
@@ -23,8 +24,59 @@ import './dark-theme.css'
 const WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DAYS_IN_VIEW = 14
 const MONTH_WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+const DAYS_IN_WEEK = 7
 
 const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
+
+const wateringStateLabels = ({ isFuture, isPast, isOverdue }) => [
+  isFuture && 'будущий полив',
+  isOverdue && 'пропущенный полив',
+  isPast && 'прошлый полив',
+].filter(Boolean)
+
+const buildDayLabel = (date, { isToday, isSelected, isFuture, isPast, isOverdue }) => {
+  const parts = [`${dayOfMonth(date)} ${monthGenitive(date)}`]
+  if (isToday) parts.push('сегодня')
+  const watering = wateringStateLabels({ isFuture, isPast, isOverdue })
+  if (watering.length) parts.push(watering.join(', '))
+  if (isSelected) parts.push('выбран')
+  return parts.join(', ')
+}
+
+const handleGridKeyDown = (event, grid, setFocusIndex) => {
+  const buttons = grid ? [...grid.querySelectorAll('button[data-day]')] : []
+  if (!buttons.length) return
+  const currentIndex = buttons.indexOf(document.activeElement)
+  if (currentIndex < 0) return
+
+  let nextIndex
+  switch (event.key) {
+    case 'ArrowLeft':
+      nextIndex = currentIndex - 1
+      break
+    case 'ArrowRight':
+      nextIndex = currentIndex + 1
+      break
+    case 'ArrowUp':
+      nextIndex = currentIndex - DAYS_IN_WEEK
+      break
+    case 'ArrowDown':
+      nextIndex = currentIndex + DAYS_IN_WEEK
+      break
+    case 'Home':
+      nextIndex = 0
+      break
+    case 'End':
+      nextIndex = buttons.length - 1
+      break
+    default:
+      return
+  }
+  event.preventDefault()
+  nextIndex = Math.max(0, Math.min(nextIndex, buttons.length - 1))
+  setFocusIndex(nextIndex)
+  buttons[nextIndex].focus()
+}
 
 const MiniCalendar = forwardRef(function MiniCalendar(
   { onSelectDay, futureDates, pastDates, overdueDates, externalIso },
@@ -39,6 +91,11 @@ const MiniCalendar = forwardRef(function MiniCalendar(
   })
   const [direction, setDirection] = useState('next')
   const [animKey, setAnimKey] = useState(0)
+  const [mobileFocusIndex, setMobileFocusIndex] = useState(null)
+  const [desktopFocusIndex, setDesktopFocusIndex] = useState(null)
+
+  const mobileGridRef = useRef(null)
+  const desktopGridRef = useRef(null)
 
   const anchor = useMemo(() => toDate(anchorTime), [anchorTime])
 
@@ -61,16 +118,35 @@ const MiniCalendar = forwardRef(function MiniCalendar(
     return Array.from({ length: visibleDays }, (_, index) => addDays(firstVisibleDay, index))
   }, [desktopMonth])
 
+  const mobileStartIndex = useMemo(() => {
+    const todayIndex = days.findIndex(day => isSameDay(day, todayDate))
+    if (todayIndex >= 0) return todayIndex
+    const selectedIndex = days.findIndex(day => externalIso === toISODate(day))
+    return selectedIndex >= 0 ? selectedIndex : 0
+  }, [days, todayDate, externalIso])
+
+  const desktopStartIndex = useMemo(() => {
+    const todayIndex = desktopMonthDays.findIndex(day => isSameDay(day, todayDate))
+    if (todayIndex >= 0) return todayIndex
+    const selectedIndex = desktopMonthDays.findIndex(day => externalIso === toISODate(day))
+    return selectedIndex >= 0 ? selectedIndex : 0
+  }, [desktopMonthDays, todayDate, externalIso])
+
+  const mobileTabIndex = mobileFocusIndex ?? mobileStartIndex
+  const desktopTabIndex = desktopFocusIndex ?? desktopStartIndex
+
   const prev = () => {
     setDirection('prev')
     setAnchorTime(current => addDays(current, -DAYS_IN_VIEW).getTime())
     setAnimKey(k => k + 1)
+    setMobileFocusIndex(null)
   }
 
   const next = () => {
     setDirection('next')
     setAnchorTime(current => addDays(current, DAYS_IN_VIEW).getTime())
     setAnimKey(k => k + 1)
+    setMobileFocusIndex(null)
   }
 
   const prevDesktopMonth = () => {
@@ -78,6 +154,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
       const date = toDate(current)
       return new Date(date.getFullYear(), date.getMonth() - 1, 1).getTime()
     })
+    setDesktopFocusIndex(null)
   }
 
   const nextDesktopMonth = () => {
@@ -85,6 +162,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
       const date = toDate(current)
       return new Date(date.getFullYear(), date.getMonth() + 1, 1).getTime()
     })
+    setDesktopFocusIndex(null)
   }
 
   useImperativeHandle(ref, () => ({
@@ -109,7 +187,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
   }), [futureDates, pastDates, overdueDates])
 
   const renderDots = ({ isFuture, isPast, isOverdue }) => (
-    <div className='mini-calendar__dots'>
+    <div className='mini-calendar__dots' aria-hidden='true'>
       {isFuture && <span className='dot dot--future' title='Будущий полив' />}
       {isOverdue && <span className='dot dot--overdue' title='Просроченный или пропущенный полив' />}
       {isPast && <span className='dot dot--past' title='Прошлый полив' />}
@@ -124,10 +202,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span key={title}>{title}</span>
         </div>
         <div className='mini-calendar__nav'>
-          <button onClick={prev} aria-label='Предыдущие 2 недели'>
+          <button type='button' onClick={prev} aria-label='Предыдущие 2 недели'>
             <ThemedIcon src={ArrowLeft} alt='' />
           </button>
-          <button onClick={next} aria-label='Следующие 2 недели'>
+          <button type='button' onClick={next} aria-label='Следующие 2 недели'>
             <ThemedIcon src={ArrowRight} alt='' />
           </button>
         </div>
@@ -139,20 +217,32 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         ))}
       </div>
 
-      <div className='mini-calendar__grid-wrap'>
+      <div
+        className='mini-calendar__grid-wrap'
+        role='group'
+        aria-label='Календарь полива, две недели'
+        aria-describedby='mini-calendar-legend-mobile'
+        ref={mobileGridRef}
+        onKeyDown={event => handleGridKeyDown(event, mobileGridRef.current, setMobileFocusIndex)}
+      >
         <div
           key={animKey}
           className={`mini-calendar__grid slide-${direction}`}
         >
-          {days.map(day => {
+          {days.map((day, index) => {
             const dateStr = toISODate(day)
             const isToday = isSameDay(day, todayDate)
             const isSelected = externalIso === dateStr
-            const { isFuture, isPast, isOverdue } = getWateringState(dateStr)
+            const wateringState = getWateringState(dateStr)
 
             return (
               <button
                 key={dateStr}
+                type='button'
+                data-day='true'
+                tabIndex={index === mobileTabIndex ? 0 : -1}
+                aria-label={buildDayLabel(day, { isToday, isSelected, ...wateringState })}
+                aria-current={isToday ? 'date' : undefined}
                 className={[
                   'mini-calendar__day',
                   isToday && 'is-today',
@@ -161,27 +251,28 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                   .filter(Boolean)
                   .join(' ')}
                 onClick={() => handleSelect(day)}
+                onFocus={() => setMobileFocusIndex(index)}
               >
                 <span className='mini-calendar__day-number'>{dayOfMonth(day)}</span>
-                {renderDots({ isFuture, isPast, isOverdue })}
+                {renderDots(wateringState)}
               </button>
             )
           })}
         </div>
       </div>
 
-      <div className='mini-calendar__legend'>
+      <div className='mini-calendar__legend' id='mini-calendar-legend-mobile'>
         <span className='legend-item'>
-          <span className='dot dot--future' /> Будущий полив
+          <span className='dot dot--future' aria-hidden='true' /> Будущий полив
         </span>
         <span className='legend-item'>
-          <span className='dot dot--past' /> Прошлый полив
+          <span className='dot dot--past' aria-hidden='true' /> Прошлый полив
         </span>
         <span className='legend-item'>
-          <span className='dot dot--overdue' /> Пропущенный/просроченный
+          <span className='dot dot--overdue' aria-hidden='true' /> Пропущенный/просроченный
         </span>
         <span className='legend-item'>
-          <span className='dot dot--today' /> Сегодня
+          <span className='dot dot--today' aria-hidden='true' /> Сегодня
         </span>
       </div>
       <div className='mini-calendar__desktop-view'>
@@ -191,10 +282,10 @@ const MiniCalendar = forwardRef(function MiniCalendar(
             <span>{desktopMonthTitle}</span>
           </div>
           <div className='mini-calendar__nav'>
-            <button onClick={prevDesktopMonth} aria-label='Предыдущий месяц'>
+            <button type='button' onClick={prevDesktopMonth} aria-label='Предыдущий месяц'>
               <ThemedIcon src={ArrowLeft} alt='' />
             </button>
-            <button onClick={nextDesktopMonth} aria-label='Следующий месяц'>
+            <button type='button' onClick={nextDesktopMonth} aria-label='Следующий месяц'>
               <ThemedIcon src={ArrowRight} alt='' />
             </button>
           </div>
@@ -202,23 +293,34 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         <div className='mini-calendar__weekdays'>
           {MONTH_WEEK_DAYS.map(day => <span key={day}>{day}</span>)}
         </div>
-        <div className='mini-calendar__month-grid'>
-          {desktopMonthDays.map(day => {
+        <div
+          className='mini-calendar__month-grid'
+          role='group'
+          aria-label='Календарь полива, месяц'
+          aria-describedby='mini-calendar-legend-desktop'
+          ref={desktopGridRef}
+          onKeyDown={event => handleGridKeyDown(event, desktopGridRef.current, setDesktopFocusIndex)}
+        >
+          {desktopMonthDays.map((day, index) => {
             const dateStr = toISODate(day)
             const isCurrentMonth = day.getMonth() === desktopMonth.getMonth()
             const isToday = isSameDay(day, todayDate)
             const isSelected = externalIso === dateStr
-            const { isFuture, isPast, isOverdue } = getWateringState(dateStr)
-            const isWateringDay = isFuture || isPast || isOverdue
-            const wateringLabels = [
-              isFuture && 'будущий полив',
-              isOverdue && 'пропущенный полив',
-              isPast && 'прошлый полив',
-            ].filter(Boolean)
+            const wateringState = getWateringState(dateStr)
+            const isWateringDay = wateringState.isFuture || wateringState.isPast || wateringState.isOverdue
 
             return (
               <button
                 key={dateStr}
+                type='button'
+                data-day='true'
+                tabIndex={index === desktopTabIndex ? 0 : -1}
+                aria-label={buildDayLabel(day, {
+                  isToday,
+                  isSelected,
+                  ...wateringState,
+                })}
+                aria-current={isToday ? 'date' : undefined}
                 className={[
                   'mini-calendar__month-day',
                   !isCurrentMonth && 'is-outside',
@@ -227,19 +329,19 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                   isWateringDay && 'is-watering-day',
                 ].filter(Boolean).join(' ')}
                 onClick={() => handleSelect(day)}
-                aria-label={`${dayOfMonth(day)} ${monthNominative(day)}${wateringLabels.length ? `, ${wateringLabels.join(', ')}` : ''}`}
+                onFocus={() => setDesktopFocusIndex(index)}
               >
                 <span className='mini-calendar__day-number'>{dayOfMonth(day)}</span>
-                {renderDots({ isFuture, isPast, isOverdue })}
+                {renderDots(wateringState)}
               </button>
             )
           })}
         </div>
-        <div className='mini-calendar__desktop-legend'>
-          <span><i className='dot dot--future' /> Будущий полив</span>
-          <span><i className='dot dot--past' /> Прошлый полив</span>
-          <span><i className='dot dot--overdue' /> Пропущенный/просроченный</span>
-          <span><i className='dot dot--today' /> Сегодня</span>
+        <div className='mini-calendar__desktop-legend' id='mini-calendar-legend-desktop'>
+          <span><i className='dot dot--future' aria-hidden='true' /> Будущий полив</span>
+          <span><i className='dot dot--past' aria-hidden='true' /> Прошлый полив</span>
+          <span><i className='dot dot--overdue' aria-hidden='true' /> Пропущенный/просроченный</span>
+          <span><i className='dot dot--today' aria-hidden='true' /> Сегодня</span>
         </div>
       </div>
     </div>

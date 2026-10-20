@@ -3,3 +3,23 @@ html[data-theme='dark'] .pwaInstallHint {
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .pwaInstallHintDescription,
+html[data-theme='dark'] .pwaInstallHintInstructions {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .pwaInstallHintIcon {
+    background: var(--theme-raised);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .pwaInstallHintAction {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .pwaInstallHintAction:focus-visible,
+html[data-theme='dark'] .pwaInstallHintDismiss:focus-visible {
+    outline-color: var(--theme-focus-ring, #a5c0ae);
+}

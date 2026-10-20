@@ -1,5 +1,35 @@
 import { Component } from 'react'
 
+function buildErrorDetail(error, errorInfo) {
+    const isError = error instanceof Error
+
+    return {
+        context: 'error-boundary',
+        message: isError ? error.message : String(error),
+        stack: isError && error.stack ? error.stack : '',
+        componentStack: errorInfo?.componentStack || '',
+        route: typeof window !== 'undefined' ? window.location.pathname : '',
+        timestamp: new Date().toISOString(),
+    }
+}
+
+function reportUiError(error, errorInfo) {
+    const detail = buildErrorDetail(error, errorInfo)
+
+    try {
+        const reporter = typeof window !== 'undefined'
+            ? window.__webplantErrorReporter
+            : undefined
+        if (typeof reporter === 'function') {
+            reporter({ error, info: errorInfo, detail })
+        }
+    } catch (reporterError) {
+        console.warn('Репортер ошибок недоступен:', reporterError)
+    }
+
+    console.error('Необработанная ошибка интерфейса:', error, errorInfo, detail)
+}
+
 class ErrorBoundary extends Component {
     constructor(props) {
         super(props)
@@ -11,7 +41,7 @@ class ErrorBoundary extends Component {
     }
 
     componentDidCatch(error, errorInfo) {
-        console.error('Необработанная ошибка интерфейса:', error, errorInfo)
+        reportUiError(error, errorInfo)
     }
 
     handleReload = () => {

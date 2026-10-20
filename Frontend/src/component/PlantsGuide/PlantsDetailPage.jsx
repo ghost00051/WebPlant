@@ -81,8 +81,8 @@ function PlantsDetailPage({ slug }) {
                         className='contentLead'
                         src={plant.image}
                         alt={plant.imageAlt || plant.name}
-                        width={720}
-                        height={480}
+                        width={800}
+                        height={600}
                         loading='lazy'
                         decoding='async'
                         style={{ maxWidth: '100%', height: 'auto', filter: 'none' }}
