@@ -21,6 +21,7 @@ import {
 } from '../../utils/pushNotifications.js'
 import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import { API_URL } from '../../utils/api.js'
+import { openCookieConsentSettings } from '../../utils/cookieConsentSettings.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
@@ -849,6 +850,24 @@ function Profile () {
             : `Тема задана вручную: ${theme === 'dark' ? 'тёмная' : 'светлая'}`}
         </p>
       </div>
+      <section className='accountData' aria-labelledby='cookieSettingsTitle'>
+        <h2 id='cookieSettingsTitle'>Cookie и аналитика</h2>
+        <p className='accountDataText'>
+          Обязательные файлы cookie нужны для работы приложения, аналитика
+          включается только с вашего согласия. Здесь можно включить аналитику
+          или отозвать согласие в любой момент — выбор применяется сразу.
+        </p>
+        <div className='accountDataActions'>
+          <button
+            type='button'
+            className='accountDataExport'
+            aria-haspopup='dialog'
+            onClick={openCookieConsentSettings}
+          >
+            Настройки cookie
+          </button>
+        </div>
+      </section>
       <section className='accountData' aria-labelledby='accountDataTitle'>
         <h2 id='accountDataTitle'>Данные и аккаунт</h2>
         <p className='accountDataText'>

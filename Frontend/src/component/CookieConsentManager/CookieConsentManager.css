@@ -116,41 +116,9 @@
 
 .cookieConsentActions button:focus-visible,
 .cookieConsentClose:focus-visible,
-.cookieSettingsTrigger:focus-visible,
 .cookieConsentCopy a:focus-visible {
     outline: 3px solid #A9BCAF;
     outline-offset: 3px;
-}
-
-.cookieSettingsTrigger {
-    position: fixed;
-    z-index: 600;
-    right: 12px;
-    bottom: calc(88px + env(safe-area-inset-bottom, 0px));
-    display: inline-flex;
-    align-items: center;
-    min-height: 44px;
-    padding: 8px 14px;
-    border: 1px solid #E3E9E3;
-    border-radius: 999px;
-    background: #FFFFFF;
-    box-shadow: 0 4px 14px rgba(45, 55, 47, 0.12);
-    color: #526A59;
-    font-family: 'Inter', sans-serif;
-    font-size: var(--font-size-xs);
-    font-weight: 650;
-    cursor: pointer;
-}
-
-:root[data-theme='dark'] .cookieSettingsTrigger {
-    border-color: var(--theme-border);
-    background: var(--theme-raised);
-    color: var(--theme-text);
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
-}
-
-:root[data-theme='dark'] .cookieSettingsTrigger:focus-visible {
-    outline-color: var(--theme-focus-ring, #a5c0ae);
 }
 
 @media (max-width: 480px) {
@@ -179,11 +147,5 @@
 
     .cookieConsentActions button {
         flex: 1 1 100%;
-    }
-}
-
-@media (max-width: 1023px) {
-    .cookieSettingsTrigger {
-        bottom: calc(72px + env(safe-area-inset-bottom, 0px));
     }
 }

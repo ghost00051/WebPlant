@@ -15,8 +15,7 @@ export const OVERLAY_Z_INDEX = Object.freeze({
     cookie: 1000,
     push: 950,
     serviceWorkerBanner: 900,
-    pwa: 700,
-    cookieSettingsTrigger: 600
+    pwa: 700
 })
 
 const requests = new Map()

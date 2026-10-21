@@ -67,3 +67,7 @@ upload-dist.ps1
 
 state/notif-audit/fixes/*.txt
 Backend/nginx/pending/
+Backend_QA_Checklist.md
+Backend_QA_Checklist.xlsx
+WebPlant_QA_Checklist.md
+WebPlant_QA_Checklist.xlsx

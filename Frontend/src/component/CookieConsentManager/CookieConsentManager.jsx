@@ -14,6 +14,7 @@ import {
     requestOverlay,
     subscribeOverlays
 } from '../../utils/overlayQueue.js'
+import { COOKIE_SETTINGS_EVENT } from '../../utils/cookieConsentSettings.js'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import './CookieConsentManager.css'
 import './dark-theme.css'
@@ -236,10 +237,8 @@ function CookieConsentManager() {
     const [isOpen, setIsOpen] = useState(readConsentReopenRequest)
     const [isSaving, setIsSaving] = useState(false)
     const [error, setError] = useState('')
-    const [hintLift, setHintLift] = useState(0)
     const lastTrackedPath = useRef(null)
     const bannerRef = useRef(null)
-    const triggerRef = useRef(null)
     const previousFocusRef = useRef(null)
     const saveConsentRef = useRef(null)
     const closeBannerRef = useRef(null)
@@ -400,37 +399,12 @@ function CookieConsentManager() {
     }, [wantsBanner])
 
     useEffect(() => {
-        if (activeOverlay !== OVERLAY_IDS.pwa || typeof window === 'undefined') {
-            return undefined
-        }
+        if (typeof window === 'undefined') return undefined
 
-        let frame = 0
-        const measure = () => {
-            window.cancelAnimationFrame(frame)
-            frame = window.requestAnimationFrame(() => {
-                const hint = document.querySelector('.pwaInstallHint')
-                if (!hint) return
-                const rect = hint.getBoundingClientRect()
-                if (rect.height <= 0) return
-                setHintLift(Math.max(0, Math.round(window.innerHeight - rect.top + 12)))
-            })
-        }
-
-        measure()
-        window.addEventListener('resize', measure)
-        let observer = null
-        const hint = document.querySelector('.pwaInstallHint')
-        if (typeof ResizeObserver === 'function' && hint) {
-            observer = new ResizeObserver(measure)
-            observer.observe(hint)
-        }
-
-        return () => {
-            window.cancelAnimationFrame(frame)
-            window.removeEventListener('resize', measure)
-            if (observer) observer.disconnect()
-        }
-    }, [activeOverlay])
+        const handleOpenRequest = () => setIsOpen(true)
+        window.addEventListener(COOKIE_SETTINGS_EVENT, handleOpenRequest)
+        return () => window.removeEventListener(COOKIE_SETTINGS_EVENT, handleOpenRequest)
+    }, [])
 
     useEffect(() => {
         bannerModeRef.current = bannerMode
@@ -599,21 +573,6 @@ function CookieConsentManager() {
 
     return (
         <>
-            {consentLoaded && consentKnown && !wantsBanner && (
-                <button
-                    ref={triggerRef}
-                    className='cookieSettingsTrigger'
-                    type='button'
-                    aria-label='Настройки cookie'
-                    aria-haspopup='dialog'
-                    style={activeOverlay === OVERLAY_IDS.pwa && hintLift > 0
-                        ? { bottom: `${hintLift}px` }
-                        : undefined}
-                    onClick={() => setIsOpen(true)}
-                >
-                    Настройки cookie
-                </button>
-            )}
             {showBanner && (
                 <aside
                     ref={bannerRef}
