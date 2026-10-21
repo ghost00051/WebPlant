@@ -224,6 +224,7 @@ class AdminMailController {
 
             await sendBroadcastEmail({
                 to,
+                userId: req.user?.id ?? null,
                 userName: getFirstName(req.user?.name),
                 ...messageFrom(validation.value)
             })
@@ -288,7 +289,7 @@ class AdminMailController {
                 })
             }
 
-            const { broadcast, recipients } = await mailBroadcastService.createBroadcast({
+            const { broadcast, recipients, consent } = await mailBroadcastService.createBroadcast({
                 adminId,
                 payload,
                 deferDelivery: true
@@ -302,7 +303,13 @@ class AdminMailController {
                 broadcast: toPlain(broadcast),
                 recipientsCount: recipients.length > 0 ? recipients.length : broadcast.total_recipients,
                 sentResult: null,
-                queued: true
+                queued: true,
+                consent: {
+                    optedIn: consent.optedIn,
+                    unsubscribed: consent.unsubscribed,
+                    withoutConsent: consent.withoutConsent,
+                    warning: consent.warning || null
+                }
             })
         } catch (error) {
             if (error?.statusCode === 400) {

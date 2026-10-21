@@ -84,7 +84,39 @@ class MailBroadcastService {
         if (targetMode === 'users') {
             return { id: { [Op.in]: [...userIds] } }
         }
-        return {}
+        return { marketing_email_opt_in: true }
+    }
+
+    async countWithoutMarketingConsent({ targetMode, userIds = [] } = {}) {
+        const withoutConsent = {
+            [Op.or]: [
+                { marketing_email_opt_in: false },
+                { marketing_email_opt_in: null }
+            ]
+        }
+        const where = targetMode === 'users'
+            ? { id: { [Op.in]: [...userIds] }, ...withoutConsent }
+            : withoutConsent
+
+        return User.count({ where })
+    }
+
+    async buildConsentReport({ targetMode, userIds = [] } = {}) {
+        const scope = targetMode === 'users' ? { id: { [Op.in]: [...userIds] } } : {}
+        const [optedIn, unsubscribed, withoutConsent] = await Promise.all([
+            User.count({ where: { ...scope, marketing_email_opt_in: true } }),
+            User.count({ where: { ...scope, marketing_email_opt_out_at: { [Op.ne]: null } } }),
+            this.countWithoutMarketingConsent({ targetMode, userIds })
+        ])
+
+        const warning = targetMode === 'users'
+            ? 'Получатели выбраны вручную: согласие на маркетинговые письма проверяет админ.' +
+                (withoutConsent > 0
+                    ? ` У ${withoutConsent} из выбранных согласия нет или они отписались — письмо им всё равно уйдёт.`
+                    : '')
+            : undefined
+
+        return { optedIn, unsubscribed, withoutConsent, warning }
     }
 
     async createBroadcast({ adminId = null, payload, now = new Date(), deferDelivery = false } = {}) {
@@ -97,10 +129,12 @@ class MailBroadcastService {
 
         const value = validation.value
         const scheduledFor = value.scheduledFor ? new Date(value.scheduledFor) : null
-        // deferDelivery: немедленную рассылку не отправляем внутри HTTP-запроса,
-        // а оставляем в статусе 'pending' — её заберёт mailBroadcastJob (раз в минуту).
         const status = deferDelivery ? 'pending' : resolveScheduledStatus(value.scheduledFor, now)
         const recipientWhere = this.buildRecipientWhere({
+            targetMode: value.targetMode,
+            userIds: value.userIds
+        })
+        const consent = await this.buildConsentReport({
             targetMode: value.targetMode,
             userIds: value.userIds
         })
@@ -138,14 +172,9 @@ class MailBroadcastService {
             }
         }
 
-        return { broadcast, recipients, sentResult: null }
+        return { broadcast, recipients, sentResult: null, consent }
     }
 
-    /**
-     * Ищет рассылку с тем же содержимым, созданную этим же админом за последнее окно.
-     * Защищает от повторного нажатия «Отправить» (в том числе после оборванного
-     * запроса), из-за которого письма уходили дважды.
-     */
     async findRecentDuplicate({
         subject,
         body,
@@ -247,19 +276,33 @@ class MailBroadcastService {
             limit
         })
 
-        const nameById = await this.loadRecipientNames(pending)
+        const profiles = await this.loadRecipientProfiles(pending)
+        const explicitList = broadcast.target_mode === 'users'
 
         let sent = 0
         let failed = 0
         let skipped = 0
+        let skippedNoConsent = 0
         const errors = []
 
         for (const [index, row] of pending.entries()) {
             const attempts = (row.attempts || 0) + 1
+            const profile = profiles.get(row.user_id)
 
-            if (!nameById.has(row.user_id)) {
+            if (!profile) {
                 skipped++
                 await row.update({ status: 'skipped', attempts, error: 'Пользователь удалён' })
+                continue
+            }
+
+            if (!explicitList && !profile.marketingEmailOptIn) {
+                skipped++
+                skippedNoConsent++
+                await row.update({
+                    status: 'skipped',
+                    attempts,
+                    error: 'Нет согласия на маркетинговые письма'
+                })
                 continue
             }
 
@@ -268,7 +311,8 @@ class MailBroadcastService {
             try {
                 await this.sendEmail({
                     to: row.email,
-                    userName: getFirstName(nameById.get(row.user_id)),
+                    userId: row.user_id,
+                    userName: getFirstName(profile.name),
                     subject: broadcast.subject,
                     body: broadcast.body,
                     ctaLabel: broadcast.cta_label || '',
@@ -289,6 +333,10 @@ class MailBroadcastService {
         const status = !done
             ? 'sending'
             : counters.sent > 0 || counters.total === 0 ? 'sent' : 'failed'
+
+        const consent = done
+            ? await this.buildConsentReport({ targetMode: broadcast.target_mode })
+            : null
 
         const updates = {
             total_recipients: counters.total,
@@ -317,22 +365,28 @@ class MailBroadcastService {
                 skipped: counters.skipped,
                 remaining: counters.remaining,
                 done,
-                batch: { sent, failed, skipped, picked: pending.length },
+                batch: { sent, failed, skipped, skippedNoConsent, picked: pending.length },
+                unsubscribed: consent ? consent.unsubscribed : undefined,
+                withoutConsent: consent ? consent.withoutConsent : undefined,
+                consentWarning: consent ? consent.warning : undefined,
                 errors: errors.length > 0 ? errors : undefined
             }
         }
     }
 
-    async loadRecipientNames(rows) {
+    async loadRecipientProfiles(rows) {
         const ids = [...new Set(rows.map(row => row.user_id))]
         if (ids.length === 0) return new Map()
 
         const users = await User.findAll({
             where: { id: { [Op.in]: ids } },
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'marketing_email_opt_in']
         })
 
-        return new Map(users.map(user => [user.id, user.name]))
+        return new Map(users.map(user => [user.id, {
+            name: user.name,
+            marketingEmailOptIn: user.marketing_email_opt_in === true
+        }]))
     }
 
     async countRecipients(broadcastId) {
@@ -449,7 +503,15 @@ class MailBroadcastService {
         }
 
         const { rows, count } = await User.findAndCountAll({
-            attributes: ['id', 'email', 'name', 'username', 'role'],
+            attributes: [
+                'id',
+                'email',
+                'name',
+                'username',
+                'role',
+                'marketing_email_opt_in',
+                'marketing_email_opt_out_at'
+            ],
             where,
             order: [['id', 'ASC']],
             limit,
@@ -463,19 +525,33 @@ class MailBroadcastService {
             name: row.name,
             username: row.username,
             role: row.role,
-            hasEmail: Boolean(normalizeEmail(row.email))
+            hasEmail: Boolean(normalizeEmail(row.email)),
+            marketingOptIn: row.marketing_email_opt_in === true,
+            marketingOptOutAt: row.marketing_email_opt_out_at || null
         }))
 
         return { items, total: count }
     }
 
     async countAudience() {
-        const [total, withEmail] = await Promise.all([
+        const withEmailWhere = { email: { [Op.regexp]: EMAIL_SQL_PATTERN } }
+        const [total, withEmail, subscribed, unsubscribed] = await Promise.all([
             User.count(),
-            User.count({ where: { email: { [Op.regexp]: EMAIL_SQL_PATTERN } } })
+            User.count({ where: withEmailWhere }),
+            User.count({ where: { ...withEmailWhere, marketing_email_opt_in: true } }),
+            User.count({
+                where: { ...withEmailWhere, marketing_email_opt_out_at: { [Op.ne]: null } }
+            })
         ])
 
-        return { total, withEmail, withoutEmail: total - withEmail }
+        return {
+            total,
+            withEmail,
+            withoutEmail: total - withEmail,
+            subscribed,
+            unsubscribed,
+            withoutConsent: withEmail - subscribed
+        }
     }
 }
 

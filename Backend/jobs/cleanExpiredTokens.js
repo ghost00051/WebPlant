@@ -9,6 +9,7 @@ import SiteVisit from '../models/SiteVisit.js'
 import Notification from '../models/Notification.js'
 import PushSubscription from '../models/PushSubscription.js'
 import { Op } from "sequelize"
+import sequelize from '../db.js'
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 
@@ -141,6 +142,14 @@ export async function cleanExpiredAuthData() {
         })
         : 0
 
+    let deletedAdminAuditLogs = 0
+    try {
+        const [rows] = await sequelize.query('SELECT purge_admin_audit_logs() AS deleted')
+        deletedAdminAuditLogs = Number(rows?.[0]?.deleted) || 0
+    } catch (error) {
+        console.warn('⚠️ Не удалось очистить журнал действий администраторов:', error?.message || error)
+    }
+
     const deleted =
         deletedConsents + deletedGuestChatLogs + deletedUserChatLogs + deletedAdviceLogs +
         deletedSessions + deletedChallenges + deletedResetTokens
@@ -156,6 +165,9 @@ export async function cleanExpiredAuthData() {
     console.log(
         `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}, ` +
         `карантинных push-подписок: ${deletedInvalidatedSubscriptions}`
+    )
+    console.log(
+        `🧹 Аудит администраторов: удалено записей старше 365 дней: ${deletedAdminAuditLogs}`
     )
     return deleted
 }

@@ -64,7 +64,14 @@ function createModel(name, calls, overrides = {}) {
     }
 }
 
-function createHarness({ user, modelOverrides = {}, queryRows = [], filesRemoved = 1 } = {}) {
+function createHarness({
+    user,
+    modelOverrides = {},
+    queryRows = [],
+    filesRemoved = 1,
+    chatPhotoFilesRemoved = 0,
+    removeChatPhotoFiles
+} = {}) {
     const calls = []
     const models = {}
     const modelNames = [
@@ -101,6 +108,10 @@ function createHarness({ user, modelOverrides = {}, queryRows = [], filesRemoved
             calls.push(`removePlantPhotoFiles:${urls.length}`)
             return filesRemoved
         },
+        removeChatPhotoFiles: removeChatPhotoFiles || (async urls => {
+            calls.push(`removeChatPhotoFiles:${urls.length}`)
+            return chatPhotoFilesRemoved
+        }),
         clearAuthCookies: res => {
             calls.push('clearAuthCookies')
             res.setHeader('Set-Cookie', 'token=; Max-Age=0')
@@ -309,6 +320,66 @@ test('deleteMe: успешное удаление каскадом + файлы 
     assert.ok(calls.some(call => call.startsWith('SiteVisit.update') && call.includes('user_id')))
     assert.ok(calls.includes('db.query:push_broadcasts'))
     assert.ok(calls.includes('db.query:mail_broadcasts'))
+})
+
+test('deleteMe: фото чата собираются из metadata и удаляются после коммита', async () => {
+    const firstChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'1'.repeat(32)}.jpg`
+    const secondChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'2'.repeat(32)}.jpg`
+    const { controller, calls } = createHarness({
+        user: () => ({ id: 42, role: 'USER', password: 'hash' }),
+        chatPhotoFilesRemoved: 2,
+        modelOverrides: {
+            ChatLog: {
+                findAll: async () => ([
+                    { metadata: { photoUrl: firstChatPhoto, photoUrls: [firstChatPhoto, secondChatPhoto] } },
+                    { metadata: { photoUrl: secondChatPhoto, photoUrls: [secondChatPhoto] } },
+                    { metadata: { guestToken: 'guest-token' } }
+                ])
+            }
+        }
+    })
+    const res = createResponse()
+
+    await controller.deleteMe(
+        { user: { id: 42 }, body: { password: 'correct-password', confirm: DELETION_CONFIRMATION } },
+        res
+    )
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.removed.chatPhotoFiles, 2)
+    assert.ok(calls.includes('removeChatPhotoFiles:2'), 'файлы фото чата удалены с диска')
+    assert.ok(
+        calls.indexOf('db.transaction') < calls.indexOf('removeChatPhotoFiles:2'),
+        'файлы удаляются только после успешного коммита'
+    )
+})
+
+test('deleteMe: удаление фото чата продолжается, если файлов уже нет', async t => {
+    t.mock.method(console, 'warn', () => {})
+    const { controller, calls } = createHarness({
+        user: () => ({ id: 42, role: 'USER', password: 'hash' }),
+        modelOverrides: {
+            ChatLog: {
+                findAll: async () => [{
+                    metadata: { photoUrl: `https://server.checktheplants.ru/uploads/chat/${'3'.repeat(32)}.jpg` }
+                }]
+            }
+        },
+        removeChatPhotoFiles: async () => {
+            throw new Error('EACCES')
+        }
+    })
+    const res = createResponse()
+
+    await controller.deleteMe(
+        { user: { id: 42 }, body: { password: 'correct-password', confirm: DELETION_CONFIRMATION } },
+        res
+    )
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.deleted, true)
+    assert.equal(res.body.removed.chatPhotoFiles, 0)
+    assert.ok(calls.includes('clearAuthCookies'))
 })
 
 test('exportData: без авторизации — 401', async () => {

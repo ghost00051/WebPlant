@@ -43,8 +43,8 @@ class PasswordResetController {
                 console.error('❌ Не удалось отправить письмо для сброса пароля:', result.error)
             } else if (result.status === 'throttled') {
                 console.warn(`⏳ Сброс пароля запрошен слишком часто (user_id=${result.user.id})`)
-            } else if (result.status === 'sent') {
-                console.log(`📧 Ссылка сброса пароля отправлена (user_id=${result.user.id})`)
+            } else if (result.status === 'queued' || result.status === 'sent') {
+                console.log(`📧 Запрос сброса пароля принят (user_id=${result.user.id})`)
             }
 
             return res.json({

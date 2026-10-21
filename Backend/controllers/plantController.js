@@ -17,6 +17,7 @@ import {
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
 import { logAiAdvice } from '../utils/aiAdviceLog.js'
+import { removePlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 import {
     generateWateringOccurrences,
     findFirstWateringAfter,
@@ -276,6 +277,59 @@ class PlantController {
             return res.status(503).json({
                 message: error.message || 'Сервис рекомендаций временно недоступен'
             })
+        }
+    }
+
+    async exportCsv(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const timeZone = await getUserTimeZone(userId)
+            const plants = await Plant.findAll({
+                where: { user_id: userId, is_active: true },
+                order: [['created_at', 'DESC']],
+                limit: 5000
+            })
+
+            const escapeCell = value => {
+                if (value === null || value === undefined) return ''
+                const text = String(value)
+                return /[",;\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text
+            }
+            const formatDate = value => {
+                if (!value) return ''
+                const date = value instanceof Date ? value : new Date(value)
+                return Number.isNaN(date.getTime())
+                    ? ''
+                    : date.toLocaleString('ru-RU', { timeZone })
+            }
+
+            const header = ['id', 'name', 'species', 'location', 'watering_interval_days',
+                'watering_time_of_day', 'last_watered_at', 'next_watering_at', 'created_at']
+            const lines = [header.join(';')]
+            for (const plant of plants) {
+                lines.push([
+                    plant.id,
+                    plant.name,
+                    plant.species,
+                    plant.location,
+                    plant.watering_interval_days,
+                    plant.watering_time_of_day,
+                    formatDate(plant.last_watered_at),
+                    formatDate(plant.next_watering_at),
+                    formatDate(plant.created_at)
+                ].map(escapeCell).join(';'))
+            }
+
+            const csv = `\uFEFF${lines.join('\r\n')}`
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8')
+            res.setHeader('Content-Disposition', 'attachment; filename="webplant-plants.csv"')
+            res.setHeader('Cache-Control', 'no-store')
+            return res.send(csv)
+        } catch (error) {
+            console.error('❌ Ошибка экспорта растений:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
 
@@ -680,21 +734,53 @@ class PlantController {
             })
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
 
+            const normalizedPhotos = []
+            for (const photo of photos) {
+                const photoUrl = typeof photo === 'string' ? photo : photo.url
+                const photoPath = getUploadedPlantPhotoPath(photoUrl)
+                if (!photoPath) {
+                    return res.status(400).json({ message: 'Некорректный список фотографий' })
+                }
+
+                try {
+                    const photoStats = await stat(
+                        path.join(PLANT_PHOTO_DIRECTORY, path.basename(photoPath))
+                    )
+                    if (!photoStats.isFile()) {
+                        return res.status(400).json({
+                            message: 'Фотографии должны быть предварительно загружены на сервер'
+                        })
+                    }
+                } catch (error) {
+                    if (error.code === 'ENOENT') {
+                        return res.status(400).json({
+                            message: 'Фотографии должны быть предварительно загружены на сервер'
+                        })
+                    }
+                    throw error
+                }
+
+                normalizedPhotos.push({
+                    ...(typeof photo === 'object' ? photo : {}),
+                    url: `${req.protocol}://${req.get('host')}${photoPath}`
+                })
+            }
+
             transaction = await sequelize.transaction()
-            if (photos.some(p => typeof p === 'object' && p.is_main)) {
+            if (normalizedPhotos.some(p => p.is_main)) {
                 await PlantPhoto.update(
                     { is_main: false },
                     { where: { plant_id: plant.id }, transaction }
                 )
             }
 
-            const rows = photos.map((p, i) => ({
+            const rows = normalizedPhotos.map((p, i) => ({
                 plant_id: plant.id,
-                url: typeof p === 'string' ? p : p.url,
-                sort_order: typeof p === 'object' && p.sort_order != null ? p.sort_order : i,
-                is_main: typeof p === 'object' ? !!p.is_main : false,
-                metadata: typeof p === 'object' && p.metadata ? p.metadata : {}
-            })).filter(r => r.url)
+                url: p.url,
+                sort_order: p.sort_order != null ? p.sort_order : i,
+                is_main: !!p.is_main,
+                metadata: p.metadata && typeof p.metadata === 'object' ? p.metadata : {}
+            }))
 
             const created = await PlantPhoto.bulkCreate(rows, { transaction })
             await transaction.commit()
@@ -936,6 +1022,12 @@ class PlantController {
                 return res.status(404).json({ message: 'Растение не найдено' })
             }
 
+            const photosToRemove = await PlantPhoto.findAll({
+                where: { plant_id: plant.id },
+                attributes: ['url'],
+                transaction
+            })
+
             await PlantPhoto.destroy({
                 where: { plant_id: plant.id },
                 transaction
@@ -949,6 +1041,12 @@ class PlantController {
             await plant.destroy({ transaction })
             await transaction.commit()
             transaction = null
+
+            try {
+                await removePlantPhotoFiles(photosToRemove.map(photo => photo.url))
+            } catch (error) {
+                console.warn('⚠️ Не удалось удалить файлы фото растения:', error?.message || error)
+            }
 
             return res.json({ message: 'Растение удалено' })
         } catch (error) {

@@ -144,7 +144,6 @@ function AdminMailPanel() {
 
     useEffect(() => {
         if (roleState !== 'admin' || !overview) return undefined
-        // 'pending' без расписания — рассылка уже создана и ждёт ближайшего тика job'а.
         const inProgress = Array.isArray(overview.recent)
             && overview.recent.some(item => item.status === 'sending'
                 || (item.status === 'pending' && !item.scheduled_for))
@@ -909,7 +908,8 @@ function describeSendResult(data) {
     const result = data?.sentResult
     if (!result) {
         return 'Рассылка создана: отправка начнётся в течение минуты. ' +
-            'Прогресс виден в списке последних рассылок.'
+            'Прогресс виден в списке последних рассылок.' +
+            describeConsent(data?.consent)
     }
 
     const parts = [`Отправлено ${result.sent} из ${result.total}`]
@@ -918,7 +918,25 @@ function describeSendResult(data) {
     if (result.remaining) {
         parts.push(`в очереди осталось ${result.remaining} — доотправим в течение пары минут`)
     }
-    return `${parts.join(', ')}.`
+    return `${parts.join(', ')}.${describeConsent({
+        optedIn: result.sent,
+        unsubscribed: result.unsubscribed,
+        withoutConsent: result.withoutConsent,
+        warning: result.consentWarning
+    })}`
+}
+
+function describeConsent(consent) {
+    if (!consent) return ''
+
+    const parts = []
+    if (Number.isFinite(consent.optedIn)) parts.push(`подписаны: ${consent.optedIn}`)
+    if (Number.isFinite(consent.unsubscribed)) parts.push(`отписались: ${consent.unsubscribed}`)
+    if (consent.withoutConsent) parts.push(`без согласия: ${consent.withoutConsent}`)
+
+    const summary = parts.length ? ` Согласия: ${parts.join(', ')}.` : ''
+    const warning = consent.warning ? ` ${consent.warning}` : ''
+    return `${summary}${warning}`
 }
 
 export default AdminMailPanel

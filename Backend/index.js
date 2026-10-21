@@ -6,6 +6,8 @@ import helmet from 'helmet'
 import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
+import { accessLog, logError, requestContext } from './middleware/accessLog.js'
+import { validateJsonShape } from './middleware/validateJsonShape.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
 import { plantThumbRequestHandler } from './utils/plantPhotoThumb.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
@@ -90,6 +92,11 @@ const MIGRATION_FILES_BY_TABLE = {
     chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
+    'users.marketing_email_opt_in': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_in_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_in_source': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_out_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    admin_audit_logs: 'Backend/migrations/20261025_create_admin_audit_logs.sql',
     site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
@@ -155,6 +162,9 @@ function validateProductionConfig() {
 
 app.set('trust proxy', 1)
 
+app.use(requestContext)
+app.use(accessLog)
+
 app.use((req, res, next) => {
     res.setHeader('X-Robots-Tag', 'noindex, nofollow')
     next()
@@ -176,6 +186,29 @@ app.use(helmet({
 app.use(cookieParser())
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, limit: '100kb', parameterLimit: 1000 }))
+app.use(validateJsonShape)
+
+const ALLOWED_CONTENT_TYPES = new Set([
+    'application/json',
+    'application/x-www-form-urlencoded',
+    'multipart/form-data'
+])
+
+app.use((req, res, next) => {
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next()
+
+    const hasBody = Number(req.get('content-length') || 0) > 0 || Boolean(req.get('transfer-encoding'))
+    if (!hasBody) return next()
+
+    const rawType = String(req.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    if (!rawType) {
+        return res.status(415).json({ message: 'Требуется заголовок Content-Type: application/json' })
+    }
+    if (ALLOWED_CONTENT_TYPES.has(rawType) || rawType.endsWith('+json')) return next()
+
+    return res.status(415).json({ message: 'Неподдерживаемый Content-Type' })
+})
+
 app.use((req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const origin = req.get('origin')
@@ -243,7 +276,7 @@ app.get('/health', async (req, res) => {
             aiCache: getAiCacheStats()
         })
     } catch (error) {
-        console.error('❌ Проверка готовности не пройдена:', error)
+        logError(error, req, 'health_check_failed')
         return res.status(503).json({ status: 'unavailable' })
     }
 })
@@ -257,7 +290,7 @@ app.use((req, res) => {
 })
 
 app.use((err, req, res, next) => {
-    console.error("❌ Error:", err)
+    logError(err, req, 'unhandled_error')
     const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600
         ? err.status
         : err.code === 'LIMIT_FILE_SIZE'

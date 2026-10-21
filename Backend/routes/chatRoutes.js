@@ -4,6 +4,7 @@ import chatController from '../controllers/chatController.js'
 import { optionalAuth } from '../middleware/auth.js'
 import { MAX_CHAT_PHOTOS, uploadChatPhoto, validateChatPhoto } from '../middleware/upload.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
+import { aiMetricsDay } from '../utils/aiMetrics.js'
 
 const router = Router()
 
@@ -16,13 +17,23 @@ function positiveInt(value, fallback) {
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
+function dailyKey(req) {
+    return req.user
+        ? `user:${req.user.id}:${aiMetricsDay()}`
+        : `ip:${ipKeyGenerator(req.ip)}:${aiMetricsDay()}`
+}
+
+function chatKey(req) {
+    return req.user ? `user:${req.user.id}` : ipKeyGenerator(req.ip)
+}
+
 const GUEST_DAILY_LIMIT = positiveInt(process.env.AI_CHAT_GUEST_DAILY_LIMIT, 40)
 const USER_DAILY_LIMIT = positiveInt(process.env.AI_CHAT_USER_DAILY_LIMIT, 300)
 
 const chatLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 15,
-    keyGenerator: (req) => ipKeyGenerator(req.ip),
+    keyGenerator: chatKey,
     message: { message: 'Слишком много сообщений. Подожди минуту 🌱' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -33,7 +44,7 @@ const chatGuestDailyLimiter = rateLimit({
     windowMs: DAY_MS,
     limit: GUEST_DAILY_LIMIT,
     skip: req => Boolean(req.user),
-    keyGenerator: (req) => ipKeyGenerator(req.ip),
+    keyGenerator: dailyKey,
     message: {
         message: 'На сегодня лимит сообщений исчерпан. Зарегистрируйтесь — и продолжим без ограничений 🌱'
     },
@@ -46,7 +57,7 @@ const chatUserDailyLimiter = rateLimit({
     windowMs: DAY_MS,
     limit: USER_DAILY_LIMIT,
     skip: req => !req.user,
-    keyGenerator: (req) => String(req.user.id),
+    keyGenerator: dailyKey,
     message: {
         message: 'На сегодня лимит сообщений исчерпан. Алиса вернётся завтра 🌱'
     },
@@ -58,7 +69,7 @@ const chatUserDailyLimiter = rateLimit({
 const chatHistoryLimiter = rateLimit({
     windowMs: 60 * 1000,
     max: 120,
-    keyGenerator: (req) => ipKeyGenerator(req.ip),
+    keyGenerator: chatKey,
     message: { message: 'Слишком много запросов истории. Подожди минуту 🌱' },
     standardHeaders: true,
     legacyHeaders: false,

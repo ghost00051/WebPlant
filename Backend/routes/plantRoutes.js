@@ -2,11 +2,14 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import plantController from '../controllers/plantController.js'
 import { requireAuth } from '../middleware/auth.js'
+import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
 router.use(requireAuth)
+router.param('id', integerParam)
+router.param('logId', integerParam)
 
 const speciesSuggestionLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -46,6 +49,7 @@ router.get('/schedule', plantController.getSchedule)
 router.get('/history', plantController.getHistoryAll)
 router.get('/timeline', plantController.getTimeline)
 router.get('/stats/completion', plantController.getCompletionStats)
+router.get('/export', plantController.exportCsv)
 
 router.get('/', plantController.getAll)
 router.post('/', wateringWriteLimiter, plantController.create)

@@ -394,6 +394,7 @@ Write-Ok "Фоновые задачи в кластере: $jobsNote"
 
 Write-Step 'Разворачиваю хранилища, PostgreSQL и Redis'
 
+Invoke-Checked 'Не удалось применить ServiceAccount' { kubectl apply -f (Join-Path $K8sDir '05-serviceaccount.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить PVC' { kubectl apply -f (Join-Path $K8sDir '15-storage.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить PostgreSQL' { kubectl apply -f (Join-Path $K8sDir '20-postgres.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить Redis' { kubectl apply -f (Join-Path $K8sDir '30-redis.yaml') } | Out-Null
@@ -627,6 +628,9 @@ $backendManifest = (Read-Utf8 (Join-Path $K8sDir '40-backend.yaml')).Replace('__
 $backendPath = Join-Path $StagingDir 'backend.generated.yaml'
 Write-Utf8NoBom $backendPath $backendManifest
 Invoke-Checked 'Не удалось применить backend' { kubectl apply -f $backendPath } | Out-Null
+Invoke-Checked 'Не удалось применить CronJob бэкапа БД' {
+    kubectl apply -f (Join-Path $K8sDir 'jobs/db-backup.cronjob.yaml')
+} | Out-Null
 Invoke-Checked 'Не удалось выставить количество реплик' {
     kubectl scale deployment backend -n $Namespace --replicas=$Replicas
 } | Out-Null
@@ -681,7 +685,7 @@ if (-not $SkipGateway) {
     Invoke-Checked "Не удалось запустить gateway (порт $GatewayPort занят?)" {
         docker run -d --name $GatewayName --restart unless-stopped `
             --network kind `
-            -p "${GatewayPort}:${GatewayPort}" `
+            -p "127.0.0.1:${GatewayPort}:${GatewayPort}" `
             -v "${gatewayConfPath}:/etc/nginx/nginx.conf:ro" `
             nginx:alpine
     } | Out-Null

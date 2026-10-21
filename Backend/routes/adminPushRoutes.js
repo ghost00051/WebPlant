@@ -2,11 +2,13 @@ import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import adminPushController from '../controllers/adminPushController.js'
 import { requireAdmin } from '../middleware/admin.js'
+import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
 router.use(requireAdmin)
+router.param('id', integerParam)
 
 function adminKey(req) {
     return req.user?.id ? `admin:${req.user.id}` : ipKeyGenerator(req.ip)

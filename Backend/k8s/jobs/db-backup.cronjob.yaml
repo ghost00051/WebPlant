@@ -1,0 +1,127 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  namespace: webplant
+  labels:
+    app: db-backup
+    app.kubernetes.io/name: webplant-backups
+spec:
+  schedule: "0 2 * * *"
+  timeZone: Europe/Moscow
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app: db-backup
+        spec:
+          restartPolicy: Never
+          serviceAccountName: webplant-backend
+          automountServiceAccountToken: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            runAsGroup: 70
+            fsGroup: 70
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: PGHOST
+                  value: postgres
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  valueFrom:
+                    configMapKeyRef:
+                      name: webplant-env
+                      key: DB_NAME
+                - name: PGUSER
+                  valueFrom:
+                    configMapKeyRef:
+                      name: webplant-env
+                      key: DB_USER
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: webplant-secrets
+                      key: DB_PASSWORD
+                - name: PGCONNECT_TIMEOUT
+                  value: "10"
+                - name: BACKUP_RETENTION_DAYS
+                  value: "14"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop:
+                    - ALL
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+                - name: tmp
+                  mountPath: /tmp
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: "1"
+                  memory: 512Mi
+              command:
+                - sh
+                - -c
+                - |
+                  set -eu
+
+                  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  retention_days="${BACKUP_RETENTION_DAYS:-14}"
+                  tmp="/backups/.db-${stamp}.dump.tmp"
+                  out="/backups/db-${stamp}.dump"
+                  heartbeat="/backups/.last-success"
+
+                  log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+                  fail() {
+                    log "ERROR: $*"
+                    rm -f "$tmp" "${heartbeat}.tmp" 2>/dev/null || true
+                    exit 1
+                  }
+
+                  mkdir -p /backups
+                  log "db-backup: pg_dump -Fc -> ${out}"
+                  pg_dump -Fc --file="$tmp" || fail "pg_dump failed"
+                  test -s "$tmp" || fail "pg_dump produced an empty or missing file"
+                  log "db-backup: dump size $(wc -c < "$tmp" | tr -d ' ') bytes; checking integrity"
+                  pg_restore --list "$tmp" > /dev/null || fail "pg_restore --list rejected the dump (corrupt archive)"
+                  mv "$tmp" "$out"
+
+                  size="$(wc -c < "$out" | tr -d ' ')"
+                  log "db-backup: verified ${out} (${size} bytes)"
+
+                  {
+                    printf 'finished_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                    printf 'file=%s\n' "$out"
+                    printf 'size_bytes=%s\n' "$size"
+                  } > "${heartbeat}.tmp"
+                  mv "${heartbeat}.tmp" "$heartbeat"
+
+                  find /backups -maxdepth 1 -type f -name 'db-*.dump' -mtime "+${retention_days}" -delete
+                  log "db-backup: retention ${retention_days}d applied; done"
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: backend-backups
+            - name: tmp
+              emptyDir:
+                sizeLimit: 64Mi

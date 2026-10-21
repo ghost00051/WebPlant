@@ -109,7 +109,7 @@ export async function createPlantPhotoThumb(sourcePath, {
 
     try {
         await mkdir(directory, { recursive: true })
-        await sharp(sourcePath, { failOn: 'none' })
+        await sharp(sourcePath, { failOn: 'none', limitInputPixels: 50_000_000 })
             .rotate()
             .resize(size, size, { fit: 'cover', position: 'centre', withoutEnlargement: true })
             .jpeg({ quality, mozjpeg: true })

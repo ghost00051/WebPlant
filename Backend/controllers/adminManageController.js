@@ -14,6 +14,13 @@ import UserCookieConsent from '../models/userCookieConsentModels.js'
 import UserLegalConsent from '../models/userLegalConsentModels.js'
 import { hasSiteVisitDays, hasUsersCreatedAt } from '../utils/adminSchema.js'
 import { removePlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
+import { collectChatPhotoUrls, removeChatPhotoFiles } from '../utils/chatPhoto.js'
+import {
+    DEFAULT_AUDIT_LIMIT,
+    MAX_AUDIT_LIMIT,
+    listAdminActions,
+    recordAdminAction
+} from '../utils/adminAudit.js'
 import {
     TIMEZONE,
     escapeLike,
@@ -30,6 +37,22 @@ import {
 
 const MSK = `'${TIMEZONE}'`
 const dayOf = expression => `((${expression}) AT TIME ZONE ${MSK})::date`
+
+const DEFAULT_MODELS = {
+    User,
+    Plant,
+    PlantPhoto,
+    WateringLog,
+    ChatLog,
+    AuthSession,
+    Passkey,
+    PushSubscription,
+    PushBroadcastRecipient,
+    Notification,
+    NotificationPreference,
+    UserCookieConsent,
+    UserLegalConsent
+}
 
 const WATERING_ACTIONS = ['watered', 'skipped']
 const CHAT_ROLES = ['user', 'assistant', 'system']
@@ -201,6 +224,23 @@ function mapChatRow(row) {
 }
 
 class AdminManageController {
+    constructor(deps = {}) {
+        this.models = { ...DEFAULT_MODELS, ...(deps.models || {}) }
+        this.db = deps.db || sequelize
+        this.select = deps.select || select
+        this.hasSiteVisitDays = deps.hasSiteVisitDays || hasSiteVisitDays
+        this.removePlantPhotoFiles = deps.removePlantPhotoFiles || removePlantPhotoFiles
+        this.removeChatPhotoFiles = deps.removeChatPhotoFiles || removeChatPhotoFiles
+        this.collectChatPhotoUrls = deps.collectChatPhotoUrls || collectChatPhotoUrls
+        this.recordAudit = deps.recordAdminAction || recordAdminAction
+
+        for (const name of Object.getOwnPropertyNames(AdminManageController.prototype)) {
+            if (name !== 'constructor' && typeof this[name] === 'function') {
+                this[name] = this[name].bind(this)
+            }
+        }
+    }
+
     async listUsers(req, res) {
         const search = parseSearch(req.query.search)
         const pagination = parsePagination(req.query, { defaultLimit: 25, maxLimit: 200 })
@@ -490,11 +530,34 @@ class AdminManageController {
                 }
             }
 
+            const previousRole = user.role
+            const previousPrivilege = user.privilege_level
             const updates = {}
             if (role !== undefined) updates.role = role
             if (nextPrivilege !== undefined) updates.privilege_level = nextPrivilege
 
+            const roleChanged = updates.role !== undefined && updates.role !== previousRole
+            const privilegeChanged = updates.privilege_level !== undefined &&
+                updates.privilege_level !== previousPrivilege
+
             await user.update(updates)
+
+            if (roleChanged) {
+                await this.recordAudit(req, {
+                    action: 'user.role_changed',
+                    targetType: 'user',
+                    targetId: id,
+                    payload: { from: previousRole, to: user.role }
+                })
+            }
+            if (privilegeChanged) {
+                await this.recordAudit(req, {
+                    action: 'user.privilege_changed',
+                    targetType: 'user',
+                    targetId: id,
+                    payload: { from: previousPrivilege, to: user.privilege_level }
+                })
+            }
 
             return res.json({
                 user: {
@@ -519,27 +582,51 @@ class AdminManageController {
         }
 
         try {
-            const user = await User.findByPk(id)
+            const {
+                User: UserModel,
+                Plant: PlantModel,
+                PlantPhoto: PlantPhotoModel,
+                WateringLog: WateringLogModel,
+                ChatLog: ChatLogModel,
+                PushSubscription: PushSubscriptionModel,
+                PushBroadcastRecipient: PushBroadcastRecipientModel,
+                Notification: NotificationModel,
+                NotificationPreference: NotificationPreferenceModel,
+                AuthSession: AuthSessionModel,
+                Passkey: PasskeyModel,
+                UserCookieConsent: UserCookieConsentModel,
+                UserLegalConsent: UserLegalConsentModel
+            } = this.models
+
+            const user = await UserModel.findByPk(id)
             if (!user) return jsonError(res, 404, 'Пользователь не найден')
 
             if (user.role === 'ADMIN') {
-                const admins = await User.count({ where: { role: 'ADMIN' } })
+                const admins = await UserModel.count({ where: { role: 'ADMIN' } })
                 if (admins <= 1) {
                     return jsonError(res, 409, 'Нельзя удалить последнего администратора')
                 }
             }
 
             const email = user.email
-            const visitsTracked = await hasSiteVisitDays()
-            const photoUrls = (await select(`
+            const wasAdmin = user.role === 'ADMIN'
+            const visitsTracked = await this.hasSiteVisitDays()
+            const photoUrls = (await this.select(`
                 SELECT ph.url
                 FROM plant_photos ph
                 JOIN plants p ON p.id = ph.plant_id
                 WHERE p.user_id = $1
             `, [id])).map(row => row.url)
 
-            const removed = await sequelize.transaction(async transaction => {
-                const plantRows = await Plant.findAll({
+            const chatPhotoRows = await ChatLogModel.findAll({
+                where: { user_id: id },
+                attributes: ['metadata'],
+                raw: true
+            })
+            const chatPhotoUrls = this.collectChatPhotoUrls(chatPhotoRows)
+
+            const removed = await this.db.transaction(async transaction => {
+                const plantRows = await PlantModel.findAll({
                     where: { user_id: id },
                     attributes: ['id'],
                     raw: true,
@@ -549,38 +636,38 @@ class AdminManageController {
 
                 const counts = {
                     plants: plantIds.length,
-                    photos: await PlantPhoto.count({ where: { plant_id: plantIds }, transaction }),
-                    waterings: await WateringLog.count({ where: { user_id: id }, transaction }),
-                    chatMessages: await ChatLog.count({ where: { user_id: id }, transaction }),
-                    pushSubscriptions: await PushSubscription.count({ where: { user_id: id }, transaction }),
-                    notifications: await Notification.count({ where: { user_id: id }, transaction }),
-                    legalConsents: await UserLegalConsent.count({ where: { user_id: id }, transaction }),
-                    cookieConsents: await UserCookieConsent.count({ where: { user_id: id }, transaction }),
-                    sessions: await AuthSession.count({ where: { user_id: id }, transaction }),
-                    passkeys: await Passkey.count({ where: { user_id: id }, transaction })
+                    photos: await PlantPhotoModel.count({ where: { plant_id: plantIds }, transaction }),
+                    waterings: await WateringLogModel.count({ where: { user_id: id }, transaction }),
+                    chatMessages: await ChatLogModel.count({ where: { user_id: id }, transaction }),
+                    pushSubscriptions: await PushSubscriptionModel.count({ where: { user_id: id }, transaction }),
+                    notifications: await NotificationModel.count({ where: { user_id: id }, transaction }),
+                    legalConsents: await UserLegalConsentModel.count({ where: { user_id: id }, transaction }),
+                    cookieConsents: await UserCookieConsentModel.count({ where: { user_id: id }, transaction }),
+                    sessions: await AuthSessionModel.count({ where: { user_id: id }, transaction }),
+                    passkeys: await PasskeyModel.count({ where: { user_id: id }, transaction })
                 }
 
                 if (plantIds.length) {
-                    await PlantPhoto.destroy({ where: { plant_id: plantIds }, transaction })
-                    await WateringLog.destroy({ where: { plant_id: plantIds }, transaction })
+                    await PlantPhotoModel.destroy({ where: { plant_id: plantIds }, transaction })
+                    await WateringLogModel.destroy({ where: { plant_id: plantIds }, transaction })
                 }
-                await WateringLog.destroy({ where: { user_id: id }, transaction })
-                await Plant.destroy({ where: { user_id: id }, transaction })
-                await ChatLog.destroy({ where: { user_id: id }, transaction })
-                await PushSubscription.destroy({ where: { user_id: id }, transaction })
-                await PushBroadcastRecipient.destroy({ where: { user_id: id }, transaction })
-                await Notification.destroy({ where: { user_id: id }, transaction })
-                await NotificationPreference.destroy({ where: { user_id: id }, transaction })
-                await UserCookieConsent.destroy({ where: { user_id: id }, transaction })
-                await UserLegalConsent.destroy({ where: { user_id: id }, transaction })
-                await AuthSession.destroy({ where: { user_id: id }, transaction })
-                await Passkey.destroy({ where: { user_id: id }, transaction })
-                await sequelize.query(
+                await WateringLogModel.destroy({ where: { user_id: id }, transaction })
+                await PlantModel.destroy({ where: { user_id: id }, transaction })
+                await ChatLogModel.destroy({ where: { user_id: id }, transaction })
+                await PushSubscriptionModel.destroy({ where: { user_id: id }, transaction })
+                await PushBroadcastRecipientModel.destroy({ where: { user_id: id }, transaction })
+                await NotificationModel.destroy({ where: { user_id: id }, transaction })
+                await NotificationPreferenceModel.destroy({ where: { user_id: id }, transaction })
+                await UserCookieConsentModel.destroy({ where: { user_id: id }, transaction })
+                await UserLegalConsentModel.destroy({ where: { user_id: id }, transaction })
+                await AuthSessionModel.destroy({ where: { user_id: id }, transaction })
+                await PasskeyModel.destroy({ where: { user_id: id }, transaction })
+                await this.db.query(
                     'UPDATE push_broadcasts SET created_by = NULL WHERE created_by = $1',
                     { bind: [id], transaction }
                 )
                 if (visitsTracked) {
-                    await sequelize.query(
+                    await this.db.query(
                         'UPDATE site_visit_days SET user_id = NULL WHERE user_id = $1',
                         { bind: [id], transaction }
                     )
@@ -591,12 +678,30 @@ class AdminManageController {
                 return counts
             })
 
-            const filesRemoved = await removePlantPhotoFiles(photoUrls)
+            await this.recordAudit(req, {
+                action: 'user.deleted',
+                targetType: 'user',
+                targetId: id,
+                payload: { was_admin: wasAdmin }
+            })
+
+            const filesRemoved = await this.removePlantPhotoFiles(photoUrls)
+
+            let chatPhotoFilesRemoved = 0
+            try {
+                chatPhotoFilesRemoved = await this.removeChatPhotoFiles(chatPhotoUrls)
+            } catch (error) {
+                console.warn('⚠️ Не удалось удалить фото чата удалённого пользователя:', error?.message || error)
+            }
 
             return res.json({
                 deleted: true,
                 user: { id, email },
-                removed: { ...removed, photoFiles: filesRemoved }
+                removed: {
+                    ...removed,
+                    photoFiles: filesRemoved,
+                    chatPhotoFiles: chatPhotoFilesRemoved
+                }
             })
         } catch (error) {
             return serverError(res, error, 'deleteUser')
@@ -703,6 +808,13 @@ class AdminManageController {
                 const waterings = await WateringLog.destroy({ where: { plant_id: id }, transaction })
                 await plant.destroy({ transaction })
                 return { photos, waterings }
+            })
+
+            await this.recordAudit(req, {
+                action: 'plant.deleted',
+                targetType: 'plant',
+                targetId: id,
+                payload: { photos: removed.photos, waterings: removed.waterings }
             })
 
             const filesRemoved = await removePlantPhotoFiles(photoUrls)
@@ -885,6 +997,18 @@ class AdminManageController {
                 }
             })
 
+            await this.recordAudit(req, {
+                action: 'watering.deleted',
+                targetType: 'watering',
+                targetId: id,
+                payload: {
+                    plant_id: result.plantId,
+                    action: result.action,
+                    restored_skip: result.restoredSkip,
+                    schedule_restored: result.scheduleRestored
+                }
+            })
+
             return res.json({ deleted: true, ...result })
         } catch (error) {
             return serverError(res, error, 'deleteWatering')
@@ -981,6 +1105,18 @@ class AdminManageController {
 
             const filesRemoved = await removePlantPhotoFiles(url)
 
+            await this.recordAudit(req, {
+                action: 'photo.deleted',
+                targetType: 'photo',
+                targetId: id,
+                payload: {
+                    plant_id: plantId,
+                    was_main: wasMain,
+                    promoted_photo_id: promotedPhotoId,
+                    files_removed: filesRemoved
+                }
+            })
+
             return res.json({
                 deleted: true,
                 photo: { id, plantId, url },
@@ -1064,12 +1200,28 @@ class AdminManageController {
         if (!id) return jsonError(res, 400, 'Некорректный идентификатор сообщения')
 
         try {
-            const message = await ChatLog.findByPk(id)
+            const message = await this.models.ChatLog.findByPk(id)
             if (!message) return jsonError(res, 404, 'Сообщение не найдено')
+
+            const chatPhotoUrls = this.collectChatPhotoUrls([message])
 
             await message.destroy()
 
-            return res.json({ deleted: true, message: { id } })
+            await this.recordAudit(req, {
+                action: 'chat.deleted',
+                targetType: 'chat',
+                targetId: id,
+                payload: { session_id: message.session_id, role: message.role }
+            })
+
+            let chatPhotoFilesRemoved = 0
+            try {
+                chatPhotoFilesRemoved = await this.removeChatPhotoFiles(chatPhotoUrls)
+            } catch (error) {
+                console.warn(`⚠️ Не удалось удалить фото чата сообщения ${id}:`, error?.message || error)
+            }
+
+            return res.json({ deleted: true, message: { id }, chatPhotoFiles: chatPhotoFilesRemoved })
         } catch (error) {
             return serverError(res, error, 'deleteChat')
         }
@@ -1083,12 +1235,89 @@ class AdminManageController {
         }
 
         try {
-            const deleted = await ChatLog.destroy({ where: { session_id: sessionId } })
-            return res.json({ deleted: true, sessionId, removed: deleted })
+            const { ChatLog: ChatLogModel } = this.models
+
+            const chatPhotoRows = await ChatLogModel.findAll({
+                where: { session_id: sessionId },
+                attributes: ['metadata'],
+                raw: true
+            })
+            const chatPhotoUrls = this.collectChatPhotoUrls(chatPhotoRows)
+
+            const deleted = await ChatLogModel.destroy({ where: { session_id: sessionId } })
+
+            if (deleted > 0) {
+                await this.recordAudit(req, {
+                    action: 'chat.session_deleted',
+                    targetType: 'chat_session',
+                    targetId: sessionId,
+                    payload: { removed: deleted }
+                })
+            }
+
+            let chatPhotoFilesRemoved = 0
+            try {
+                chatPhotoFilesRemoved = await this.removeChatPhotoFiles(chatPhotoUrls)
+            } catch (error) {
+                console.warn(`⚠️ Не удалось удалить фото чата переписки ${sessionId}:`, error?.message || error)
+            }
+
+            return res.json({
+                deleted: true,
+                sessionId,
+                removed: deleted,
+                chatPhotoFiles: chatPhotoFilesRemoved
+            })
         } catch (error) {
             return serverError(res, error, 'deleteChatSession')
         }
     }
+
+    async listAudit(req, res) {
+        const rawLimit = req.query.limit
+        const rawOffset = req.query.offset
+        const rawAction = req.query.action
+        const rawAdminId = req.query.adminId ?? req.query.admin_id
+
+        let limit = DEFAULT_AUDIT_LIMIT
+        if (rawLimit !== undefined && rawLimit !== '') {
+            if (typeof rawLimit !== 'string' || !/^\d{1,3}$/.test(rawLimit)) {
+                return jsonError(res, 400, `limit должен быть целым числом от 1 до ${MAX_AUDIT_LIMIT}`)
+            }
+            limit = Number(rawLimit)
+            if (limit < 1 || limit > MAX_AUDIT_LIMIT) {
+                return jsonError(res, 400, `limit должен быть целым числом от 1 до ${MAX_AUDIT_LIMIT}`)
+            }
+        }
+
+        let offset = 0
+        if (rawOffset !== undefined && rawOffset !== '') {
+            if (typeof rawOffset !== 'string' || !/^\d{1,9}$/.test(rawOffset)) {
+                return jsonError(res, 400, 'offset должен быть неотрицательным целым числом')
+            }
+            offset = Number(rawOffset)
+        }
+
+        let action
+        if (rawAction !== undefined && rawAction !== '') {
+            if (typeof rawAction !== 'string' || !/^[A-Za-z0-9_.:-]{1,64}$/.test(rawAction)) {
+                return jsonError(res, 400, 'Некорректный фильтр по действию')
+            }
+            action = rawAction
+        }
+
+        const adminId = parseOptionalId(rawAdminId)
+        if (adminId === null) {
+            return jsonError(res, 400, 'Некорректный идентификатор администратора')
+        }
+
+        try {
+            return res.json(await listAdminActions({ limit, offset, action, adminId }))
+        } catch (error) {
+            return serverError(res, error, 'listAudit')
+        }
+    }
 }
 
+export { AdminManageController }
 export default new AdminManageController()

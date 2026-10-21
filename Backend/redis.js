@@ -147,9 +147,20 @@ export async function getRedisClient() {
     }
 
     try {
-        await connecting
+        await withTimeout(
+            connecting,
+            CONNECT_TIMEOUT_MS + 500,
+            'Redis connect timed out'
+        )
     } catch (error) {
         noteFailure(error?.code || error?.message || String(error))
+        try {
+            if (client) client.destroy()
+        } catch {
+        }
+        client = null
+        clientUrl = null
+        connecting = null
         return null
     }
 

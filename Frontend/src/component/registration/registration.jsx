@@ -58,6 +58,7 @@ function Registration ({ initialMode = 'login' }) {
   const [name, setName] = useState('')
   const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [marketingConsent, setMarketingConsent] = useState(false)
   const [emailEntr, setEmailEntr] = useState('')
   const [passwordEntr, setPasswordEntr] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
@@ -257,6 +258,7 @@ function Registration ({ initialMode = 'login' }) {
           password,
           privacyPolicyAccepted,
           termsAccepted,
+          marketingConsent,
           name: normalizedName,
           rememberMe,
           timezone: detectTimeZone()
@@ -790,6 +792,28 @@ function Registration ({ initialMode = 'login' }) {
                       rel='noreferrer'
                     >
                       Политикой обработки персональных данных
+                    </a>
+                    .
+                  </p>
+                  <label className='consentOption'>
+                    <input
+                      type='checkbox'
+                      checked={marketingConsent}
+                      onChange={event => setMarketingConsent(event.target.checked)}
+                    />
+                    <span>
+                      Хочу получать письма о растениях и новостях
+                    </span>
+                  </label>
+                  <p className='consentPolicyNotice'>
+                    Необязательно: согласие на маркетинговые письма отдельное.
+                    Отписаться можно в один клик в любом письме. Подробнее — в{' '}
+                    <a
+                      href={privacyPolicyDocument}
+                      target='_blank'
+                      rel='noreferrer'
+                    >
+                      Политике
                     </a>
                     .
                   </p>

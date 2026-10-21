@@ -20,6 +20,7 @@ import UserCookieConsent from '../models/userCookieConsentModels.js'
 import UserLegalConsent from '../models/userLegalConsentModels.js'
 import SiteVisit from '../models/SiteVisit.js'
 import { removePlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
+import { collectChatPhotoUrls, removeChatPhotoFiles } from '../utils/chatPhoto.js'
 import { clearAuthCookies } from '../utils/authTokens.js'
 
 export const DELETION_CONFIRMATION = 'УДАЛИТЬ'
@@ -251,6 +252,7 @@ export class AccountController {
         this.db = deps.db || sequelize
         this.comparePassword = deps.comparePassword || bcrypt.compare
         this.removePlantPhotoFiles = deps.removePlantPhotoFiles || removePlantPhotoFiles
+        this.removeChatPhotoFiles = deps.removeChatPhotoFiles || removeChatPhotoFiles
         this.clearAuthCookies = deps.clearAuthCookies || clearAuthCookies
     }
 
@@ -388,6 +390,13 @@ export class AccountController {
             )
             const photoUrls = collectPhotoUrls(photoRows)
 
+            const chatPhotoRows = await this.models.ChatLog.findAll({
+                where: { user_id: userId },
+                attributes: ['metadata'],
+                raw: true
+            })
+            const chatPhotoUrls = collectChatPhotoUrls(chatPhotoRows)
+
             const removed = await this.db.transaction(async transaction => {
                 const { User: UserModel, Plant: PlantModel, PlantPhoto: PlantPhotoModel,
                     WateringLog: WateringLogModel, ChatLog: ChatLogModel,
@@ -461,11 +470,21 @@ export class AccountController {
             })
 
             const filesRemoved = await this.removePlantPhotoFiles(photoUrls)
+            let chatPhotoFilesRemoved = 0
+            try {
+                chatPhotoFilesRemoved = await this.removeChatPhotoFiles(chatPhotoUrls)
+            } catch (error) {
+                console.warn('⚠️ Не удалось удалить фото чата:', error?.message || error)
+            }
             this.clearAuthCookies(res)
 
             return res.json({
                 deleted: true,
-                removed: { ...removed, photoFiles: filesRemoved }
+                removed: {
+                    ...removed,
+                    photoFiles: filesRemoved,
+                    chatPhotoFiles: chatPhotoFilesRemoved
+                }
             })
         } catch (error) {
             console.error('❌ Ошибка удаления аккаунта:', error?.message || error)

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, unlink, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { loadSharp } from './plantPhotoThumb.js'
@@ -58,6 +58,46 @@ export function chatPhotoFilenameFromUrl(url) {
     const match = /\/uploads\/chat\/([0-9a-f]{32}\.jpg)(?:[?#].*)?$/i.exec(url)
     if (!match || !CHAT_PHOTO_FILENAME.test(match[1])) return null
     return match[1]
+}
+
+export function collectChatPhotoUrls(rows) {
+    const urls = []
+    const seen = new Set()
+
+    for (const row of Array.isArray(rows) ? rows : []) {
+        const metadata = row?.metadata
+        const candidates = [
+            metadata?.photoUrl,
+            ...(Array.isArray(metadata?.photoUrls) ? metadata.photoUrls : [])
+        ]
+        for (const url of candidates) {
+            if (typeof url !== 'string' || !url || seen.has(url)) continue
+            if (!chatPhotoFilenameFromUrl(url)) continue
+            seen.add(url)
+            urls.push(url)
+        }
+    }
+
+    return urls
+}
+
+export async function removeChatPhotoFiles(urls, { directory = CHAT_PHOTO_DIRECTORY } = {}) {
+    const list = Array.isArray(urls) ? urls : [urls]
+    let removed = 0
+
+    for (const url of list) {
+        const filename = chatPhotoFilenameFromUrl(url)
+        if (!filename) continue
+        try {
+            await unlink(path.join(directory, filename))
+            removed++
+        } catch (error) {
+            if (error?.code === 'ENOENT') continue
+            console.warn(`⚠️ Не удалось удалить фото чата ${filename}:`, error?.code || error)
+        }
+    }
+
+    return removed
 }
 
 export async function readChatPhoto(filename) {

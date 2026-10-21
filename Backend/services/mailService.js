@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer'
 import {
     RESET_TOKEN_TTL_MINUTES
 } from '../utils/passwordReset.js'
+import { buildListUnsubscribeHeaders, buildUnsubscribeUrl } from '../utils/marketingConsent.js'
 
 const DEFAULT_SMTP_HOST = 'smtp.mail.ru'
 const DEFAULT_SMTP_PORT = 465
@@ -170,7 +171,7 @@ export async function verifyMailConnection(env = process.env) {
     }
 }
 
-export async function sendMail({ to, subject, text, html, replyTo }, env = process.env) {
+export async function sendMail({ to, subject, text, html, replyTo, headers }, env = process.env) {
     if (!isMailConfigured(env)) {
         throw new Error('SMTP не настроен: заполните SMTP_USER и SMTP_PASSWORD')
     }
@@ -180,6 +181,9 @@ export async function sendMail({ to, subject, text, html, replyTo }, env = proce
         ? { name: config.fromName, address: config.fromAddress || config.user }
         : config.fromAddress || config.user
     const finalReplyTo = replyTo || config.replyTo || undefined
+    const finalHeaders = headers && typeof headers === 'object' && !Array.isArray(headers)
+        ? { ...headers }
+        : undefined
 
     return withTimeout(
         getTransporter(env).sendMail({
@@ -188,7 +192,8 @@ export async function sendMail({ to, subject, text, html, replyTo }, env = proce
             subject,
             text,
             html,
-            replyTo: finalReplyTo
+            replyTo: finalReplyTo,
+            ...(finalHeaders ? { headers: finalHeaders } : {})
         }),
         config.socketTimeoutMs + config.connectionTimeoutMs,
         'SMTP: превышено время отправки письма'
@@ -305,10 +310,14 @@ const WELCOME_HIGHLIGHTS = [
 
 export function renderWelcomeEmail({
     userName = '',
-    logoUrl = DEFAULT_LOGO_URL
+    logoUrl = DEFAULT_LOGO_URL,
+    unsubscribeUrl = ''
 }) {
     const greeting = userName ? `Привет, ${userName}!` : 'Привет!'
     const safeLogoUrl = escapeHtml(logoUrl)
+    const unsubscribeLink = typeof unsubscribeUrl === 'string' && unsubscribeUrl
+        ? unsubscribeUrl
+        : `${PRODUCT_URL}/unsubscribe`
 
     const text = [
         greeting,
@@ -325,7 +334,10 @@ export function renderWelcomeEmail({
         `Открыть свой сад: ${APP_HOME_URL}`,
         '',
         `— ${DEVELOPER_NAME}, разработчик «${PRODUCT_NAME_CASES.gen}»`,
-        PRODUCT_URL
+        PRODUCT_URL,
+        '',
+        'Не хотите получать письма о растениях и новостях — отпишитесь в один клик:',
+        unsubscribeLink
     ].join('\n')
 
     const highlightsHtml = WELCOME_HIGHLIGHTS.map(item => `
@@ -378,7 +390,8 @@ export function renderWelcomeEmail({
 <a href="${PRODUCT_URL}" style="color:#2f8f4e;text-decoration:none;">checktheplants.ru</a>
 </td></tr>
 <tr><td style="font-size:12px;line-height:18px;color:#8a988f;border-top:1px solid #e6ece7;padding-top:16px;">
-Отвечать на это письмо можно как обычно — ответ придёт разработчику.
+Отвечать на это письмо можно как обычно — ответ придёт разработчику.<br>
+Не хотите получать письма о растениях и новостях — <a href="${escapeHtml(unsubscribeLink)}" style="color:#8a988f;text-decoration:underline;">отпишитесь в один клик</a>.
 </td></tr>
 </table>
 </td></tr>
@@ -392,10 +405,14 @@ export function renderWelcomeEmail({
 export async function sendWelcomeEmail({
     to,
     userName = '',
+    userId = null,
     env = process.env
 }) {
-    const message = renderWelcomeEmail({ userName })
-    return sendMail({ to, ...message }, env)
+    const options = { frontendUrl: env.FRONTEND_URL, secret: env.SECRET_KEY }
+    const unsubscribeUrl = buildUnsubscribeUrl(userId, options)
+    const headers = buildListUnsubscribeHeaders(userId, options)
+    const message = renderWelcomeEmail({ userName, unsubscribeUrl })
+    return sendMail({ to, headers, ...message }, env)
 }
 
 export function resolveAbsoluteUrl(url, baseUrl = PRODUCT_URL) {
@@ -425,6 +442,7 @@ export function renderBroadcastEmail({
     ctaLabel = '',
     ctaUrl = '',
     recipientEmail = '',
+    unsubscribeUrl = '',
     logoUrl = DEFAULT_LOGO_URL
 }) {
     const cleanSubject = typeof subject === 'string' ? subject.trim() : ''
@@ -441,6 +459,9 @@ export function renderBroadcastEmail({
     const hasButton = Boolean(ctaLabel && absoluteCtaUrl)
     const safeLogoUrl = escapeHtml(logoUrl)
     const paragraphs = bodyToParagraphs(cleanBody)
+    const unsubscribeLink = typeof unsubscribeUrl === 'string' && unsubscribeUrl
+        ? unsubscribeUrl
+        : `${PRODUCT_URL}/unsubscribe`
 
     const text = [
         greeting,
@@ -449,7 +470,10 @@ export function renderBroadcastEmail({
         ...(hasButton ? ['', `${ctaLabel}: ${absoluteCtaUrl}`] : []),
         '',
         `— ${PRODUCT_NAME}, ${PRODUCT_URL}`,
-        ...(recipientEmail ? ['', `Письмо отправлено на ${recipientEmail}.`] : [])
+        ...(recipientEmail ? ['', `Письмо отправлено на ${recipientEmail}.`] : []),
+        '',
+        'Вы получили это письмо как пользователь «Лейки».',
+        `Отписаться в один клик: ${unsubscribeLink}`
     ].join('\n')
 
     const html = `<!DOCTYPE html>
@@ -477,7 +501,9 @@ ${hasButton ? `<tr><td align="center" style="padding:6px 0 18px;">
 <tr><td style="font-size:12px;line-height:18px;color:#8a988f;border-top:1px solid #e6ece7;padding-top:16px;">
 Отвечать на это письмо можно как обычно — ответ придёт разработчику.${recipientEmail
         ? `<br>Письмо отправлено на ${escapeHtml(recipientEmail)}.`
-        : ''}
+        : ''}<br>
+Вы получили это письмо как пользователь «${escapeHtml(PRODUCT_NAME)}».<br>
+<a href="${escapeHtml(unsubscribeLink)}" style="color:#8a988f;text-decoration:underline;">Отписаться от рассылки</a>
 </td></tr>
 </table>
 </td></tr>
@@ -495,16 +521,21 @@ export async function sendBroadcastEmail({
     userName = '',
     ctaLabel = '',
     ctaUrl = '',
+    userId = null,
     env = process.env
 }) {
+    const options = { frontendUrl: env.FRONTEND_URL, secret: env.SECRET_KEY }
+    const unsubscribeUrl = buildUnsubscribeUrl(userId, options)
+    const headers = buildListUnsubscribeHeaders(userId, options)
     const message = renderBroadcastEmail({
         subject,
         body,
         userName,
         ctaLabel,
         ctaUrl,
-        recipientEmail: to
+        recipientEmail: to,
+        unsubscribeUrl
     })
-    return sendMail({ to, ...message }, env)
+    return sendMail({ to, headers, ...message }, env)
 }
 

@@ -2,6 +2,7 @@ import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import adminMailController from '../controllers/adminMailController.js'
 import { requireAdmin } from '../middleware/admin.js'
+import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
@@ -27,6 +28,7 @@ const broadcastLimiter = rateLimit({
 })
 
 router.use(requireAdmin)
+router.param('id', integerParam)
 
 router.get('/overview', adminMailController.getOverview)
 router.get('/recipients', adminMailController.listRecipients)

@@ -2,11 +2,13 @@ import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import notificationController from '../controllers/notificationController.js'
 import { requireAuth } from '../middleware/auth.js'
+import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
 router.use(requireAuth)
+router.param('id', integerParam)
 
 function notificationKey(req) {
     return req.user?.id ? `user:${req.user.id}` : ipKeyGenerator(req.ip)

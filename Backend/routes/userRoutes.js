@@ -47,6 +47,15 @@ const passkeyLimiter = rateLimit({
     ...rateLimitStoreOptions('user-passkey')
 })
 
+const passkeyStartLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    message: { message: 'Слишком много запросов на вход по ключу. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-passkey-start')
+})
+
 const passkeyRegistrationLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
     limit: 10,
@@ -113,9 +122,22 @@ const accountDeleteLimiter = rateLimit({
     ...rateLimitStoreOptions('user-account-delete')
 })
 
+const unsubscribeLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 30,
+    keyGenerator: req => ipKeyGenerator(req.ip),
+    message: { message: 'Слишком много запросов. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('user-unsubscribe')
+})
+
 router.post("/registration", registrationLimiter, UserController.registration)
 router.post("/login", loginLimiter, UserController.login)
 router.post("/logout", UserController.logout)
+
+router.get('/unsubscribe', unsubscribeLimiter, UserController.unsubscribePage)
+router.post('/unsubscribe', unsubscribeLimiter, UserController.unsubscribe)
 
 router.post(
     '/password-reset/request',
@@ -155,11 +177,11 @@ router.get("/", requireAdmin, UserController.getAll)
 router.post('/passkey/register/start', requireAuth, passkeyRegistrationLimiter, passkeyController.startRegistration)
 router.post('/passkey/register/finish', requireAuth, passkeyRegistrationLimiter, passkeyController.finishRegistration)
 
-router.post('/passkey/login/start', passkeyLimiter, passkeyController.startAuthentication)
+router.post('/passkey/login/start', passkeyStartLimiter, passkeyController.startAuthentication)
 router.post('/passkey/login/finish', passkeyLimiter, passkeyController.finishAuthentication)
 
 router.get('/passkey', requireAuth, passkeyController.listPasskeys)
-router.get('/passkey/exists', passkeyLimiter, passkeyController.hasAnyPasskey)
+router.get('/passkey/exists', passkeyStartLimiter, passkeyController.hasAnyPasskey)
 router.patch('/passkey/:id', requireAuth, passkeyController.renamePasskey)
 router.delete('/passkey/:id', requireAuth, passkeyController.deletePasskey)
 

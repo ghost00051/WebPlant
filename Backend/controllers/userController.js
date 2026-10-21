@@ -36,8 +36,27 @@ import {
     WATERING_TIME_OF_DAY_HOURS
 } from '../utils/wateringSchedule.js'
 import { withNotificationsReset } from '../utils/plantMetadata.js'
+import {
+    normalizeUnsubscribeUserId,
+    verifyUnsubscribeToken
+} from '../utils/marketingConsent.js'
+import {
+    renderUnsubscribedPage,
+    renderUnsubscribeConfirmPage,
+    renderUnsubscribeErrorPage
+} from '../utils/unsubscribePage.js'
 
 dotenv.config()
+
+const MARKETING_CONSENT_SOURCE = 'registration'
+const UNSUBSCRIBE_USER_ATTRIBUTES = [
+    'id',
+    'email',
+    'marketing_email_opt_in',
+    'marketing_email_opt_out_at'
+]
+
+const LOGIN_DUMMY_PASSWORD_HASH = '$2b$10$hj9Vrl0XU3ali.GAVVyL5uiuoN661iTBVK4g3.NamL6w7jEuvodi.'
 
 function buildUserPayload(user) {
     return {
@@ -49,7 +68,8 @@ function buildUserPayload(user) {
         bio: user.bio,
         role: user.role,
         privilege_level: user.privilege_level,
-        timezone: resolveTimeZone(user.timezone)
+        timezone: resolveTimeZone(user.timezone),
+        marketing_email_opt_in: user.marketing_email_opt_in === true
     }
 }
 
@@ -106,6 +126,63 @@ async function generateUniqueUsername(base) {
     return `user_${Date.now().toString(36)}`
 }
 
+function readUnsubscribeParam(req, name) {
+    const fromQuery = req.query ? req.query[name] : undefined
+    const fromBody = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body[name]
+        : undefined
+    const value = fromQuery !== undefined && fromQuery !== '' ? fromQuery : fromBody
+    const first = Array.isArray(value) ? value[0] : value
+    return typeof first === 'string' ? first.trim() : ''
+}
+
+async function resolveUnsubscribeTarget(req) {
+    const userId = normalizeUnsubscribeUserId(readUnsubscribeParam(req, 'uid'))
+
+    if (userId === null) {
+        return {
+            ok: false,
+            status: 400,
+            errorTitle: 'Ссылка недействительна',
+            errorMessage: 'В ссылке нет идентификатора пользователя. Откройте ссылку отписки из письма целиком.'
+        }
+    }
+
+    const token = readUnsubscribeParam(req, 'token')
+    if (!verifyUnsubscribeToken(userId, token)) {
+        return {
+            ok: false,
+            status: 400,
+            errorTitle: 'Ссылка недействительна',
+            errorMessage: 'Не удалось проверить подпись ссылки — возможно, она повреждена при пересылке письма.'
+        }
+    }
+
+    const user = await User.findByPk(userId, { attributes: UNSUBSCRIBE_USER_ATTRIBUTES })
+    if (!user) {
+        return {
+            ok: false,
+            status: 404,
+            errorTitle: 'Пользователь не найден',
+            errorMessage: 'Аккаунт с таким идентификатором не найден — возможно, он был удалён.'
+        }
+    }
+
+    return { ok: true, user, token }
+}
+
+function sendUnsubscribeError(res, failure) {
+    const status = Number.isInteger(failure?.status) ? failure.status : 400
+    return res
+        .status(status)
+        .type('html')
+        .send(renderUnsubscribeErrorPage({
+            title: failure?.errorTitle,
+            message: failure?.errorMessage,
+            status
+        }))
+}
+
 class UserController {
     async registration(req, res) {
         let transaction
@@ -117,6 +194,7 @@ class UserController {
                 username,
                 privacyPolicyAccepted,
                 termsAccepted,
+                marketingConsent,
                 rememberMe,
                 timezone
             } = req.body || {}
@@ -133,6 +211,16 @@ class UserController {
             ) {
                 return res.status(400).json({
                     message: "Укажите корректные email, пароль, имя и срок сессии"
+                })
+            }
+
+            if (
+                marketingConsent !== undefined &&
+                marketingConsent !== null &&
+                typeof marketingConsent !== 'boolean'
+            ) {
+                return res.status(400).json({
+                    message: "Некорректное значение согласия на получение писем"
                 })
             }
 
@@ -188,6 +276,9 @@ class UserController {
             transaction = await sequelize.transaction()
             const hashPassword = await bcrypt.hash(password, 10)
 
+            const marketingOptIn = marketingConsent === true
+            const marketingOptInAt = marketingOptIn ? new Date() : null
+
             const user = await User.create({
                 email: normalizedEmail,
                 password: hashPassword,
@@ -195,7 +286,10 @@ class UserController {
                 username: finalUsername,
                 role: 'USER',
                 privilege_level: 'free',
-                timezone: isValidTimeZone(timezone) ? timezone.trim() : null
+                timezone: isValidTimeZone(timezone) ? timezone.trim() : null,
+                marketing_email_opt_in: marketingOptIn,
+                marketing_email_opt_in_at: marketingOptInAt,
+                marketing_email_opt_in_source: marketingOptIn ? MARKETING_CONSENT_SOURCE : null
             }, { transaction })
 
             await NotificationPreference.findOrCreate({
@@ -313,6 +407,7 @@ class UserController {
             })
 
             if (!user) {
+                await bcrypt.compare(String(password || ''), LOGIN_DUMMY_PASSWORD_HASH).catch(() => {})
                 return res.status(401).json({ message: "Неверный email или пароль" })
             }
 
@@ -559,6 +654,58 @@ class UserController {
         } catch (e) {
             console.error("❌ Ошибка проверки username:", e)
             return res.status(500).json({ message: "Внутренняя ошибка сервера" })
+        }
+    }
+
+    async unsubscribePage(req, res) {
+        try {
+            const target = await resolveUnsubscribeTarget(req)
+            if (!target.ok) return sendUnsubscribeError(res, target)
+
+            return res
+                .status(200)
+                .type('html')
+                .send(renderUnsubscribeConfirmPage({
+                    uid: target.user.id,
+                    token: target.token,
+                    email: target.user.email
+                }))
+        } catch (e) {
+            console.error('❌ Ошибка страницы отписки:', e)
+            return sendUnsubscribeError(res, {
+                status: 500,
+                errorTitle: 'Не удалось открыть страницу',
+                errorMessage: 'Попробуйте обновить страницу или откройте ссылку из письма ещё раз.'
+            })
+        }
+    }
+
+    async unsubscribe(req, res) {
+        try {
+            const target = await resolveUnsubscribeTarget(req)
+            if (!target.ok) return sendUnsubscribeError(res, target)
+
+            const user = target.user
+            const now = new Date()
+
+            await user.update({
+                marketing_email_opt_in: false,
+                marketing_email_opt_out_at: user.marketing_email_opt_out_at || now
+            })
+
+            console.log(`📭 Отписка от рассылки: пользователь #${user.id}`)
+
+            return res
+                .status(200)
+                .type('html')
+                .send(renderUnsubscribedPage({ email: user.email }))
+        } catch (e) {
+            console.error('❌ Ошибка отписки:', e)
+            return sendUnsubscribeError(res, {
+                status: 500,
+                errorTitle: 'Не удалось отписаться',
+                errorMessage: 'Попробуйте ещё раз через минуту или ответьте на письмо — отпишу вручную.'
+            })
         }
     }
 

@@ -29,6 +29,10 @@ const { rpId: RP_ID, frontendOrigins: FRONTEND_ORIGINS } = getPasskeyConfig()
 const RP_NAME = process.env.RP_NAME || 'App'
 const CHALLENGE_TTL_MS = 5 * 60 * 1000
 
+const PASSKEY_REQUIRE_USER_VERIFICATION =
+    String(process.env.PASSKEY_REQUIRE_USER_VERIFICATION ?? 'true').toLowerCase() !== 'false'
+const PASSKEY_USER_VERIFICATION_MODE = PASSKEY_REQUIRE_USER_VERIFICATION ? 'required' : 'preferred'
+
 function getUserId(req) {
     const token = req.cookies?.token
     if (!token) return null
@@ -137,7 +141,7 @@ class PasskeyController {
                 })),
                 authenticatorSelection: {
                     residentKey: 'preferred',
-                    userVerification: 'preferred',
+                    userVerification: PASSKEY_USER_VERIFICATION_MODE,
                     authenticatorAttachment: 'platform'
                 },
                 supportedAlgorithmIDs: [-7, -257]
@@ -191,10 +195,10 @@ class PasskeyController {
                     expectedChallenge: challengeRow.challenge,
                     expectedOrigin: FRONTEND_ORIGINS,
                     expectedRPID: RP_ID,
-                    requireUserVerification: false
+                    requireUserVerification: PASSKEY_REQUIRE_USER_VERIFICATION
                 })
             } catch (error) {
-                console.warn('Не удалось проверить регистрацию passkey:', error)
+                console.warn('Не удалось проверить регистрацию passkey:', error?.name || 'Error', error?.message || '')
                 return res.status(400).json({ message: 'Не удалось проверить подпись' })
             }
 
@@ -274,7 +278,7 @@ class PasskeyController {
 
             const options = await generateAuthenticationOptions({
                 rpID: RP_ID,
-                userVerification: 'preferred',
+                userVerification: PASSKEY_USER_VERIFICATION_MODE,
                 allowCredentials
             })
 
@@ -343,10 +347,10 @@ class PasskeyController {
                         counter: passkey.counter,
                         transports: passkey.transports || []
                     },
-                    requireUserVerification: false
+                    requireUserVerification: PASSKEY_REQUIRE_USER_VERIFICATION
                 })
             } catch (error) {
-                console.warn('Не удалось проверить вход passkey:', error)
+                console.warn('Не удалось проверить вход passkey:', error?.name || 'Error', error?.message || '')
                 return res.status(400).json({ message: 'Не удалось проверить подпись' })
             }
 

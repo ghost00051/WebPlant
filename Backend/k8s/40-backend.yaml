@@ -55,6 +55,8 @@ spec:
       labels:
         app: webplant-backend
     spec:
+      serviceAccountName: webplant-backend
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsUser: 1001
@@ -77,6 +79,8 @@ spec:
           volumeMounts:
             - name: uploads
               mountPath: /app/uploads
+            - name: tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /health
@@ -100,6 +104,10 @@ spec:
             failureThreshold: 4
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop:
                 - ALL
@@ -114,6 +122,9 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: backend-uploads
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
@@ -121,7 +132,7 @@ metadata:
   name: backend
   namespace: webplant
 spec:
-  maxUnavailable: 1
+  minAvailable: 1
   selector:
     matchLabels:
       app: webplant-backend
