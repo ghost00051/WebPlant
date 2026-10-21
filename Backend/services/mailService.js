@@ -2,25 +2,22 @@ import nodemailer from 'nodemailer'
 import {
     RESET_TOKEN_TTL_MINUTES
 } from '../utils/passwordReset.js'
+import { buildListUnsubscribeHeaders, buildUnsubscribeUrl } from '../utils/marketingConsent.js'
 
 const DEFAULT_SMTP_HOST = 'smtp.mail.ru'
 const DEFAULT_SMTP_PORT = 465
 const DEFAULT_TIMEOUT_MS = 10000
 const DEFAULT_SOCKET_TIMEOUT_MS = 20000
 const PRODUCT_NAME = 'Лейка'
-// Падежные формы для писем: «Лейка» / разработчик «Лейки» / «Лейку» / в «Лейке».
 const PRODUCT_NAME_CASES = {
     nom: 'Лейка',
     gen: 'Лейки',
     acc: 'Лейку',
     pre: 'Лейке'
 }
-// Предложный падеж для фраз «сброс пароля в „Лейке"».
 const PRODUCT_NAME_IN = PRODUCT_NAME_CASES.pre
 const PRODUCT_URL = 'https://checktheplants.ru'
-// Логотип в письмах. Картинку отдаёт сайт, поэтому вложение не нужно.
 const DEFAULT_LOGO_URL = 'https://checktheplants.ru/icons/icon-192.png'
-// Разработчик — подпись в приветственном письме.
 const DEVELOPER_NAME = 'Иван Никитин'
 const APP_HOME_URL = `${PRODUCT_URL}/home`
 
@@ -70,8 +67,6 @@ export function describeMailStatus(env = process.env) {
     return Boolean(config.host && config.user && config.password) ? 'configured' : 'not-configured'
 }
 
-// Подсказки для лога при старте и для диагностики деплоя: типичные причины,
-// из-за которых mail.ru отказывается принимать письма.
 export function describeMailConfigProblems(env = process.env) {
     const config = readMailConfig(env)
     const problems = []
@@ -176,7 +171,7 @@ export async function verifyMailConnection(env = process.env) {
     }
 }
 
-export async function sendMail({ to, subject, text, html, replyTo }, env = process.env) {
+export async function sendMail({ to, subject, text, html, replyTo, headers }, env = process.env) {
     if (!isMailConfigured(env)) {
         throw new Error('SMTP не настроен: заполните SMTP_USER и SMTP_PASSWORD')
     }
@@ -186,6 +181,9 @@ export async function sendMail({ to, subject, text, html, replyTo }, env = proce
         ? { name: config.fromName, address: config.fromAddress || config.user }
         : config.fromAddress || config.user
     const finalReplyTo = replyTo || config.replyTo || undefined
+    const finalHeaders = headers && typeof headers === 'object' && !Array.isArray(headers)
+        ? { ...headers }
+        : undefined
 
     return withTimeout(
         getTransporter(env).sendMail({
@@ -194,7 +192,8 @@ export async function sendMail({ to, subject, text, html, replyTo }, env = proce
             subject,
             text,
             html,
-            replyTo: finalReplyTo
+            replyTo: finalReplyTo,
+            ...(finalHeaders ? { headers: finalHeaders } : {})
         }),
         config.socketTimeoutMs + config.connectionTimeoutMs,
         'SMTP: превышено время отправки письма'
@@ -311,10 +310,14 @@ const WELCOME_HIGHLIGHTS = [
 
 export function renderWelcomeEmail({
     userName = '',
-    logoUrl = DEFAULT_LOGO_URL
+    logoUrl = DEFAULT_LOGO_URL,
+    unsubscribeUrl = ''
 }) {
     const greeting = userName ? `Привет, ${userName}!` : 'Привет!'
     const safeLogoUrl = escapeHtml(logoUrl)
+    const unsubscribeLink = typeof unsubscribeUrl === 'string' && unsubscribeUrl
+        ? unsubscribeUrl
+        : `${PRODUCT_URL}/unsubscribe`
 
     const text = [
         greeting,
@@ -331,7 +334,10 @@ export function renderWelcomeEmail({
         `Открыть свой сад: ${APP_HOME_URL}`,
         '',
         `— ${DEVELOPER_NAME}, разработчик «${PRODUCT_NAME_CASES.gen}»`,
-        PRODUCT_URL
+        PRODUCT_URL,
+        '',
+        'Не хотите получать письма о растениях и новостях — отпишитесь в один клик:',
+        unsubscribeLink
     ].join('\n')
 
     const highlightsHtml = WELCOME_HIGHLIGHTS.map(item => `
@@ -384,7 +390,8 @@ export function renderWelcomeEmail({
 <a href="${PRODUCT_URL}" style="color:#2f8f4e;text-decoration:none;">checktheplants.ru</a>
 </td></tr>
 <tr><td style="font-size:12px;line-height:18px;color:#8a988f;border-top:1px solid #e6ece7;padding-top:16px;">
-Отвечать на это письмо можно как обычно — ответ придёт разработчику.
+Отвечать на это письмо можно как обычно — ответ придёт разработчику.<br>
+Не хотите получать письма о растениях и новостях — <a href="${escapeHtml(unsubscribeLink)}" style="color:#8a988f;text-decoration:underline;">отпишитесь в один клик</a>.
 </td></tr>
 </table>
 </td></tr>
@@ -398,9 +405,137 @@ export function renderWelcomeEmail({
 export async function sendWelcomeEmail({
     to,
     userName = '',
+    userId = null,
     env = process.env
 }) {
-    const message = renderWelcomeEmail({ userName })
-    return sendMail({ to, ...message }, env)
+    const options = { frontendUrl: env.FRONTEND_URL, secret: env.SECRET_KEY }
+    const unsubscribeUrl = buildUnsubscribeUrl(userId, options)
+    const headers = buildListUnsubscribeHeaders(userId, options)
+    const message = renderWelcomeEmail({ userName, unsubscribeUrl })
+    return sendMail({ to, headers, ...message }, env)
+}
+
+export function resolveAbsoluteUrl(url, baseUrl = PRODUCT_URL) {
+    if (typeof url !== 'string') return ''
+    const trimmed = url.trim()
+    if (!trimmed) return ''
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+    return `${baseUrl}${trimmed.startsWith('/') ? trimmed : `/${trimmed}`}`
+}
+
+function bodyToParagraphs(body) {
+    return String(body)
+        .replace(/\r\n?/g, '\n')
+        .split(/\n{2,}/)
+        .map(block => block.replace(/^\n+/, '').replace(/\n+$/, ''))
+        .filter(block => block.trim())
+        .map(block => `<p style="margin:0 0 14px;font-size:15px;line-height:23px;color:#33413a;">${
+            escapeHtml(block).replace(/\n/g, '<br>')
+        }</p>`)
+        .join('\n')
+}
+
+export function renderBroadcastEmail({
+    subject,
+    body,
+    userName = '',
+    ctaLabel = '',
+    ctaUrl = '',
+    recipientEmail = '',
+    unsubscribeUrl = '',
+    logoUrl = DEFAULT_LOGO_URL
+}) {
+    const cleanSubject = typeof subject === 'string' ? subject.trim() : ''
+    if (!cleanSubject) {
+        throw new Error('renderBroadcastEmail: subject is required')
+    }
+    const cleanBody = typeof body === 'string' ? body.trim() : ''
+    if (!cleanBody) {
+        throw new Error('renderBroadcastEmail: body is required')
+    }
+
+    const greeting = userName ? `Здравствуйте, ${userName}!` : 'Здравствуйте!'
+    const absoluteCtaUrl = resolveAbsoluteUrl(ctaUrl)
+    const hasButton = Boolean(ctaLabel && absoluteCtaUrl)
+    const safeLogoUrl = escapeHtml(logoUrl)
+    const paragraphs = bodyToParagraphs(cleanBody)
+    const unsubscribeLink = typeof unsubscribeUrl === 'string' && unsubscribeUrl
+        ? unsubscribeUrl
+        : `${PRODUCT_URL}/unsubscribe`
+
+    const text = [
+        greeting,
+        '',
+        cleanBody,
+        ...(hasButton ? ['', `${ctaLabel}: ${absoluteCtaUrl}`] : []),
+        '',
+        `— ${PRODUCT_NAME}, ${PRODUCT_URL}`,
+        ...(recipientEmail ? ['', `Письмо отправлено на ${recipientEmail}.`] : []),
+        '',
+        'Вы получили это письмо как пользователь «Лейки».',
+        `Отписаться в один клик: ${unsubscribeLink}`
+    ].join('\n')
+
+    const html = `<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(cleanSubject)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f4f7f4;font-family:'Open Sans',Arial,Helvetica,sans-serif;color:#1f2a24;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f7f4;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background-color:#ffffff;border-radius:18px;padding:32px;">
+<tr><td align="center" style="padding-bottom:14px;">
+<img src="${safeLogoUrl}" width="68" height="68" alt="${escapeHtml(PRODUCT_NAME)}" style="display:block;width:68px;height:68px;border:0;border-radius:50%;">
+</td></tr>
+<tr><td style="font-size:16px;line-height:24px;color:#33413a;padding-bottom:14px;">${escapeHtml(greeting)}</td></tr>
+<tr><td>${paragraphs}</td></tr>
+${hasButton ? `<tr><td align="center" style="padding:6px 0 18px;">
+<a href="${escapeHtml(absoluteCtaUrl)}" style="display:inline-block;background-color:#2f8f4e;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;padding:15px 30px;border-radius:12px;">${escapeHtml(ctaLabel)}</a>
+</td></tr>` : ''}
+<tr><td style="font-size:15px;line-height:23px;color:#33413a;padding-top:14px;">
+— ${escapeHtml(PRODUCT_NAME)}, <a href="${PRODUCT_URL}" style="color:#2f8f4e;text-decoration:none;">checktheplants.ru</a>
+</td></tr>
+<tr><td style="font-size:12px;line-height:18px;color:#8a988f;border-top:1px solid #e6ece7;padding-top:16px;">
+Отвечать на это письмо можно как обычно — ответ придёт разработчику.${recipientEmail
+        ? `<br>Письмо отправлено на ${escapeHtml(recipientEmail)}.`
+        : ''}<br>
+Вы получили это письмо как пользователь «${escapeHtml(PRODUCT_NAME)}».<br>
+<a href="${escapeHtml(unsubscribeLink)}" style="color:#8a988f;text-decoration:underline;">Отписаться от рассылки</a>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`
+
+    return { subject: cleanSubject, text, html }
+}
+
+export async function sendBroadcastEmail({
+    to,
+    subject,
+    body,
+    userName = '',
+    ctaLabel = '',
+    ctaUrl = '',
+    userId = null,
+    env = process.env
+}) {
+    const options = { frontendUrl: env.FRONTEND_URL, secret: env.SECRET_KEY }
+    const unsubscribeUrl = buildUnsubscribeUrl(userId, options)
+    const headers = buildListUnsubscribeHeaders(userId, options)
+    const message = renderBroadcastEmail({
+        subject,
+        body,
+        userName,
+        ctaLabel,
+        ctaUrl,
+        recipientEmail: to,
+        unsubscribeUrl
+    })
+    return sendMail({ to, headers, ...message }, env)
 }
 

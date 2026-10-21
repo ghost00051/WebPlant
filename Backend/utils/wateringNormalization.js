@@ -1,11 +1,16 @@
-import { WATERING_TIME_OF_DAY_HOURS, zonedDayHourAfter } from './wateringSchedule.js'
+import {
+    advanceZonedWatering,
+    WATERING_TIME_OF_DAY_HOURS,
+    zonedDayHourAfter
+} from './wateringSchedule.js'
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from './timeZone.js'
 
 export function planWateringHourFixes({
     plants,
     timeZonesByUser = new Map(),
     hours = WATERING_TIME_OF_DAY_HOURS,
-    defaultTimeZone = DEFAULT_TIME_ZONE
+    defaultTimeZone = DEFAULT_TIME_ZONE,
+    now = new Date()
 } = {}) {
     return (Array.isArray(plants) ? plants : []).map(plant => {
         const timeZone = resolveTimeZone(timeZonesByUser.get(plant?.user_id) ?? defaultTimeZone)
@@ -31,7 +36,14 @@ export function planWateringHourFixes({
             return { ...base, reason: 'нет даты полива' }
         }
 
-        const fixed = zonedDayHourAfter(current, 0, hour, timeZone)
+        const intervalDays = Number.isInteger(plant?.watering_interval_days) &&
+            plant.watering_interval_days > 0
+            ? plant.watering_interval_days
+            : 7
+        let fixed = zonedDayHourAfter(current, 0, hour, timeZone)
+        if (fixed && fixed.getTime() <= now.getTime()) {
+            fixed = advanceZonedWatering(fixed, intervalDays, hour, timeZone, now)
+        }
         const changed = Boolean(fixed) && fixed.getTime() !== current.getTime()
 
         return {

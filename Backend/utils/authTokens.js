@@ -13,13 +13,23 @@ function hashTokenId(tokenId) {
     return createHash('sha256').update(tokenId).digest('hex')
 }
 
+function cookieDomain(isProd) {
+    const raw = String(process.env.AUTH_COOKIE_DOMAIN ?? '').trim()
+    if (raw) {
+        const normalized = raw.toLowerCase()
+        if (['none', 'host-only', 'hostonly', 'false', 'off', 'disabled'].includes(normalized)) return undefined
+        return raw
+    }
+    return isProd ? '.checktheplants.ru' : undefined
+}
+
 function baseCookieOptions() {
     const isProd = process.env.NODE_ENV === 'production'
     return {
         httpOnly: true,
         secure: isProd,
         sameSite: isProd ? 'none' : 'lax',
-        domain: isProd ? '.checktheplants.ru' : undefined,
+        domain: cookieDomain(isProd),
         path: '/'
     }
 }

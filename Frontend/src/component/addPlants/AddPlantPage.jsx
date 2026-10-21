@@ -67,7 +67,7 @@ function AddPlantPage() {
                 >
                     <ThemedIcon src={BackBtn} alt='' />
                 </button>
-                <span>Добавить растение</span>
+                <h1 className='addPlantPageTitle'>Добавить растение</h1>
             </header>
             <AddPlants />
         </main>

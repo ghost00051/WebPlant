@@ -7,7 +7,7 @@ param(
     [switch]$RestoreData,
     [switch]$EnableBackgroundJobs,
     [switch]$DisableBackgroundJobs,
-    [int]$Replicas = 2,
+    [int]$Replicas = 1,
     [int]$ImageLoadTimeoutMinutes = 30,
     [switch]$SkipGateway
 )
@@ -26,8 +26,6 @@ $GatewayPort = 8090
 $ComposeProjectNetwork = 'backend_ctp_network'
 $NodePort = 30080
 
-# Каталоги, исключённые в Backend/.dockerignore: docker их не читает,
-# поэтому облачные заглушки Yandex.Disk внутри них сборке не мешают.
 $BuildIgnoreDirs = @(
     'node_modules', 'uploads', 'backups', 'logs',
     'certbot', 'nginx', 'k8s', 'coverage', '.vscode', '.idea'
@@ -163,9 +161,7 @@ function Test-DockerContainer([string]$Name) {
     return [bool]($found | Where-Object { $_ -eq $Name })
 }
 
-# Ищет файлы-заглушки Yandex.Disk (online-only) в контексте сборки.
-# Их чтение висит (облако не отдаёт данные), поэтому docker build и git status
-# встают намертво. Каталоги из .dockerignore пропускаем — docker их не читает.
+
 function Get-CloudPlaceholderFiles {
     param(
         [Parameter(Mandatory)][string]$ContextDir,
@@ -183,8 +179,6 @@ function Get-CloudPlaceholderFiles {
     return @($found)
 }
 
-# Готовит копию контекста сборки на локальном диске (вне Yandex.Disk),
-# чтобы docker вообще не читал облачную папку.
 function New-LocalBuildContext {
     param(
         [Parameter(Mandatory)][string]$ContextDir,
@@ -204,11 +198,21 @@ function New-LocalBuildContext {
         '/NJH', '/NJS', '/NDL', '/NP'
     )
     foreach ($dir in $ExcludeDirs) { $roboArgs += @('/XD', (Join-Path $ContextDir $dir)) }
+    $roboArgs += @('/XF', '.env*')
 
     $result = Invoke-Native -Action { robocopy @roboArgs }
     if ($result.ExitCode -ge 8) {
         Write-Lines $result.Output
         throw "Не удалось подготовить локальный контекст сборки (robocopy код $($result.ExitCode))"
+    }
+
+    foreach ($secretFile in @(Get-ChildItem -LiteralPath $stagingRoot -Recurse -File -Force -Filter '.env*' -ErrorAction SilentlyContinue)) {
+        Remove-Item -LiteralPath $secretFile.FullName -Force
+    }
+    $leftoverSecrets = @(Get-ChildItem -LiteralPath $stagingRoot -Recurse -File -Force -Filter '.env*' -ErrorAction SilentlyContinue)
+    if ($leftoverSecrets.Count -gt 0) {
+        Write-Lines ($leftoverSecrets | ForEach-Object { $_.FullName })
+        throw "В контексте сборки остались файлы с секретами: $($leftoverSecrets.Count)"
     }
 
     return $stagingRoot
@@ -300,7 +304,12 @@ $overriddenKeys = @(
     'DB_HOST', 'DB_PORT', 'NODE_ENV', 'PORT', 'SERVER_PORT', 'DOMAIN',
     'DOCKER_HOST', 'DOCKER_STATS_ENABLED', 'BACKGROUND_JOBS_ENABLED', 'DEPLOY_TARGET',
     'REDIS_URL', 'REDIS_HOST', 'REDIS_PORT', 'REDIS_PASSWORD', 'REDIS_KEY_PREFIX',
-    'AI_CACHE_ENABLED', 'AI_CACHE_TTL_SECONDS', 'AI_CHAT_CACHE_TTL_SECONDS'
+    'AI_CACHE_ENABLED', 'AI_CACHE_TTL_SECONDS', 'AI_CHAT_CACHE_TTL_SECONDS',
+    'AI_DAILY_REQUEST_BUDGET', 'AI_PRICE_INPUT_PER_1K', 'AI_PRICE_OUTPUT_PER_1K',
+    'AI_PRICE_CACHED_PER_1K', 'AI_PRICE_CURRENCY',
+    'AI_CHAT_TIMEOUT_MS', 'AI_ADVICE_TIMEOUT_MS', 'AI_CHAT_DEADLINE_MS', 'AI_ADVICE_DEADLINE_MS',
+    'WATERING_ADVICE_MAX_QUESTIONS', 'AI_CHAT_GUEST_DAILY_LIMIT', 'AI_CHAT_USER_DAILY_LIMIT',
+    'APP_TIME_ZONE', 'CHAT_LOG_RETENTION_DAYS', 'AI_ADVICE_LOG_RETENTION_DAYS'
 )
 $secretKeys = @(
     'DB_PASSWORD', 'SECRET_KEY', 'YANDEX_CLOUD_API_KEY', 'VAPID_PRIVATE_KEY',
@@ -385,6 +394,7 @@ Write-Ok "Фоновые задачи в кластере: $jobsNote"
 
 Write-Step 'Разворачиваю хранилища, PostgreSQL и Redis'
 
+Invoke-Checked 'Не удалось применить ServiceAccount' { kubectl apply -f (Join-Path $K8sDir '05-serviceaccount.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить PVC' { kubectl apply -f (Join-Path $K8sDir '15-storage.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить PostgreSQL' { kubectl apply -f (Join-Path $K8sDir '20-postgres.yaml') } | Out-Null
 Invoke-Checked 'Не удалось применить Redis' { kubectl apply -f (Join-Path $K8sDir '30-redis.yaml') } | Out-Null
@@ -424,9 +434,9 @@ if (-not $SkipImageLoad) {
         } | Out-Null
     }
     Invoke-Checked 'Не удалось запустить сервер образов (порт 8099 занят?)' {
-        docker run -d --name $ImageServerName --restart unless-stopped `
+        docker run -d --name $ImageServerName --rm `
             -p "${ImageServerPort}:80" `
-            -v "${StagingDir}:/usr/share/nginx/html:ro" `
+            -v "${StagingDir}/${imageTar}:/usr/share/nginx/html/${imageTar}:ro" `
             nginx:alpine
     } | Out-Null
     Write-Ok "Сервер образов слушает http://localhost:$ImageServerPort (из подов — host.docker.internal:$ImageServerPort)"
@@ -493,6 +503,10 @@ if (-not $SkipImageLoad) {
 
     Invoke-Checked 'Не удалось удалить image-loader' {
         kubectl delete daemonset image-loader -n $Namespace --ignore-not-found
+    } | Out-Null
+
+    Invoke-Checked 'Не удалось удалить сервер образов' {
+        docker rm -f $ImageServerName
     } | Out-Null
 }
 
@@ -614,6 +628,9 @@ $backendManifest = (Read-Utf8 (Join-Path $K8sDir '40-backend.yaml')).Replace('__
 $backendPath = Join-Path $StagingDir 'backend.generated.yaml'
 Write-Utf8NoBom $backendPath $backendManifest
 Invoke-Checked 'Не удалось применить backend' { kubectl apply -f $backendPath } | Out-Null
+Invoke-Checked 'Не удалось применить CronJob бэкапа БД' {
+    kubectl apply -f (Join-Path $K8sDir 'jobs/db-backup.cronjob.yaml')
+} | Out-Null
 Invoke-Checked 'Не удалось выставить количество реплик' {
     kubectl scale deployment backend -n $Namespace --replicas=$Replicas
 } | Out-Null
@@ -645,13 +662,21 @@ if (-not $SkipGateway) {
     Write-Step "Поднимаю gateway (localhost:$GatewayPort → backend в кластере)"
 
     $nodeNames = @()
+    $nodeAddresses = @()
     foreach ($line in (Get-NativeLines { kubectl get nodes -o wide --no-headers })) {
         $fields = $line -split '\s+'
-        if ($fields.Count -ge 6 -and $fields[1] -eq 'Ready') { $nodeNames += $fields[0] }
+        if ($fields.Count -ge 6 -and $fields[1] -eq 'Ready') {
+            $nodeNames += $fields[0]
+            if ($fields[5] -match '^\d{1,3}(\.\d{1,3}){3}$') { $nodeAddresses += $fields[5] }
+        }
     }
     if (-not $nodeNames.Count) { throw 'Не найдено ни одной Ready-ноды' }
+    if (-not $nodeAddresses.Count) {
+        Write-WarnStep 'Не удалось определить IPv4-адреса нод — использую имена (возможны сбои из-за IPv6)'
+        $nodeAddresses = $nodeNames
+    }
 
-    $upstreams = ($nodeNames | ForEach-Object { "        server ${_}:$NodePort max_fails=2 fail_timeout=5s;" }) -join "`n"
+    $upstreams = ($nodeAddresses | ForEach-Object { "        server ${_}:$NodePort max_fails=2 fail_timeout=5s;" }) -join "`n"
     $gatewayConf = (Read-Utf8 (Join-Path $K8sDir 'gateway/nginx.conf.tpl')).Replace('__UPSTREAM_SERVERS__', $upstreams)
     $gatewayConfPath = Join-Path $StagingDir 'gateway-nginx.conf'
     Write-Utf8NoBom $gatewayConfPath $gatewayConf
@@ -660,7 +685,7 @@ if (-not $SkipGateway) {
     Invoke-Checked "Не удалось запустить gateway (порт $GatewayPort занят?)" {
         docker run -d --name $GatewayName --restart unless-stopped `
             --network kind `
-            -p "${GatewayPort}:${GatewayPort}" `
+            -p "127.0.0.1:${GatewayPort}:${GatewayPort}" `
             -v "${gatewayConfPath}:/etc/nginx/nginx.conf:ro" `
             nginx:alpine
     } | Out-Null

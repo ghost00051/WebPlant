@@ -2,7 +2,7 @@ import { createClient } from 'redis'
 
 const DEFAULT_PORT = 6379
 const DEFAULT_COMMAND_TIMEOUT_MS = 500
-const DEFAULT_CONNECT_TIMEOUT_MS = 3000
+const DEFAULT_CONNECT_TIMEOUT_MS = 5000
 const DEFAULT_FAILURE_THRESHOLD = 3
 const DEFAULT_BREAKER_COOLDOWN_MS = 30_000
 
@@ -147,9 +147,20 @@ export async function getRedisClient() {
     }
 
     try {
-        await connecting
+        await withTimeout(
+            connecting,
+            CONNECT_TIMEOUT_MS + 2000,
+            'Redis connect timed out'
+        )
     } catch (error) {
         noteFailure(error?.code || error?.message || String(error))
+        try {
+            if (client) client.destroy()
+        } catch {
+        }
+        client = null
+        clientUrl = null
+        connecting = null
         return null
     }
 

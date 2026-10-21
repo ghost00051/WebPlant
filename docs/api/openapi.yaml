@@ -1,0 +1,5050 @@
+openapi: 3.1.0
+info:
+  title: WebPlant («Лейка») API
+  version: 1.2.6
+  summary: REST API учёта комнатных растений и ИИ-помощника «Лейка»
+  description: |
+    Контракт HTTP API backend-сервиса WebPlant (Backend 1.2.6). Источник истины —
+    код: `Backend/index.js`, `Backend/routes/*.js`, `Backend/controllers/*.js`,
+    `Backend/models/*.js`. Спека фиксирует фактические методы, пути, коды ответов и
+    структуры, которые сервис возвращает сейчас.
+
+    ## Базовый URL
+
+    * боевой: `https://server.checktheplants.ru/api` (плюс `/health` и `/livez` вне `/api`);
+    * локально: `http://localhost:5000/api` (порт из `PORT`).
+
+    Фронтенд обращается к API с другого origin (`https://checktheplants.ru`,
+    `https://admin.checktheplants.ru`), поэтому CORS включён с `credentials: true`.
+
+    ## Аутентификация
+
+    Сессия хранится в httpOnly-cookie, токенов в `localStorage` нет:
+
+    * `token` — JWT (`tokenType=session`, 24 ч) либо access-токен (`tokenType=access`, 15 мин)
+      при включённом «запомнить меня»;
+    * `refresh_token` — JWT `tokenType=refresh` (30 дней), только при `rememberMe: true`;
+      access-токен продлевается автоматически;
+    * `guest_token` — подписанный HMAC гостевой идентификатор (согласия и чат без входа).
+
+    Cookie выдаются на домен `.checktheplants.ru` с `SameSite=None; Secure`, поэтому
+    браузерные клиенты должны отправлять запросы с `credentials: 'include'`.
+    Отзыв сессий — `auth_sessions.revoked_at`; при отзыве все запросы получают `401`.
+
+    ## CSRF и Origin
+
+    Отдельного CSRF-токена нет. Для `POST`/`PUT`/`PATCH`/`DELETE` сервер проверяет
+    `Origin` и `Sec-Fetch-Site`: запрос с недопустимого origin, кросс-сайтовый запрос без
+    `Origin`, а также любой изменяющий запрос с auth-cookie и без заголовка `Origin`
+    отклоняется с `403` (`{"message":"Запрос с этого источника запрещён"}`).
+    Разрешённые origin'ы: `FRONTEND_URL`, `ADMIN_PANEL_ORIGIN`, а вне production —
+    `LOCAL_DEV_ORIGINS`.
+
+    ## Ограничения запросов
+
+    * тело JSON/urlencoded — не больше 100 kb (`413` при превышении);
+    * для запросов с телом обязателен `Content-Type`: `application/json`,
+      `application/x-www-form-urlencoded`, `multipart/form-data` или `*+json`, иначе `415`;
+    * файлы: до 5 МБ на файл, до 2 файлов в `POST /api/upload`, до 5 файлов в
+      `POST /api/chat/photo`;
+    * на большинство групп эндпоинтов действует rate-limit (`429`); лимиты перечислены в
+      `ARCHITECTURE.md` §7 и в описании операций.
+
+    ## Формат ошибок
+
+    Все ошибки — объект `{"message": "<текст>"}`. Обобщённые ответы обработчика:
+    `400 {"message":"Некорректный запрос"}`, `413 {"message":"Размер запроса превышает
+    допустимый лимит"}`, `500 {"message":"Internal server error"}`; доменные ошибки
+    возвращают собственный текст (см. схемы).
+
+    ## Прочие коды
+
+    * `503` — недоступная зависимость (БД при `/health`, SMTP при сбросе пароля,
+      ИИ-сервис, push не настроен) или исчерпан суточный бюджет ИИ для гостя;
+    * `501` — эндпоинт объявлен, но ещё не реализован сервером
+      (`POST /api/admin/push/broadcasts/{id}/retry` возвращает `501`, если метод
+      отсутствует в контроллере).
+servers:
+  - url: https://server.checktheplants.ru
+    description: боевой сервер (API — под /api, проверки — /health и /livez)
+  - url: http://localhost:5000
+    description: локальный запуск backend
+
+tags:
+  - name: system
+    description: проверки живости и служебные вызовы
+  - name: auth
+    description: регистрация, вход, выход, профиль, сброс пароля
+  - name: passkey
+    description: WebAuthn-ключи (passkeys)
+  - name: plants
+    description: растения, расписание, поливы, фото, советы ИИ
+  - name: chat
+    description: чат с ИИ-помощником и анализ фото
+  - name: notifications
+    description: in-app уведомления
+  - name: push
+    description: подписка на push-уведомления
+  - name: upload
+    description: загрузка фотографий растений
+  - name: consents
+    description: cookie- и юридические согласия
+  - name: admin
+    description: админ-API (только role=ADMIN)
+
+security:
+  - cookieAuth: []
+  - refreshCookie: []
+
+paths:
+  /livez:
+    get:
+      tags: [system]
+      operationId: getLivez
+      summary: Проверка живости процесса
+      description: Не обращается к БД и внешним сервисам. Используется liveness-пробой.
+      security: []
+      responses:
+        '200':
+          description: процесс жив
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, timestamp]
+                properties:
+                  status:
+                    type: string
+                    const: ok
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /health:
+    get:
+      tags: [system]
+      operationId: getHealth
+      summary: Готовность сервиса и состояние подсистем
+      description: |
+        Проверяет подключение к PostgreSQL (`sequelize.authenticate()`). Используется
+        readiness-пробой Kubernetes и healthcheck'ом compose.
+      security: []
+      responses:
+        '200':
+          description: сервис готов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: БД недоступна
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: unavailable
+
+  /api/users/registration:
+    post:
+      tags: [auth]
+      operationId: registerUser
+      summary: Регистрация
+      description: |
+        Создаёт пользователя, согласия (`privacy_policy`, `terms_of_service`, версия 2.0),
+        настройки уведомлений; привязывает гостевые согласия и сообщения чата к аккаунту.
+        Выдаёт cookie сессии. Лимит: 5 запросов в час с IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+      responses:
+        '201':
+          description: аккаунт создан
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+              description: '`token` (и `refresh_token` при `rememberMe: true`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RegistrationResponse'
+        '400':
+          description: некорректные данные или не приняты обязательные документы
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: email или username уже заняты (обобщённый текст)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/login:
+    post:
+      tags: [auth]
+      operationId: loginUser
+      summary: Вход по email и паролю
+      description: |
+        Лимит: 10 запросов за 15 минут с IP. Ответ `401` одинаков для неизвестного email и
+        неверного пароля (защита от перечисления пользователей).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: вход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: неверный email или пароль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/logout:
+    post:
+      tags: [auth]
+      operationId: logoutUser
+      summary: Выход
+      description: Отзывает текущие токены в `auth_sessions` и очищает cookie.
+      security: []
+      responses:
+        '200':
+          description: выход выполнен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentUser
+      summary: Текущий пользователь
+      responses:
+        '200':
+          description: профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags: [auth]
+      operationId: updateProfile
+      summary: Обновление профиля
+      description: |
+        Принимает `name`, `username`, `email`, `phone`, `bio`, `timezone`. При смене
+        часового пояса пересчитывает `next_watering_at` активных растений. Требует cookie
+        `token` (иначе `401`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: обновлённый профиль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '404':
+          description: пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: username или email уже заняты
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [auth]
+      operationId: deleteMe
+      summary: Удаление аккаунта со всеми данными
+      description: |
+        Требует `confirm: "УДАЛИТЬ"` и пароль. Удаляет растения, фото (включая файлы),
+        поливы, чат, уведомления, настройки, push-подписки, согласия, сессии, passkeys,
+        токены сброса; в `ai_advice_logs` и `site_visit_days` обнуляет `user_id`,
+        в рассылках — `created_by`. Аккаунт администратора удаляется только из админ-панели.
+        Лимит: 5 попыток в час на пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm, password]
+              properties:
+                confirm:
+                  type: string
+                  const: УДАЛИТЬ
+                password:
+                  type: string
+                  maxLength: 1024
+      responses:
+        '200':
+          description: аккаунт удалён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteAccountResponse'
+        '400':
+          description: не передан `confirm` или пароль
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Message'
+                  - type: object
+                    properties:
+                      requiresConfirmation:
+                        type: boolean
+                      requiresPassword:
+                        type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: неверный пароль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '409':
+          description: попытка удалить аккаунт администратора
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/me/export:
+    get:
+      tags: [auth]
+      operationId: exportAccountData
+      summary: Экспорт данных аккаунта (JSON-файл)
+      description: |
+        Возвращает JSON с заголовком `Content-Disposition: attachment`
+        (`lejka-account-<id>-<YYYY-MM-DD>.json`) и `Cache-Control: no-store`.
+        Лимит: 10 запросов в час на пользователя.
+      responses:
+        '200':
+          description: данные аккаунта
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountExport'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/unsubscribe:
+    get:
+      tags: [auth]
+      operationId: unsubscribePageMarketing
+      summary: Страница подтверждения отписки от рассылок (HTML)
+      description: |
+        Ссылка из письма (`RFC 8058`, заголовки `List-Unsubscribe`/`List-Unsubscribe-Post`).
+        Токен — HMAC-SHA256 от `unsubscribe:<user_id>` на `SECRET_KEY`, в БД не хранится.
+        Требует `uid` и `token` в query; работает без авторизации и без cookie.
+        Лимит — 30 запросов за 15 минут с IP.
+      security: []
+      parameters:
+        - name: uid
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: HTML-страница подтверждения отписки
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: некорректная ссылка (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+        '404':
+          description: пользователь не найден (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+        '429':
+          description: превышен лимит запросов (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+        '500':
+          description: внутренняя ошибка (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+    post:
+      tags: [auth]
+      operationId: unsubscribeMarketing
+      summary: Отписка от рассылок в один клик
+      description: |
+        One-click отписка почтовых клиентов: `uid`/`token` из query или из тела формы.
+        Идемпотентно: повторная отписка возвращает тот же результат и не переписывает
+        `marketing_email_opt_out_at`. После успеха `marketing_email_opt_in = false`.
+      security: []
+      parameters:
+        - name: uid
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: token
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                uid:
+                  type: string
+                token:
+                  type: string
+                List-Unsubscribe:
+                  type: string
+                  description: значение `List-Unsubscribe=One-Click` от почтового клиента
+      responses:
+        '200':
+          description: HTML-страница «Вы отписаны»
+          content:
+            text/html:
+              schema:
+                type: string
+        '400':
+          description: некорректная ссылка/токен (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+        '429':
+          description: превышен лимит запросов (HTML-страница ошибки)
+          content:
+            text/html:
+              schema:
+                type: string
+
+  /api/users/me/notification-preferences:
+    get:
+      tags: [notifications]
+      operationId: getNotificationPreferences
+      summary: Настройки уведомлений и темы
+      responses:
+        '200':
+          description: настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags: [notifications]
+      operationId: updateNotificationPreferences
+      summary: Изменение настроек уведомлений и темы
+      description: Лимит — 60 изменений в минуту на пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                morning_summary_enabled:
+                  type: boolean
+                care_advice_enabled:
+                  type: boolean
+                dark_theme_enabled:
+                  type: boolean
+                theme_mode:
+                  type: string
+                  enum: [system, light, dark]
+      responses:
+        '200':
+          description: сохранённые настройки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationPreferences'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/check-username:
+    get:
+      tags: [auth]
+      operationId: checkUsername
+      summary: Проверка доступности username
+      description: Лимит — 30 запросов в минуту.
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 3
+            maxLength: 30
+      responses:
+        '200':
+          description: результат проверки
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckUsernameResponse'
+        '400':
+          description: некорректный формат
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckUsernameResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/password-reset/request:
+    post:
+      tags: [auth]
+      operationId: requestPasswordReset
+      summary: Запрос ссылки сброса пароля
+      description: |
+        Всегда возвращает обобщённый ответ (не раскрывает существование аккаунта).
+        Токен живёт 30 минут, в БД хранится его sha256-хэш; ссылка ведёт на
+        `<FRONTEND_URL>/reset-password#token=…`. Лимит: 5 запросов в час с IP.
+        Без настроенного SMTP — `503`.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: письмо отправлено (если аккаунт существует)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, expiresInMinutes]
+                properties:
+                  message:
+                    type: string
+                  expiresInMinutes:
+                    type: integer
+                    const: 30
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: почта не настроена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/password-reset/verify:
+    get:
+      tags: [auth]
+      operationId: verifyPasswordResetToken
+      summary: Проверка ссылки сброса пароля
+      security: []
+      parameters:
+        - name: token
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: токен действителен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [valid, email, expiresInMinutes]
+                properties:
+                  valid:
+                    type: boolean
+                    const: true
+                  email:
+                    type: string
+                    description: email с маскировкой
+                  expiresInMinutes:
+                    type: integer
+        '400':
+          description: токен отсутствует, истёк или использован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/password-reset/confirm:
+    post:
+      tags: [auth]
+      operationId: confirmPasswordReset
+      summary: Установка нового пароля по токену
+      description: Пароль — не короче 8 символов; после успеха cookie сессии очищаются.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, password]
+              properties:
+                token:
+                  type: string
+                password:
+                  type: string
+                  minLength: 8
+      responses:
+        '200':
+          description: пароль изменён
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          description: неверный токен или слабый пароль
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users:
+    get:
+      tags: [admin, auth]
+      operationId: adminListUsersLegacy
+      summary: Список пользователей (админ, простая выборка)
+      description: Возвращает всех пользователей без пароля. Основной список — `GET /api/admin/users`.
+      responses:
+        '200':
+          description: пользователи
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/register/start:
+    post:
+      tags: [passkey]
+      operationId: startPasskeyRegistration
+      summary: Начало регистрации passkey
+      description: Требует авторизации. Возвращает параметры WebAuthn и служебный `_key`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties: {}
+      responses:
+        '200':
+          description: параметры создания credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyCreationOptions'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/register/finish:
+    post:
+      tags: [passkey]
+      operationId: finishPasskeyRegistration
+      summary: Завершение регистрации passkey
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [_key]
+              properties:
+                _key:
+                  type: string
+                  maxLength: 120
+                deviceName:
+                  type: string
+                  maxLength: 120
+              additionalProperties: true
+      responses:
+        '200':
+          description: ключ зарегистрирован
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, passkey]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  passkey:
+                    type: object
+                    properties:
+                      id:
+                        type: integer
+                      device_name:
+                        type: [string, 'null']
+                      created_at:
+                        type: string
+                        format: date-time
+                  deviceType:
+                    type: [string, 'null']
+                  backedUp:
+                    type: [boolean, 'null']
+        '400':
+          description: челлендж истёк или подпись не проверена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: ключ уже зарегистрирован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/login/start:
+    post:
+      tags: [passkey]
+      operationId: startPasskeyLogin
+      summary: Начало входа по passkey
+      description: Email опционален (если передан — ограничивает список ключей).
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: параметры запроса credential
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PasskeyRequestOptions'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/login/finish:
+    post:
+      tags: [passkey]
+      operationId: finishPasskeyLogin
+      summary: Завершение входа по passkey
+      description: Выдаёт cookie сессии (аналог парольного входа).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [_key]
+              properties:
+                _key:
+                  type: string
+                  maxLength: 120
+                rememberMe:
+                  type: boolean
+              additionalProperties: true
+      responses:
+        '200':
+          description: вход выполнен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, user]
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  user:
+                    $ref: '#/components/schemas/User'
+        '400':
+          description: челлендж истёк, подпись не проверена, ключ не соответствует аккаунту
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '404':
+          description: ключ не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: ошибка входа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/users/passkey:
+    get:
+      tags: [passkey]
+      operationId: listPasskeys
+      summary: Список passkey-устройств
+      responses:
+        '200':
+          description: устройства
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PasskeySummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/exists:
+    get:
+      tags: [passkey]
+      operationId: hasAnyPasskey
+      summary: Есть ли у аккаунта passkey
+      security: []
+      parameters:
+        - name: email
+          in: query
+          required: false
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: результат проверки (без email всегда `false`)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hasPasskey]
+                properties:
+                  hasPasskey:
+                    type: boolean
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/users/passkey/{id}:
+    patch:
+      tags: [passkey]
+      operationId: renamePasskey
+      summary: Переименование passkey-устройства
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_name]
+              properties:
+                device_name:
+                  type: string
+                  maxLength: 120
+      responses:
+        '200':
+          description: новое имя
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  device_name:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [passkey]
+      operationId: deletePasskey
+      summary: Удаление passkey-устройства
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants:
+    get:
+      tags: [plants]
+      operationId: listPlants
+      summary: Активные растения пользователя
+      description: Возвращает растения с фотографиями (`photos`), сортировка по `created_at` DESC.
+      responses:
+        '200':
+          description: растения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [plants]
+      operationId: createPlant
+      summary: Создание растения
+      description: |
+        Фотографии должны быть предварительно загружены через `POST /api/upload`
+        (принимаются только пути `/uploads/plants/<32hex>.<ext>`, для которых файл существует).
+        Лимит записи: 120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantCreateRequest'
+      responses:
+        '201':
+          description: созданное растение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/need-watering:
+    get:
+      tags: [plants]
+      operationId: listNeedWatering
+      summary: Растения, которым нужен полив
+      description: '`next_watering_at` раньше начала завтрашнего дня или установлен `metadata.missed_since`.'
+      responses:
+        '200':
+          description: растения
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Plant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/schedule:
+    get:
+      tags: [plants]
+      operationId: getSchedule
+      summary: Календарь полива по дням
+      description: Группирует вхождения расписания по дням с учётом часового пояса пользователя.
+      responses:
+        '200':
+          description: календарь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/history:
+    get:
+      tags: [plants]
+      operationId: getWateringHistoryAll
+      summary: История поливов по всем растениям (по дням)
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: история
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistoryAllResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/timeline:
+    get:
+      tags: [plants]
+      operationId: getTimeline
+      summary: Лента событий ухода (поливы, пропуски, просрочки)
+      responses:
+        '200':
+          description: события по дням
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/stats/completion:
+    get:
+      tags: [plants]
+      operationId: getCompletionStats
+      summary: Статистика своевременности полива
+      responses:
+        '200':
+          description: статистика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CompletionStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/suggest-species:
+    post:
+      tags: [plants]
+      operationId: suggestSpecies
+      summary: Подсказка вида растения (ИИ)
+      description: Лимит — 20 запросов в час на пользователя. `503` при ошибке ИИ-сервиса.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name:
+                  type: string
+                  maxLength: 255
+      responses:
+        '200':
+          description: предложенный вид
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  species:
+                    type: [string, 'null']
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/watering-advice:
+    post:
+      tags: [plants]
+      operationId: suggestWateringAdvice
+      summary: Совет по интервалу полива (ИИ)
+      description: |
+        Возвращает либо уточняющий вопрос (`type: question`), либо рекомендацию
+        (`type: recommendation`) с интервалом и причиной. При ошибке модели или
+        исчерпанном бюджете отдаётся фолбэк (`source: fallback`). Лимит — 30 запросов в час.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WateringAdviceRequest'
+      responses:
+        '200':
+          description: совет
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WateringAdvice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/watering-time-advice:
+    post:
+      tags: [plants]
+      operationId: suggestWateringTime
+      summary: Совет по времени суток для полива (ИИ)
+      description: Лимит — 30 запросов в час на пользователя.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WateringTimeRequest'
+      responses:
+        '200':
+          description: совет
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WateringTimeAdvice'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/export:
+    get:
+      tags: [plants]
+      operationId: exportPlantsCsv
+      summary: CSV-выгрузка активных растений
+      description: |
+        Возвращает `text/csv` с BOM UTF-8, разделитель `;`, заголовок
+        `id;name;species;location;watering_interval_days;watering_time_of_day;last_watered_at;next_watering_at;created_at`.
+        Даты форматируются в часовом поясе пользователя. Не более 5000 растений.
+        Ответ — `Content-Disposition: attachment; filename="webplant-plants.csv"`,
+        `Cache-Control: no-store`.
+      responses:
+        '200':
+          description: CSV-файл
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+          content:
+            text/csv:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: getPlant
+      summary: Растение по идентификатору
+      responses:
+        '200':
+          description: растение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: растение не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      tags: [plants]
+      operationId: updatePlant
+      summary: Обновление растения
+      description: |
+        Ручная смена интервала сбрасывает обучение адаптивной модели
+        (`plants.metadata.prediction`). Лимит записи: 120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlantUpdateRequest'
+      responses:
+        '200':
+          description: обновлённое растение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [plants]
+      operationId: deletePlant
+      summary: Удаление растения
+      description: Удаляет растение, его фото (и файлы), поливы.
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/photos:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [plants]
+      operationId: addPlantPhotos
+      summary: Привязка загруженных фотографий к растению
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [photos]
+              properties:
+                photos:
+                  type: array
+                  minItems: 1
+                  maxItems: 10
+                  items:
+                    $ref: '#/components/schemas/PhotoInput'
+      responses:
+        '201':
+          description: созданные записи фото
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PlantPhoto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/water:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [plants]
+      operationId: waterPlant
+      summary: Отметить полив
+      description: |
+        Без `scheduled_for` — полив сейчас: повтор в течение короткого окна даёт
+        `duplicate: true`. С `scheduled_for` — «дозапись» за прошлую дату
+        (`backfilled: true`), будущая дата запрещена (`400`), повтор за ту же дату — `409`.
+        Пересчитывает адаптивный интервал и `next_watering_at`.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 2000
+                scheduled_for:
+                  type: string
+                  description: дата/время слота в прошлом (ISO 8601)
+      responses:
+        '200':
+          description: растение после полива (возможны `duplicate`, `backfilled`, `converted_skip`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaterResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: полив за эту дату уже отмечен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/water/{logId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/LogId'
+    delete:
+      tags: [plants]
+      operationId: deleteWatering
+      summary: Отмена записи о поливе
+      description: |
+        Удаляет запись (или возвращает её в состояние «пропуск», если она была создана
+        из пропуска) и восстанавливает расписание, если запись была последней.
+      responses:
+        '200':
+          description: запись удалена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, scheduleRestored, restored_skip]
+                properties:
+                  message:
+                    type: string
+                  scheduleRestored:
+                    type: boolean
+                  restored_skip:
+                    type: boolean
+                  next_watering_at:
+                    type: [string, 'null']
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: растение или запись не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/skip:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [plants]
+      operationId: skipWatering
+      summary: Пропустить полив
+      description: Переносит следующий полив на `days` дней вперёд (по умолчанию — на один интервал).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  maxLength: 2000
+                days:
+                  type: integer
+                  minimum: 1
+                  maximum: 365
+      responses:
+        '200':
+          description: растение после переноса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/history:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: getPlantHistory
+      summary: История поливов растения
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: записи журнала
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [total, limit, offset, items]
+                properties:
+                  total:
+                    type: integer
+                  limit:
+                    type: integer
+                  offset:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WateringLog'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/stats:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: getPlantStats
+      summary: Статистика поливов растения
+      responses:
+        '200':
+          description: статистика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/metadata:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [plants]
+      operationId: updatePlantMetadata
+      summary: Обновление metadata растения
+      description: |
+        Принимает произвольный JSON-объект; зарезервированные ключи (адаптивная модель,
+        прогресс уведомлений, `missed_since`) игнорируются. Ограничение размера —
+        `MAX_METADATA_BYTES` (валидация вернёт `400` при превышении).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: обновлённое растение
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plant'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/chat/chat:
+    post:
+      tags: [chat]
+      operationId: sendChatMessage
+      summary: Сообщение ИИ-помощнику
+      description: |
+        Доступно гостю (по `guest_token`) и пользователю. Лимиты: 15 сообщений в минуту с IP,
+        гость — 40 в сутки, пользователь — 300 в сутки. Часть запросов (полив, список
+        растений) обрабатывается локально без модели (`local: true`). При сбое модели
+        возвращается ответ по данным приложения (`degraded: true`); гость при исчерпанном
+        суточном бюджете получает `503`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                message:
+                  type: string
+                  maxLength: 1000
+                sessionId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: ответ помощника
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: сессия принадлежит другому владельцу
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/chat/photo:
+    post:
+      tags: [chat]
+      operationId: analyzeChatPhoto
+      summary: Анализ фото растения в чате
+      description: |
+        `multipart/form-data`, поле `photo` (до 5 файлов по 5 МБ; JPEG, PNG, WebP, HEIC).
+        Лимит фото — 12 в час на пользователя/IP. Диагностика выполняется моделью Vision;
+        при сбое возвращается деградированный ответ.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: string
+                    format: binary
+                message:
+                  type: string
+                  maxLength: 1000
+                sessionId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: результат анализа
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatPhotoResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          description: сессия не найдена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '413':
+          description: файл больше 5 МБ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/chat/history:
+    get:
+      tags: [chat]
+      operationId: getChatHistory
+      summary: История текущей или указанной сессии
+      description: Лимит — 120 запросов в минуту с IP.
+      parameters:
+        - name: sessionId
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        '200':
+          description: сообщения
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [chat]
+      operationId: clearChatSession
+      summary: Удаление переписки сессии
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sessionId]
+              properties:
+                sessionId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: чат удалён
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, sessionId]
+                properties:
+                  message:
+                    type: string
+                  sessionId:
+                    type: string
+                    format: uuid
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/chat/sessions:
+    get:
+      tags: [chat]
+      operationId: listChatSessions
+      summary: Список чатов пользователя/гостя
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+      responses:
+        '200':
+          description: чаты
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ChatSession'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications:
+    get:
+      tags: [notifications]
+      operationId: listNotifications
+      summary: Список уведомлений
+      description: Лимит чтения — 300 запросов в минуту.
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, unread, read]
+            default: all
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 1000000
+            default: 0
+      responses:
+        '200':
+          description: уведомления
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/unread-count:
+    get:
+      tags: [notifications]
+      operationId: getUnreadCount
+      summary: Количество непрочитанных
+      responses:
+        '200':
+          description: счётчик
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [unreadCount]
+                properties:
+                  unreadCount:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/read-all:
+    patch:
+      tags: [notifications]
+      operationId: markAllNotificationsRead
+      summary: Отметить все уведомления прочитанными
+      responses:
+        '200':
+          description: результат
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [updatedCount, unreadCount]
+                properties:
+                  updatedCount:
+                    type: integer
+                  unreadCount:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [notifications]
+      operationId: markNotificationRead
+      summary: Отметить уведомление прочитанным
+      responses:
+        '200':
+          description: уведомление и счётчик
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, changed, unreadCount]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/Notification'
+                  changed:
+                    type: boolean
+                  unreadCount:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/push/vapid-public-key:
+    get:
+      tags: [push]
+      operationId: getVapidPublicKey
+      summary: Публичный VAPID-ключ
+      security: []
+      responses:
+        '200':
+          description: ключ
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey]
+                properties:
+                  publicKey:
+                    type: string
+        '503':
+          description: push не настроен (нет/некорректны VAPID-ключи)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Message'
+                  - type: object
+                    properties:
+                      detail:
+                        type: [string, 'null']
+
+  /api/push/subscribe:
+    post:
+      tags: [push]
+      operationId: subscribePush
+      summary: Сохранение push-подписки
+      description: |
+        Гость сохраняет подписку без `user_id`, пользователь — со своим `user_id`.
+        Подписка, привязанная к другому аккаунту, отклоняется с `409`.
+        Лимиты: 10 запросов за 15 минут и 50 в сутки.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [subscription]
+              properties:
+                subscription:
+                  $ref: '#/components/schemas/PushSubscriptionInput'
+      responses:
+        '200':
+          description: существующая подписка обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscribeResponse'
+        '201':
+          description: подписка создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PushSubscribeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: подписка привязана к другому аккаунту
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/push/unsubscribe:
+    post:
+      tags: [push]
+      operationId: unsubscribePush
+      summary: Удаление push-подписки
+      description: Лимит — 30 запросов за 15 минут.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              properties:
+                endpoint:
+                  type: string
+                  maxLength: 2048
+      responses:
+        '200':
+          description: результат удаления
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, deleted]
+                properties:
+                  message:
+                    type: string
+                  deleted:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/upload:
+    post:
+      tags: [upload]
+      operationId: uploadPlantPhotos
+      summary: Загрузка фотографий растения
+      description: |
+        Принимает до 2 файлов по 5 МБ (JPEG, PNG, WebP, HEIC) в поле `photos`; проверяет
+        сигнатуру файла и создаёт миниатюру. Лимит — 10 загрузок в час на пользователя.
+        Полученные `urls` затем передаются в `POST /api/plants` или `/api/plants/{id}/photos`.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photos]
+              properties:
+                photos:
+                  type: array
+                  minItems: 1
+                  maxItems: 2
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '201':
+          description: файлы приняты
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [urls, thumbs]
+                properties:
+                  urls:
+                    type: array
+                    items:
+                      type: string
+                  thumbs:
+                    type: array
+                    items:
+                      type: [string, 'null']
+        '400':
+          description: файлы не переданы или формат не поддерживается
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cookie-consents:
+    get:
+      tags: [consents]
+      operationId: listCookieConsents
+      summary: Действующие cookie-согласия
+      description: Гость определяется по `guest_token`, пользователь — по сессии.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - guestCookie: []
+      responses:
+        '200':
+          description: согласия
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CookieConsentSummary'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [consents]
+      operationId: setCookieConsent
+      summary: Сохранить одно согласие
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - guestCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consentType, isAccepted]
+              properties:
+                consentType:
+                  type: string
+                  enum: [technical, analytics, marketing, personalization]
+                isAccepted:
+                  type: boolean
+                version:
+                  type: string
+                  maxLength: 10
+                source:
+                  type: string
+      responses:
+        '201':
+          description: согласие сохранено (или отклонено)
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, consent]
+                properties:
+                  message:
+                    type: string
+                  consent:
+                    $ref: '#/components/schemas/CookieConsent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: конфликт состояния согласия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cookie-consents/all:
+    post:
+      tags: [consents]
+      operationId: setAllCookieConsents
+      summary: Сохранить сразу все согласия (баннер)
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - guestCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [consents]
+              properties:
+                consents:
+                  type: array
+                  minItems: 4
+                  maxItems: 4
+                  items:
+                    type: object
+                    required: [consentType, isAccepted]
+                    properties:
+                      consentType:
+                        type: string
+                        enum: [technical, analytics, marketing, personalization]
+                      isAccepted:
+                        type: boolean
+      responses:
+        '201':
+          description: сохранено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, consents, expires_at]
+                properties:
+                  message:
+                    type: string
+                  consents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CookieConsent'
+                  expires_at:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cookie-consents/{consentType}:
+    parameters:
+      - name: consentType
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [technical, analytics, marketing, personalization]
+    get:
+      tags: [consents]
+      operationId: checkCookieConsent
+      summary: Проверка одного согласия
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - guestCookie: []
+      responses:
+        '200':
+          description: состояние согласия
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CheckConsentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cookie-consents/{consentType}/revoke:
+    parameters:
+      - name: consentType
+        in: path
+        required: true
+        schema:
+          type: string
+          enum: [technical, analytics, marketing, personalization]
+    put:
+      tags: [consents]
+      operationId: revokeCookieConsent
+      summary: Отзыв согласия
+      description: Требует авторизации. Создаёт запись об отзыве с причиной (`reason`).
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 255
+      responses:
+        '200':
+          description: согласие отозвано
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: активное согласие не найдено
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/cookie-consents/link:
+    post:
+      tags: [consents]
+      operationId: linkGuestConsents
+      summary: Привязка гостевых согласий к аккаунту
+      responses:
+        '200':
+          description: привязано
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [message, count]
+                properties:
+                  message:
+                    type: string
+                  count:
+                    type: integer
+        '400':
+          description: отсутствует guest_token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: гостевые согласия не найдены
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/system/visit:
+    post:
+      tags: [system]
+      operationId: trackVisit
+      summary: Учёт посещения (аналитика)
+      description: |
+        Вызывается фронтом один раз на загрузку страницы и только при согласии на аналитику.
+        Одна строка на посетителя в сутки, `views` инкрементируется; IP не сохраняется.
+        Лимит — 180 запросов в час с IP.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visitorId, path]
+              properties:
+                visitorId:
+                  type: string
+                  minLength: 8
+                  maxLength: 64
+                  pattern: '^[A-Za-z0-9._:-]{8,64}$'
+                path:
+                  type: string
+                  maxLength: 300
+                  pattern: '^/'
+      responses:
+        '200':
+          description: посещение учтено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [counted]
+                properties:
+                  counted:
+                    type: boolean
+                    const: true
+                  views:
+                    type: integer
+        '204':
+          description: внутренняя ошибка записи (ответ без тела)
+        '400':
+          description: некорректные данные (ответ без `message`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counted:
+                    type: boolean
+                    const: false
+        '429':
+          description: "превышен лимит запросов (тело — `{counted: false}`)"
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  counted:
+                    type: boolean
+                    const: false
+
+  /api/system/metrics:
+    get:
+      tags: [admin, system]
+      operationId: getHttpMetrics
+      summary: HTTP-метрики процесса (админ)
+      description: |
+        Счётчики процесса с момента старта: `total`, `byStatus`, `byMethod`,
+        `latencyBuckets`, `routes` (маршруты с числовыми сегментами нормализуются в `:id`).
+        Не сохраняются между перезапусками, не являются Prometheus-эндпоинтом.
+      responses:
+        '200':
+          description: метрики
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  startedAt:
+                    type: string
+                    format: date-time
+                  total:
+                    type: integer
+                  byStatus:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  byMethod:
+                    type: object
+                    additionalProperties:
+                      type: integer
+                  latencyBuckets:
+                    type: array
+                    items:
+                      type: integer
+                  routes:
+                    type: object
+                    additionalProperties: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /api/system/docker-stats:
+    get:
+      tags: [admin]
+      operationId: getDockerStats
+      summary: Телеметрия контейнеров (админ)
+      description: |
+        Требует `DOCKER_HOST` и `DOCKER_STATS_ENABLED != false`; данные кэшируются на 3 секунды.
+        В Kubernetes (`DOCKER_STATS_ENABLED=false`) отвечает `503`.
+      responses:
+        '200':
+          description: статистика контейнеров
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timestamp, containers]
+                properties:
+                  timestamp:
+                    type: string
+                    format: date-time
+                  containers:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DockerContainerStats'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Docker недоступен
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [error]
+                properties:
+                  error:
+                    type: string
+        '500':
+          description: ошибка получения статистики
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+  /api/admin/analytics/overview:
+    get:
+      tags: [admin]
+      operationId: adminAnalyticsOverview
+      summary: Обзор аналитики
+      description: |
+        Счётчики пользователей, растений, поливов, фото, чата и посещений за период.
+        Требует `role=ADMIN`. Лимит чтения — 120 запросов в минуту.
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200':
+          description: сводка (структура — объект с блоками `users`, `plants`, `waterings`, `photos`, `chat`, `visits`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/analytics/timeseries:
+    get:
+      tags: [admin]
+      operationId: adminAnalyticsTimeseries
+      summary: Ряды по дням
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200':
+          description: 'объект `{days, timezone, visitsTracked, userCreatedAtTracked, startDate, endDate, points}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/analytics/breakdown:
+    get:
+      tags: [admin]
+      operationId: adminAnalyticsBreakdown
+      summary: Разбивки (виды, топы, дни недели, часы, интервалы)
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200':
+          description: 'объект с `topSpecies`, `topUsersByPlants`, `topUsersByWaterings`, `topUsersByChat`, `wateringsByWeekday`, `wateringsByHour`, `plantsByInterval` и др.'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/visits:
+    get:
+      tags: [admin]
+      operationId: adminVisits
+      summary: Посещения за период
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: 'объект с агрегатами посещений (`site_visit_days`)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/audit:
+    get:
+      tags: [admin]
+      operationId: adminListAudit
+      summary: Журнал действий администратора
+      description: |
+        Записи `admin_audit_logs` (append-only): `admin_id`, `action`, `target_type`,
+        `target_id`, `payload`, `ip`, `user_agent`, `created_at`. Секреты в `payload`
+        вырезаются. Лимит чтения админ-API — 120 запросов в минуту.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: action
+          in: query
+          schema:
+            type: string
+            maxLength: 64
+            pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+        - name: adminId
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: 'объект `{items, total, limit, offset}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/ai/metrics:
+    get:
+      tags: [admin]
+      operationId: adminAiMetrics
+      summary: Телеметрия ИИ
+      description: 'Возвращает `{days, generatedAt, summary, series, budget, scopes, cache, config}`.'
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        '200':
+          description: метрики
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/ai/logs:
+    get:
+      tags: [admin]
+      operationId: adminAiLogs
+      summary: Журнал подсказок ИИ
+      parameters:
+        - name: kind
+          in: query
+          schema:
+            type: string
+            enum: [species, watering, time, care]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: 'объект `{total, limit, offset, kind, byKind, kindLabels, sourceLabels, items}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/users:
+    get:
+      tags: [admin]
+      operationId: adminListUsers
+      summary: Пользователи (постранично, поиск, сортировка)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageLimit'
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created, email, username, plants, waterings, photos, chat, activity, id]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: страница пользователей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PagedUsers'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/users/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [admin]
+      operationId: adminGetUser
+      summary: Карточка пользователя
+      responses:
+        '200':
+          description: 'объект `{user, stats, plants, waterings, chat, consents, ...}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    patch:
+      tags: [admin]
+      operationId: adminUpdateUser
+      summary: Смена роли или уровня подписки
+      description: Лимит изменений админ-API — 60 запросов в минуту.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                role:
+                  type: string
+                  enum: [USER, ADMIN]
+                privilege_level:
+                  type: string
+                  enum: [free, premium, pro]
+      responses:
+        '200':
+          description: 'обновлённый пользователь `{user: {...}}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: попытка снять права последнего администратора или изменить себя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [admin]
+      operationId: adminDeleteUser
+      summary: Удаление пользователя со всеми данными
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted]
+                properties:
+                  deleted:
+                    type: boolean
+                    const: true
+                  message:
+                    type: string
+                  removed:
+                    type: object
+                    additionalProperties: true
+        '400':
+          description: некорректный id или попытка удалить себя
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/plants:
+    get:
+      tags: [admin]
+      operationId: adminListPlants
+      summary: Растения (постранично)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageLimit'
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created, name, species, waterings, next, id]
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          description: страница растений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/plants/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [admin]
+      operationId: adminDeletePlant
+      summary: Удаление растения (с историей и фото)
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    const: true
+                  message:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/waterings:
+    get:
+      tags: [admin]
+      operationId: adminListWaterings
+      summary: Журнал поливов (постранично)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageLimit'
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [watered, skipped]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [action_at, id]
+      responses:
+        '200':
+          description: страница записей
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/waterings/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [admin]
+      operationId: adminDeleteWatering
+      summary: Удаление записи о поливе
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    const: true
+                  message:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/photos:
+    get:
+      tags: [admin]
+      operationId: adminListPhotos
+      summary: Фотографии (постранично)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageLimit'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created, id]
+      responses:
+        '200':
+          description: страница фото
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/photos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [admin]
+      operationId: adminDeletePhoto
+      summary: Удаление фото (вместе с файлом)
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/chat:
+    get:
+      tags: [admin]
+      operationId: adminListChat
+      summary: История чата (постранично)
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageLimit'
+        - name: role
+          in: query
+          schema:
+            type: string
+            enum: [user, assistant, system]
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [created, id]
+      responses:
+        '200':
+          description: страница сообщений
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/chat/session/{sessionId}:
+    parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      tags: [admin]
+      operationId: adminDeleteChatSession
+      summary: Удаление всей переписки сессии
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  sessionId:
+                    type: string
+                  removed:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/chat/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [admin]
+      operationId: adminDeleteChatMessage
+      summary: Удаление сообщения чата
+      responses:
+        '200':
+          description: удалено
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: boolean
+                  message:
+                    type: object
+                    additionalProperties: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/push/overview:
+    get:
+      tags: [admin]
+      operationId: adminPushOverview
+      summary: Обзор push-подписок и рассылок
+      responses:
+        '200':
+          description: 'объект `{pushConfigured, pushStatus, subscriptions, users, recent}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/push/recipients:
+    get:
+      tags: [admin]
+      operationId: adminPushRecipients
+      summary: Получатели push (поиск по подпискам)
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: 'объект `{items, total}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/push/broadcasts:
+    post:
+      tags: [admin]
+      operationId: adminCreatePushBroadcast
+      summary: Создание push-рассылки
+      description: |
+        Поддерживает заголовок `Idempotency-Key` (8–200 символов `[A-Za-z0-9._:-]`, TTL
+        24 часа): повтор возвращает существующую рассылку (`200`). Одинаковая рассылка
+        отклоняется (`409`). Лимиты: 20 в час, 60 в сутки.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 200
+            pattern: '^[A-Za-z0-9._:-]{8,200}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PushBroadcastRequest'
+      responses:
+        '200':
+          description: рассылка уже создана с этим ключом (идемпотентный повтор)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '201':
+          description: рассылка создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: такая рассылка уже создавалась
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: push не настроен на сервере
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/push/broadcasts/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [admin]
+      operationId: adminCancelPushBroadcast
+      summary: Отмена push-рассылки
+      responses:
+        '200':
+          description: отменена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canceled:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: эту рассылку нельзя отменить
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/push/broadcasts/{id}/retry:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [admin]
+      operationId: adminRetryPushBroadcast
+      summary: Повтор push-рассылки
+      responses:
+        '200':
+          description: повтор поставлен в очередь
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: рассылку нельзя повторить
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '501':
+          description: повтор пока не реализован сервером
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/admin/mail/overview:
+    get:
+      tags: [admin]
+      operationId: adminMailOverview
+      summary: Обзор почтовых рассылок
+      responses:
+        '200':
+          description: 'объект `{mailConfigured, mailStatus, mailProblems, from, users, broadcasts, totals, recent}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/mail/recipients:
+    get:
+      tags: [admin]
+      operationId: adminMailRecipients
+      summary: Получатели писем
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+            maxLength: 100
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: 'объект `{items, total}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/mail/preview:
+    post:
+      tags: [admin]
+      operationId: adminMailPreview
+      summary: Предпросмотр письма
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailMessageRequest'
+      responses:
+        '200':
+          description: отрендеренное письмо и имя для примера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/mail/test:
+    post:
+      tags: [admin]
+      operationId: adminMailTest
+      summary: Тестовое письмо на email администратора
+      description: Лимит — 5 писем за 10 минут.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailMessageRequest'
+      responses:
+        '200':
+          description: письмо отправлено
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent, to]
+                properties:
+                  sent:
+                    type: boolean
+                    const: true
+                  to:
+                    type: string
+                    format: email
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: почта не настроена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '502':
+          description: SMTP не принял письмо
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/admin/mail/broadcasts:
+    post:
+      tags: [admin]
+      operationId: adminCreateMailBroadcast
+      summary: Создание почтовой рассылки
+      description: |
+        Поддерживает `Idempotency-Key` (TTL 24 часа), защиту от дублей, отложенную отправку
+        (`scheduledFor`). Отправка выполняется очередью раз в минуту. Лимит — 30 рассылок
+        за 10 минут.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema:
+            type: string
+            minLength: 8
+            maxLength: 200
+            pattern: '^[A-Za-z0-9._:-]{8,200}$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MailBroadcastRequest'
+      responses:
+        '201':
+          description: рассылка создана (в очереди)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '200':
+          description: идемпотентный повтор — возвращена существующая рассылка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: такая рассылка уже создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: почта не настроена (для немедленной отправки)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/mail/broadcasts/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [admin]
+      operationId: adminCancelMailBroadcast
+      summary: Отмена почтовой рассылки
+      responses:
+        '200':
+          description: отменена
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  canceled:
+                    type: boolean
+                    const: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: рассылку нельзя отменить
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+      description: JWT сессии или access-токен (httpOnly, Secure, SameSite=None)
+    refreshCookie:
+      type: apiKey
+      in: cookie
+      name: refresh_token
+      description: "JWT обновления (30 дней), только при `rememberMe: true`"
+    guestCookie:
+      type: apiKey
+      in: cookie
+      name: guest_token
+      description: Подписанный HMAC гостевой идентификатор
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    LogId:
+      name: logId
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    Days:
+      name: days
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 365
+        default: 30
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100000
+        default: 1
+    PageLimit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 25
+
+  responses:
+    BadRequest:
+      description: некорректный запрос (валидация)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    Unauthorized:
+      description: не авторизован
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    Forbidden:
+      description: доступ запрещён (нет роли ADMIN)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    ForbiddenOrigin:
+      description: запрос с недопустимого origin или без Origin при cookie-сессии
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    NotFound:
+      description: объект не найден
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    PayloadTooLarge:
+      description: тело запроса или файл больше допустимого размера
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    UnsupportedMediaType:
+      description: недопустимый Content-Type
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    TooManyRequests:
+      description: превышен лимит запросов (rate-limit)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    ServiceUnavailable:
+      description: зависимость недоступна (ИИ, SMTP, push) или исчерпан бюджет
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+    ServerError:
+      description: внутренняя ошибка
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Message'
+
+  schemas:
+    Message:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    Health:
+      type: object
+      required: [status, timestamp]
+      properties:
+        status:
+          type: string
+          const: ok
+        timestamp:
+          type: string
+          format: date-time
+        deployTarget:
+          type: [string, 'null']
+          enum: [compose, kubernetes, null]
+        redis:
+          type: string
+          enum: [ok, unavailable, disabled]
+        mail:
+          type: string
+          description: 'например `ok`, `not-configured`'
+        push:
+          type: object
+          additionalProperties: true
+          description: статус конфигурации VAPID (`configured`, `valid`, `error`)
+        backgroundJobs:
+          type: boolean
+        aiCache:
+          type: object
+          additionalProperties: true
+
+    User:
+      type: object
+      required: [id, email, role]
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        name:
+          type: [string, 'null']
+          maxLength: 100
+        username:
+          type: [string, 'null']
+          maxLength: 30
+        phone:
+          type: [string, 'null']
+          maxLength: 20
+        bio:
+          type: [string, 'null']
+          maxLength: 300
+        role:
+          type: string
+          enum: [USER, ADMIN]
+        privilege_level:
+          type: string
+          enum: [free, premium, pro]
+        timezone:
+          type: [string, 'null']
+          description: IANA-пояс (по умолчанию Europe/Moscow)
+        marketing_email_opt_in:
+          type: boolean
+          description: согласие на маркетинговые письма (по умолчанию false)
+        created_at:
+          type: string
+          format: date-time
+          description: есть в админ-выборках; в `/api/users/me` не возвращается
+
+    RegistrationRequest:
+      type: object
+      required: [email, password, privacyPolicyAccepted, termsAccepted]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          description: требования проверяются `isValidRegistrationPassword` (не короче 8 символов)
+        name:
+          type: string
+          maxLength: 100
+        username:
+          type: string
+          maxLength: 30
+          description: '3–30 символов: латиница, цифры, `.`, `_`'
+        privacyPolicyAccepted:
+          type: boolean
+          const: true
+        termsAccepted:
+          type: boolean
+          const: true
+        rememberMe:
+          type: boolean
+        timezone:
+          type: string
+        marketingConsent:
+          type: boolean
+          description: отдельное (необязательное) согласие на маркетинговые письма
+
+    RegistrationResponse:
+      type: object
+      required: [message, user]
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          maxLength: 1024
+        rememberMe:
+          type: boolean
+
+    LoginResponse:
+      type: object
+      required: [message, user]
+      properties:
+        message:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: [string, 'null']
+          maxLength: 100
+        username:
+          type: [string, 'null']
+          maxLength: 30
+        email:
+          type: string
+          format: email
+        phone:
+          type: [string, 'null']
+        bio:
+          type: [string, 'null']
+          maxLength: 300
+        timezone:
+          type: [string, 'null']
+
+    CheckUsernameResponse:
+      type: object
+      properties:
+        available:
+          type: boolean
+        username:
+          type: string
+        message:
+          type: string
+
+    DeleteAccountResponse:
+      type: object
+      required: [deleted]
+      properties:
+        deleted:
+          type: boolean
+          const: true
+        removed:
+          type: object
+          additionalProperties: true
+          description: 'счётчики удалённых записей: plants, photos, waterings, chatMessages, pushSubscriptions, notifications, legalConsents, cookieConsents, sessions, passkeys, photoFiles'
+
+    AccountExport:
+      type: object
+      required: [format, formatVersion, exportedAt, account]
+      properties:
+        format:
+          type: string
+          const: webplant-account-export
+        formatVersion:
+          type: integer
+          const: 1
+        exportedAt:
+          type: string
+          format: date-time
+        account:
+          type: object
+          additionalProperties: true
+          description: 'санитизированный профиль: id, email, name, username, phone, bio, role, privilegeLevel, timezone'
+        plants:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: 'растение с `carePlan` и массивом `photos`'
+        wateringLogs:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        chatMessages:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        aiAdvice:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        notifications:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        notificationPreferences:
+          type: [object, 'null']
+          additionalProperties: true
+        pushSubscriptions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: 'хост сервиса push, даты создания/успеха/инвалидации (без ключей и endpoint)'
+        consents:
+          type: object
+          properties:
+            cookie:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            legal:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+        passkeys:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: 'deviceName, createdAt, lastUsedAt, transports (без credential/public key)'
+        sessions:
+          type: object
+          properties:
+            authSessions:
+              type: integer
+        siteVisits:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    NotificationPreferences:
+      type: object
+      required: [morning_summary_enabled, care_advice_enabled, dark_theme_enabled, theme_mode]
+      properties:
+        morning_summary_enabled:
+          type: boolean
+        care_advice_enabled:
+          type: boolean
+        dark_theme_enabled:
+          type: boolean
+        theme_mode:
+          type: string
+          enum: [system, light, dark]
+
+    PasskeyCreationOptions:
+      type: object
+      required: [_key]
+      additionalProperties: true
+      description: Параметры `generateRegistrationOptions` + служебный `_key` для завершения
+      properties:
+        _key:
+          type: string
+          maxLength: 120
+        challenge:
+          type: string
+
+    PasskeyRequestOptions:
+      type: object
+      required: [_key]
+      additionalProperties: true
+      description: Параметры `generateAuthenticationOptions` + служебный `_key`
+      properties:
+        _key:
+          type: string
+          maxLength: 120
+
+    PasskeySummary:
+      type: object
+      properties:
+        id:
+          type: integer
+        device_name:
+          type: [string, 'null']
+        transports:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        last_used_at:
+          type: [string, 'null']
+          format: date-time
+
+    Plant:
+      type: object
+      required: [id, user_id, name]
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        name:
+          type: string
+          maxLength: 255
+        species:
+          type: [string, 'null']
+          maxLength: 255
+        location:
+          type: [string, 'null']
+          maxLength: 255
+        description:
+          type: [string, 'null']
+          maxLength: 10000
+        watering_interval_days:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 365
+        watering_time_of_day:
+          type: [string, 'null']
+          enum: [morning, day, evening]
+        last_watered_at:
+          type: [string, 'null']
+          format: date-time
+        next_watering_at:
+          type: [string, 'null']
+          format: date-time
+        is_active:
+          type: boolean
+        notify_morning:
+          type: boolean
+        notify_day_before:
+          type: boolean
+        reminder_weekdays:
+          type: array
+          items:
+            type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+          description: 'в т.ч. `prediction` (адаптивная модель) и `notifications` (прогресс напоминаний)'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        photos:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlantPhoto'
+
+    PlantPhoto:
+      type: object
+      required: [id, plant_id, url]
+      properties:
+        id:
+          type: integer
+        plant_id:
+          type: integer
+        url:
+          type: string
+          maxLength: 2048
+        sort_order:
+          type: integer
+          minimum: 0
+        is_main:
+          type: boolean
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    PhotoInput:
+      oneOf:
+        - type: string
+          maxLength: 2048
+          description: '/uploads/plants/<32hex>.<ext>'
+        - type: object
+          required: [url]
+          properties:
+            url:
+              type: string
+              maxLength: 2048
+            sort_order:
+              type: integer
+              minimum: 0
+            is_main:
+              type: boolean
+            metadata:
+              type: object
+              additionalProperties: true
+
+    PlantCreateRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        species:
+          type: string
+          maxLength: 255
+        location:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 10000
+        watering_interval_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+          default: 7
+        watering_time_of_day:
+          type: string
+          enum: [morning, day, evening]
+          default: morning
+        notify_morning:
+          type: boolean
+          default: true
+        notify_day_before:
+          type: boolean
+          default: false
+        reminder_weekdays:
+          type: array
+          items:
+            type: integer
+        photos:
+          type: array
+          maxItems: 2
+          items:
+            $ref: '#/components/schemas/PhotoInput'
+        metadata:
+          type: object
+          additionalProperties: true
+
+    PlantUpdateRequest:
+      type: object
+      description: 'те же поля, что при создании; передаются только изменяемые'
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        species:
+          type: [string, 'null']
+          maxLength: 255
+        location:
+          type: [string, 'null']
+          maxLength: 255
+        description:
+          type: [string, 'null']
+          maxLength: 10000
+        watering_interval_days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        watering_time_of_day:
+          type: string
+          enum: [morning, day, evening]
+        notify_morning:
+          type: boolean
+        notify_day_before:
+          type: boolean
+        reminder_weekdays:
+          type: array
+          items:
+            type: integer
+        metadata:
+          type: object
+          additionalProperties: true
+
+    WateringLog:
+      type: object
+      required: [id, plant_id, user_id, action, action_at]
+      properties:
+        id:
+          type: integer
+        plant_id:
+          type: integer
+        user_id:
+          type: integer
+        action:
+          type: string
+          enum: [watered, skipped]
+        action_at:
+          type: string
+          format: date-time
+        scheduled_for:
+          type: [string, 'null']
+          format: date-time
+        hours_late:
+          type: [integer, 'null']
+        note:
+          type: [string, 'null']
+        metadata:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    WaterResponse:
+      allOf:
+        - $ref: '#/components/schemas/Plant'
+        - type: object
+          properties:
+            duplicate:
+              type: boolean
+              description: полив уже отмечен в пределах короткого окна
+            backfilled:
+              type: boolean
+              description: полив записан за прошлую дату
+            scheduled_for:
+              type: [string, 'null']
+              format: date-time
+            converted_skip:
+              type: boolean
+              description: пропуск превращён в полив
+
+    ScheduleResponse:
+      type: object
+      required: [generatedAt, summary, items]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        summary:
+          type: object
+          properties:
+            overdue:
+              type: integer
+            today:
+              type: integer
+            total:
+              type: integer
+            plants:
+              type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [date, bucket, plants]
+            properties:
+              date:
+                type: string
+                format: date
+              bucket:
+                type: string
+                enum: [overdue, today, later]
+              plants:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: string
+                    species:
+                      type: [string, 'null']
+                    location:
+                      type: [string, 'null']
+                    description:
+                      type: [string, 'null']
+                    photo_url:
+                      type: [string, 'null']
+                    next_watering_at:
+                      type: string
+                      format: date-time
+                    watering_interval_days:
+                      type: integer
+                    watering_time_of_day:
+                      type: [string, 'null']
+                    is_missed:
+                      type: boolean
+
+    HistoryAllResponse:
+      type: object
+      required: [generatedAt, total, limit, offset, items]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [date, plants]
+            properties:
+              date:
+                type: string
+                format: date
+                description: локальная дата полива
+              plants:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    name:
+                      type: [string, 'null']
+                    species:
+                      type: [string, 'null']
+                    location:
+                      type: [string, 'null']
+                    watered_at:
+                      type: string
+                      format: date-time
+                    scheduled_for:
+                      type: [string, 'null']
+                      format: date-time
+                    hours_late:
+                      type: [integer, 'null']
+                    note:
+                      type: [string, 'null']
+
+    TimelineResponse:
+      type: object
+      required: [generatedAt, total, items]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            required: [date, events]
+            properties:
+              date:
+                type: string
+                format: date
+              events:
+                type: array
+                description: |
+                  Событие содержит `kind` (`overdue` | `skipped` | `watered`) и `plant`
+                  (`id`, `name`, `species`, `location`, `photo_url`). Для `overdue` —
+                  `scheduled_for`, `hours_late`, `days_late`; для `skipped` — `id`,
+                  `scheduled_for`, `skipped_at`, `hours_late`, `days_late`, `note`;
+                  для `watered` — `id`, `watered_at`, `scheduled_for`, `hours_late`, `note`.
+                items:
+                  type: object
+                  required: [kind, plant]
+                  additionalProperties: true
+                  properties:
+                    kind:
+                      type: string
+                      enum: [overdue, skipped, watered]
+                    plant:
+                      type: object
+                      additionalProperties: true
+
+    CompletionStats:
+      type: object
+      properties:
+        plantsCount:
+          type: integer
+        sinceDate:
+          type: [string, 'null']
+          format: date-time
+        expected:
+          type: integer
+        actual:
+          type: integer
+        onTime:
+          type: integer
+        percent:
+          type: [integer, 'null']
+          description: доля своевременных поливов, 0–100; `null` если ожиданий нет
+
+    PlantStats:
+      type: object
+      properties:
+        plant_id:
+          type: integer
+        total_actions:
+          type: integer
+        watered_count:
+          type: integer
+        skipped_count:
+          type: integer
+        on_time_count:
+          type: integer
+        on_time_rate:
+          type: number
+        avg_hours_late:
+          type: number
+
+    WateringAdviceRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        species:
+          type: string
+          maxLength: 255
+        location:
+          type: string
+          maxLength: 255
+        mode:
+          type: string
+          enum: [auto, question, recommendation]
+          default: auto
+        answers:
+          type: array
+          maxItems: 10
+          items:
+            type: object
+            required: [question, answer]
+            properties:
+              question:
+                type: string
+                maxLength: 400
+              answer:
+                type: string
+                maxLength: 500
+
+    WateringAdvice:
+      type: object
+      required: [type, maxQuestions, questionsAsked, questionsLeft, season, timeZone, source]
+      properties:
+        type:
+          type: string
+          enum: [question, recommendation]
+        question:
+          type: string
+          description: есть при `type=question`
+        options:
+          type: array
+          items:
+            type: string
+          description: варианты ответа при `type=question`
+        intervalDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+          description: есть при `type=recommendation`
+        reason:
+          type: string
+          maxLength: 1000
+        confidence:
+          type: [string, 'null']
+          enum: [low, medium, high, null]
+        maxQuestions:
+          type: integer
+        questionsAsked:
+          type: integer
+        questionsLeft:
+          type: integer
+        season:
+          type: [string, 'null']
+        timeZone:
+          type: string
+        source:
+          type: string
+          enum: [ai, cache, fallback]
+        latencyMs:
+          type: integer
+        fallbackReason:
+          type: [string, 'null']
+
+    WateringTimeRequest:
+      type: object
+      required: [name, intervalDays]
+      properties:
+        name:
+          type: string
+          maxLength: 255
+        species:
+          type: string
+          maxLength: 255
+        location:
+          type: string
+          maxLength: 255
+        intervalDays:
+          type: integer
+          minimum: 1
+          maximum: 365
+
+    WateringTimeAdvice:
+      type: object
+      required: [timeOfDay, reason, source]
+      properties:
+        timeOfDay:
+          type: string
+          enum: [morning, day, evening]
+        reason:
+          type: string
+          maxLength: 1000
+        source:
+          type: string
+          enum: [ai, cache, fallback]
+        season:
+          type: [string, 'null']
+        timeZone:
+          type: string
+        latencyMs:
+          type: integer
+        fallbackReason:
+          type: [string, 'null']
+
+    ChatResponse:
+      type: object
+      required: [text, sessionId]
+      properties:
+        text:
+          type: string
+        sessionId:
+          type: string
+          format: uuid
+        usage:
+          type: [object, 'null']
+          properties:
+            input_tokens:
+              type: [integer, 'null']
+            output_tokens:
+              type: [integer, 'null']
+        local:
+          type: boolean
+          description: ответ построен по данным приложения без модели
+        degraded:
+          type: boolean
+          description: модель недоступна, ответ собран по данным приложения
+
+    ChatPhotoResponse:
+      type: object
+      required: [text, sessionId]
+      properties:
+        text:
+          type: string
+        sessionId:
+          type: string
+          format: uuid
+        photoUrl:
+          type: [string, 'null']
+        photoUrls:
+          type: array
+          items:
+            type: string
+        diagnosis:
+          type: [object, 'null']
+          additionalProperties: true
+        source:
+          type: [string, 'null']
+        cached:
+          type: [boolean, 'null']
+        degraded:
+          type: boolean
+        usage:
+          type: [object, 'null']
+          additionalProperties: true
+
+    ChatHistoryResponse:
+      type: object
+      required: [sessionId, items]
+      properties:
+        sessionId:
+          type: [string, 'null']
+          format: uuid
+        items:
+          type: array
+          items:
+            type: object
+            required: [id, role, text, createdAt]
+            properties:
+              id:
+                type: integer
+              role:
+                type: string
+                enum: [user, assistant, system]
+              text:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+              degraded:
+                type: boolean
+              photoUrl:
+                type: [string, 'null']
+              photoUrls:
+                type: array
+                items:
+                  type: string
+              diagnosis:
+                type: [object, 'null']
+                additionalProperties: true
+
+    ChatSession:
+      type: object
+      required: [id, title, updatedAt, messageCount, hasPhoto]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        updatedAt:
+          type: string
+          format: date-time
+        messageCount:
+          type: integer
+        hasPhoto:
+          type: boolean
+
+    Notification:
+      type: object
+      required: [id, type, title, body, url, created_at]
+      properties:
+        id:
+          type: integer
+        plant_id:
+          type: [integer, 'null']
+        type:
+          type: string
+          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip]
+        title:
+          type: string
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 1000
+        url:
+          type: string
+          maxLength: 2048
+        scheduled_for:
+          type: [string, 'null']
+          format: date-time
+        read_at:
+          type: [string, 'null']
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+
+    NotificationList:
+      type: object
+      required: [items, total, unreadCount, status, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Notification'
+        total:
+          type: integer
+        unreadCount:
+          type: integer
+        status:
+          type: string
+          enum: [all, unread, read]
+        limit:
+          type: integer
+        offset:
+          type: integer
+        nextOffset:
+          type: [integer, 'null']
+
+    PushSubscriptionInput:
+      type: object
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          maxLength: 2048
+        expirationTime:
+          type: [number, 'null']
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh:
+              type: string
+            auth:
+              type: string
+
+    PushSubscribeResponse:
+      type: object
+      required: [message, user_id]
+      properties:
+        message:
+          type: string
+        user_id:
+          type: [integer, 'null']
+
+    CookieConsent:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: [integer, 'null']
+        guest_token:
+          type: [string, 'null']
+        consent_type:
+          type: string
+          enum: [technical, analytics, marketing, personalization]
+        is_accepted:
+          type: boolean
+        version:
+          type: string
+        accepted_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+        is_revoked:
+          type: boolean
+        revoked_at:
+          type: [string, 'null']
+          format: date-time
+        revoked_reason:
+          type: [string, 'null']
+        source:
+          type: [string, 'null']
+        metadata:
+          type: [object, 'null']
+          additionalProperties: true
+
+    CookieConsentSummary:
+      type: object
+      properties:
+        consent_type:
+          type: string
+          enum: [technical, analytics, marketing, personalization]
+        is_accepted:
+          type: boolean
+        version:
+          type: string
+        accepted_at:
+          type: [string, 'null']
+          format: date-time
+        expires_at:
+          type: [string, 'null']
+          format: date-time
+
+    CheckConsentResponse:
+      type: object
+      required: [hasConsent, isExpired]
+      properties:
+        hasConsent:
+          type: boolean
+        consent:
+          oneOf:
+            - $ref: '#/components/schemas/CookieConsent'
+            - type: 'null'
+        isExpired:
+          type: boolean
+
+    DockerContainerStats:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        state:
+          type: string
+        status:
+          type: string
+        image:
+          type: string
+        statsAvailable:
+          type: boolean
+        cpu:
+          type: [number, 'null']
+        memory:
+          type: object
+          properties:
+            usage:
+              type: [integer, 'null']
+            limit:
+              type: [integer, 'null']
+            percent:
+              type: [number, 'null']
+        network:
+          type: object
+          properties:
+            rx:
+              type: [integer, 'null']
+            tx:
+              type: [integer, 'null']
+        block:
+          type: object
+          properties:
+            read:
+              type: [integer, 'null']
+            write:
+              type: [integer, 'null']
+        pids:
+          type: [integer, 'null']
+
+    PushBroadcastRequest:
+      type: object
+      required: [title, body, targetMode]
+      properties:
+        title:
+          type: string
+          maxLength: 120
+        body:
+          type: string
+          maxLength: 1000
+        icon:
+          type: [string, 'null']
+          maxLength: 2048
+        url:
+          type: string
+          maxLength: 2048
+          description: внутренний путь, начинается с `/`
+          default: /
+        targetMode:
+          type: string
+          enum: [all, users]
+        includeGuests:
+          type: boolean
+          default: false
+          description: "допустимо только при `targetMode: all`"
+        userIds:
+          type: array
+          maxItems: 1000
+          items:
+            type: integer
+          description: "обязательно при `targetMode: users`"
+        scheduledFor:
+          type: [string, 'null']
+          format: date-time
+          description: отложенная отправка (до 365 дней вперёд)
+
+    MailMessageRequest:
+      type: object
+      required: [subject, body]
+      properties:
+        subject:
+          type: string
+          maxLength: 200
+        body:
+          type: string
+          maxLength: 5000
+        ctaLabel:
+          type: [string, 'null']
+          maxLength: 80
+        ctaUrl:
+          type: [string, 'null']
+          maxLength: 2048
+
+    MailBroadcastRequest:
+      allOf:
+        - $ref: '#/components/schemas/MailMessageRequest'
+        - type: object
+          properties:
+            targetMode:
+              type: string
+              enum: [all, users]
+              default: all
+            userIds:
+              type: array
+              maxItems: 1000
+              items:
+                type: integer
+            scheduledFor:
+              type: [string, 'null']
+              format: date-time
+
+    PagedUsers:
+      type: object
+      required: [items, total, page, limit, pages]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+            description: 'пользователь с счётчиками: id, email, name, username, phone, role, privilegeLevel, createdAt, plants, activePlants, waterings, photos, chatMessages, pushSubscriptions, lastActivityAt'
+        total:
+          type: integer
+        page:
+          type: integer
+        limit:
+          type: integer
+        pages:
+          type: integer
+
+    AdminObject:
+      type: object
+      additionalProperties: true
+      description: |
+        Ответ админ-API. Точный набор полей зависит от раздела и версии панели; контракт
+        фиксирует только факт JSON-объекта и коды ответов. Для полей, которые нужно
+        использовать программно, опирайтесь на `Backend/controllers/admin*.js`
+        (админка — единственный потребитель этих эндпоинтов).

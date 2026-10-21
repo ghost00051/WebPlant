@@ -195,3 +195,50 @@
     margin-bottom: auto;
   }
 }
+
+@media (max-width: 767px) {
+    .blocksOfToService {
+        gap: 14px;
+    }
+
+    .authBrand {
+        width: 100%;
+        padding: 0 2px;
+    }
+}
+
+@media (max-width: 380px) {
+    .blocksOfToService {
+        gap: 10px;
+        padding: max(10px, env(safe-area-inset-top)) 6px
+            max(10px, env(safe-area-inset-bottom));
+    }
+
+    .authBrandLink {
+        font-size: var(--font-size-sm);
+    }
+
+    .authBrandLink img {
+        width: 28px;
+        height: 28px;
+    }
+
+    .authHomeLink {
+        padding: 6px 8px;
+        font-size: var(--font-size-sm);
+    }
+
+    .blocksOfEntrance,
+    .blocksRegistration {
+        padding-right: 14px;
+        padding-left: 14px;
+    }
+
+    .slider-panel {
+        padding: 18px 14px 14px;
+    }
+
+    .formError {
+        font-size: var(--font-size-sm);
+    }
+}

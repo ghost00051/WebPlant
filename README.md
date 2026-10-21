@@ -1,1001 +1,356 @@
-# WebPlant
+# WebPlant («Лейка»)
 
-WebPlant («Лейка») — full-stack приложение для ухода за растениями на базе React, Express и PostgreSQL. Пользователь может вести коллекцию растений, настраивать график полива, отмечать выполненный полив, пользоваться календарём, напоминаниями и подсказками ИИ.
+Веб-приложение для учёта комнатных растений: карточки растений, расписание и история полива,
+фотографии, напоминания, push-уведомления и ИИ-помощник «Лейка» (в интерфейсе — Алиса),
+который отвечает на вопросы по уходу, подбирает интервал полива, время полива и
+диагностирует растение по фото. Дополнительно сайт содержит публичные справочники по
+растениям и уходу (SEO-раздел) и отдельную админ-панель.
 
-Проект активно развивается. API и интерфейс могут меняться; перед публичным production-развёртыванием выполните checklist безопасности, восстановления данных и интеграционных проверок ниже.
+Боевые адреса:
 
-## Статус проекта
+| Что | Адрес |
+| --- | --- |
+| Сайт (фронтенд, SPA) | https://checktheplants.ru |
+| API (backend) | https://server.checktheplants.ru/api |
+| Админ-панель | https://admin.checktheplants.ru |
+| pgAdmin (только за nginx, HTTPS) | https://pgadmin.checktheplants.ru |
 
-- Состояние: активно в разработке
-- Готовность: функциональный MVP в активной разработке
-- Цель: помощь в ежедневном уходе за растениями
-- Стабильность API: не гарантируется
-- Production: требует отдельной проверки конфигурации, инфраструктуры и восстановления данных
+Версии в репозитории (источник — `package.json`):
 
-## Обзор возможностей
+| Компонент | Версия | Файл |
+| --- | --- | --- |
+| Backend | **1.2.6** | `Backend/package.json` |
+| Frontend | **1.2.20** | `Frontend/package.json` |
 
-На текущий момент реализованы:
+Версии независимы: фронт выкладывается по FTP отдельно от backend, поэтому контракт `/api`
+должен оставаться обратно совместимым (см. `docs/api/openapi.yaml` и `CHANGELOG.md`).
 
-- Регистрация нового пользователя
-- Вход по email и паролю, а также passkey
-- Журналирование пользовательских прав (role)
-- Хеширование паролей через bcrypt
-- Аутентификация с httpOnly cookie и управлением серверными сессиями
-- Cookie consent / согласия на использование файлов cookie
-- Согласие на обработку персональных данных и пользовательское соглашение
-- Связывание guest-согласий с пользователем после регистрации/входа
-- Публичный стартовый экран с описанием приложения и переходами ко входу/регистрации
-- Коллекция растений, интервалы и время полива (9:00 / 14:00 / 19:00 в часовом поясе пользователя), календарь и история
-- Часовой пояс пользователя (IANA, определяется по устройству): в нём считаются время полива, сутки просрочки, календарь и утренняя сводка
-- Просрочка считается только после конца суток слота (24:00 по часовому поясу пользователя): весь день полива неполитое растение остаётся планом дня, а в карточке дня видны все растения дня — и ожидающие, и просроченные, и политые
-- Удаление ошибочной записи о поливе из календаря с восстановлением предыдущей даты полива
-- Отметка полива задним числом: просроченный или пропущенный слот становится поливом с датой этого слота, расписание продолжается от него
-- Web Push-напоминания и чат с ИИ, включая советы по уходу
-- Загрузка фотографий растений с миниатюрами 160×160 для превью: в карточки не тянутся оригиналы на 2–5 МБ
-- Работа через PostgreSQL и Sequelize ORM
-- Разделение проекта на frontend и backend
+## Стек
 
-## Технологический стек
+**Backend 1.2.6**
 
-### Frontend
+* Node.js 22 (`Backend/Dockerfile`, образ `node:22-alpine`), ESM, Express 5;
+* Sequelize 6 + PostgreSQL 16 (`pg`, `pg-hstore`); миграции — обычные SQL-файлы
+  в `Backend/migrations/`, применяются по возрастанию имени;
+* Redis 7 (`redis`, `rate-limit-redis`) — кэш ответов ИИ, распределённые локи cron-задач,
+  общий store для rate-limit;
+* Yandex Cloud AI через SDK `openai` (`baseURL: https://ai.api.cloud.yandex.net/v1`,
+  модели вида `gpt://<folder>/<model>`);
+* аутентификация: `jsonwebtoken` (JWT в httpOnly cookie) + `auth_sessions` для отзыва,
+  `bcrypt`, passkeys через `@simplewebauthn/server`;
+* `web-push` (VAPID), in-app уведомления в БД;
+* `nodemailer` (SMTP) — сброс пароля, приветственные письма, рассылки из админки;
+* `multer` + `sharp` (загрузка фото и миниатюры), `helmet`, `cors`, `express-rate-limit`,
+  `node-cron`, `dockerode` (телеметрия контейнеров в админке).
 
-- React 19
-- Vite
-- React Router DOM
-- JavaScript (ES modules)
-- CSS и адаптивные стили
-- Собственные утилиты работы с датами (`src/utils/date.js`) вместо moment.js
-- Ленивая загрузка разделов через `React.lazy`
+**Frontend 1.2.20**
 
-Тяжёлые разделы приложения подключаются лениво: публичная главная страница не
-загружает код календаря, чата, загрузки фото и passkey. Работа с датами в
-календаре и расписании построена на `src/utils/date.js` и `Intl` — moment.js с
-полным набором локалей из проекта убран.
+* React 19, `react-router-dom` 7, `react-day-picker`, сборка Vite 8 (rolldown);
+* PWA-манифест, service worker, темы оформления, passkeys в браузере
+  (`@simplewebauthn/browser`);
+* публичные страницы предгенерируются скриптом `scripts/prerender.mjs`, SEO-мета —
+  `scripts/generate-seo-meta.mjs`;
+* админка `Frontend/admin/` — статический сайт (HTML + CSS + ES-модули) без сборки,
+  выкладывается в корень поддомена `admin.checktheplants.ru` как есть.
 
-### Backend
+**Инфраструктура**
 
-- Node.js
-- Express 5
-- PostgreSQL
-- Sequelize ORM
-- Redis (общий rate-limit, распределённые локи cron-задач, кэш ответов ИИ)
-- JWT
-- bcrypt
-- cookie-parser
-- CORS
-- Helmet
-- express-rate-limit
-- dotenv
-- nodemon
-- sharp (миниатюры загруженных фотографий; зависимость необязательная — без неё приложение работает с оригиналами)
-- Kubernetes (манифесты в `Backend/k8s`)
+* Docker Compose (`Backend/docker-compose.yml`): `postgres`, `redis`, `migrate`,
+  `backend`, `backup`, `nginx`, `certbot`, `docker-socket-proxy`;
+* Kubernetes (`Backend/k8s/`, namespace `webplant`, Docker Desktop Kubernetes);
+* nginx в compose держит 80/443 и TLS Let's Encrypt (certbot), конфиги
+  `Backend/nginx/conf.d/default.conf` переключаются скриптом
+  `Backend/k8s/scripts/switch-traffic.ps1` между режимами `compose` / `canary` / `k8s`;
+* деплой фронта — FTP-выгрузка каталога `Frontend/dist` (см. `DEPLOY.md`).
 
-## Архитектура проекта
-
-Проект состоит из двух основных частей:
-
-- Frontend — пользовательский интерфейс, маршрутизация, формы регистрации/авторизации
-- Backend — API, авторизация, база данных, обработка согласий и бизнес-логика
-
-Структура проекта выглядит следующим образом:
+## Структура репозитория
 
 ```text
 WebPlant/
-├── Backend/
-│   ├── config/
-│   ├── controllers/
-│   ├── db.js
-│   ├── jobs/
-│   ├── middleware/
-│   ├── models/
-│   ├── routes/
-│   ├── services/
-│   ├── utils/
-│   ├── index.js
-│   ├── package.json
-│   └── package-lock.json
+├── Backend/                     backend-сервис и инфраструктура вокруг него
+│   ├── index.js                 точка входа Express: middleware, маршруты, /health, /livez
+│   ├── db.js                    подключение Sequelize (пул, таймауты, retry)
+│   ├── redis.js                 клиент Redis, circuit breaker, префикс ключей
+│   ├── Dockerfile               node:22-alpine, npm ci --omit=dev, USER nodejs
+│   ├── docker-compose.yml       боевой compose-стек (postgres/redis/migrate/backend/…)
+│   ├── docker-compose.pgadmin.yml  pgAdmin (отдельная internal-сеть)
+│   ├── .env.example             шаблон окружения backend (без секретов)
+│   ├── backup.sh                pg_dump + tar uploads, проверка дампа, шифрование/offsite, retention 14 дней
+│   ├── migrations/              SQL-миграции (применяются по имени, идемпотентны)
+│   ├── models/                  модели Sequelize и associations.js
+│   ├── routes/                  маршруты Express (users, plants, chat, notifications, push, admin…)
+│   ├── controllers/             обработчики (в т.ч. adminAnalytics/Manage/Push/Mail/Ai)
+│   ├── services/                ai, careAdvice/carePlan, push, mail, passwordReset, welcomeEmail
+│   ├── middleware/              auth, guestToken, admin, upload, accessLog, validateJsonShape, validateParam
+│   ├── jobs/                    reminderService, cleanExpiredTokens, push/mail broadcast jobs
+│   ├── utils/                   schedule, prediction, locks, cache, audit, marketing consent, валидация
+│   ├── integration/             интеграционные тесты (Postgres + Redis)
+│   ├── scripts/                 apply-migrations.ps1, verify-notifications.ps1, load-test.k6.js, аудит полива
+│   ├── nginx/                   Dockerfile + conf.d (default/pgadmin)
+│   ├── certbot/                 рабочий каталог Let's Encrypt (не в git)
+│   ├── backups/                 дампы БД и uploads (не в git, retention 14 дней)
+│   └── k8s/                     манифесты (в т.ч. CronJob db-backup, ServiceAccount), gateway, deploy/rollback-скрипты
 ├── Frontend/
-│   ├── src/
-│   ├── admin/              # статическая админ-панель для admin.checktheplants.ru
-│   ├── index.html
-│   ├── package.json
-│   └── package-lock.json
-├── .gitignore
-├── README.md
-└── ...
+│   ├── src/                     React-приложение (component/, utils/, data/, styles/)
+│   ├── admin/                   статическая админ-панель (свой README)
+│   ├── public/                  статика, шрифты Inter, иконки, sitemap
+│   ├── scripts/                 сборка, prerender, verify, e2e, admin-smoke, indexnow
+│   ├── document/                PDF/DOCX юридических документов
+│   └── vite.config.js           dev-proxy /api, chunking, версия приложения
+├── .github/workflows/ci.yml     CI: frontend, backend (lint/unit/миграции/интеграция), security, a11y/E2E
+├── .github/dependabot.yml       автоматические PR обновлений зависимостей
+├── .githooks/                   pre-push: автотег v<version> из Frontend/package.json
+├── docs/                        эксплуатационная документация и OpenAPI
+├── ARCHITECTURE.md              компоненты, потоки, схема БД, фоновые задачи
+├── DEPLOY.md                    порядок деплоя, проверки, откат, чек-лист
+├── RUNBOOK.md                   инциденты, восстановление, ротации
+├── INCIDENT-RUNBOOK.md          роли, каналы, коммуникация, постмортем
+├── SECRETS.md                   реестр секретов и порядок ротации
+├── CHANGELOG.md                 история версий (Keep a Changelog)
+├── THIRD_PARTY_NOTICES.md       сторонние зависимости, шрифт, иллюстрации
+├── upload-dist.ps1              FTP-выгрузка Frontend/dist (файл в .gitignore)
+└── deploy.config.example.json   образец конфигурации FTP-деплоя без секретов
 ```
 
-## Что уже реализовано
+## Быстрый старт
 
-### Пользовательская авторизация
+### Требования
 
-Backend содержит базовый набор методов для работы с пользователями:
+* Node.js 22+ и npm (в CI используется Node 24, в образе — `node:22-alpine`);
+* PostgreSQL 16 (локально, в Docker или внешний) — без него backend не стартует;
+* по желанию: Redis 7 (кэш ИИ, локи, общий rate-limit), Docker Desktop, доступ к Yandex Cloud AI;
+* Windows PowerShell 5.1+ для скриптов `Backend/k8s/scripts/*.ps1` и
+  `Backend/scripts/apply-migrations.ps1`.
 
-- регистрация пользователя
-- логин
-- logout
-- получение текущего пользователя
-- получение списка пользователей
-- восстановление пароля по ссылке из письма (см. «Сброс пароля» ниже)
-- приветственное письмо после регистрации (один раз на аккаунт, см. «Приветственное письмо»)
+### Backend локально
 
-При регистрации выполняется ряд проверок:
+```powershell
+cd Backend
+npm ci
+Copy-Item .env.example .env   # шаблон в репозитории; заполните DB_*, SECRET_KEY и остальное
+npm run dev          # node --watch index.js, порт из PORT (по умолчанию 5000)
+```
 
-- обязательные email и пароль
-- проверка принятия согласия на обработку персональных данных
-- проверка принятия пользовательского соглашения
-- проверка существования пользователя с таким email
-- хеширование пароля
-- создание JWT и сохранение его в cookie
+Проверка:
 
-### Cookie consent
+```powershell
+curl http://localhost:5000/livez
+curl http://localhost:5000/health
+```
 
-В проекте реализована система согласий на cookies. Это позволяет:
+Особенности локального запуска:
 
-- сохранять согласия пользователя или гостя
-- хранить тип согласия (
-  technical,
-  analytics,
-  marketing,
-  personalization
-)
-- отслеживать срок действия согласия
-- отзывать согласие
-- привязывать guest-согласия к пользователю после регистрации/входа
-- фиксировать IP, user-agent и источник согласия
+* при `NODE_ENV !== 'production'` схема создаётся автоматически (`sequelize.sync()`),
+  миграции можно не применять; в production схема **проверяется при старте** и сервис
+  падает, если таблиц/колонок моделей не хватает;
+* `SECRET_KEY` нужен всегда (им подписываются JWT), в production — не короче 32 байт;
+* `BACKGROUND_JOBS_ENABLED=false` отключает cron-задачи (напоминания, рассылки, очистку);
+* без Redis сервис работает в деградированном режиме (`/health` → `"redis": "unavailable"`),
+  без SMTP восстановление пароля отвечает `503`, без ключей ИИ чат отвечает фолбэком.
 
-Гостевой идентификатор хранится в `HttpOnly` cookie до 180 дней и очищается после
-успешного входа, регистрации и выхода; новый гостевой идентификатор создаётся при
-следующем запросе гостя. Гостевые согласия и сообщения без аккаунта автоматически удаляются ежедневной задачей после срока хранения;
-согласия, связанные с аккаунтом, не удаляются этой очисткой. Яндекс.Метрика
-загружается только после явного согласия на аналитику; настройки доступны со всех
-страниц приложения.
+### Backend в Docker Compose
 
-При `npm run build` скрипт `Frontend/scripts/prerender.mjs` формирует HTML главной
-страницы с серверным содержимым, отдельные HTML для `/login`, `/register` и
-личных разделов с `noindex` и собственными canonical, а также копирует Apache
-rewrite-конфигурацию в `dist/.htaccess`. Развёртывайте весь каталог `Frontend/dist`
-вместе с этим скрытым файлом и включённым `mod_rewrite`; без него прямые переходы
-на клиентские маршруты могут не открываться.
+```powershell
+# из корня репозитория; файл окружения — Backend/.env
+docker compose -f Backend/docker-compose.yml up -d --build
+docker compose -f Backend/docker-compose.yml ps
+curl http://localhost/health          # nginx проксирует /health на активный backend
+```
 
-## SEO: как устроена индексация
+`/health` через nginx работает только если `Backend/nginx/conf.d/default.conf` указывает на
+живой upstream: в режиме `compose` это `backend:5000`, в режиме `k8s` — контейнер
+`ctp_k8s_gateway:8090` (переключение — `Backend/k8s/scripts/switch-traffic.ps1`). Если
+gateway не запущен, проверяйте backend напрямую: `docker compose -f Backend/docker-compose.yml exec backend node -e "fetch('http://127.0.0.1:5000/health').then(r=>r.text()).then(console.log)"`.
 
-Индексируемых страниц две группы: главная и публичный контент — справочник
-растений `/plants` и раздел «Уход» `/care`. Все личные разделы приложения
-(`/login`, `/register`, `/home`, `/add-plant`, `/edit-profile`, `/my-plants`)
-отдаются с `noindex`.
+Что происходит при `up -d`:
 
-Источники данных и точки правки:
+1. поднимаются `postgres` и `redis` (с healthcheck);
+2. сервис `migrate` применяет все `Backend/migrations/*.sql` и завершается;
+3. стартует `backend` (`depends_on: migrate: service_completed_successfully`);
+4. `backup` раз в 24 часа делает дамп БД и архив `uploads` в `Backend/backups`;
+5. `nginx` поднимается после healthy-backend, `certbot` продлевает сертификаты.
 
-| Что | Где |
-| --- | --- |
-| Карточки растений | `Frontend/src/data/plants.js` |
-| Статьи об уходе | `Frontend/src/data/careArticles.js` |
-| Список публичных маршрутов | `Frontend/src/data/siteMap.js` |
-| Заголовки и описания для метатегов | `Frontend/src/data/seoMeta.js` (генерируется) |
+Полный разбор порядка выкладки, проверок и откатов — в `DEPLOY.md`.
 
-**Как добавить страницу.** Допишите запись в `plants.js` или `careArticles.js`,
-затем выполните `npm run build`. Скрипты сами сгенерируют компактный индекс
-метаданных, пререндерят HTML, добавят адрес в `sitemap.xml`, а правила отдачи
-возьмут файл по шаблону `plants-<slug>.html` / `care-<slug>.html`. Отдельно
-регистрировать маршрут в `.htaccess` не нужно.
+### Frontend локально
 
-**Чего делать не нужно.** `Frontend/src/data/seoMeta.js` помечен как
-сгенерированный: правки в нём перезапишутся. Если правите заголовок или
-описание, меняйте исходные данные и пересобирайте проект.
-
-Публичный индекс закрыт от мягких 404: любой адрес, не совпавший ни с одним
-маршрутом, получает честный `404` со статической страницей `dist/404.html`.
-До этого правила любой несуществующий путь отдавал главную с кодом `200`,
-что создавало бесконечные дубли.
-
-### Проверки
-
-```bash
+```powershell
 cd Frontend
-npm run build:seo     # сборка + все проверки
-npm run verify        # только проверки по уже собранному dist
-npm run verify:build  # метатеги, sitemap, robots, htaccess, размеры картинок
-npm run verify:routing # маршрутизация по правилам .htaccess (37 случаев)
+npm ci
+Copy-Item .env.example .env    # при необходимости поправьте адрес API
+npm run dev                    # Vite, http://localhost:5173
 ```
 
-`verify:build` разбирает готовые HTML и служебные файлы: сверяет canonical,
-`robots`, соответствие sitemap и файлов, валидность JSON-LD, реальные размеры
-PNG с заявленными в разметке и наличие пререндеренного текста. `verify:routing`
-применяет правила из `htaccess` в порядке mod_rewrite и проверяет, что
-неизвестные адреса дают 404, а публичные — 200.
+`vite.config.js` проксирует `/api` на `VITE_API_PROXY_TARGET` (по умолчанию
+`https://server.checktheplants.ru`), подменяет `Origin` на `VITE_API_PROXY_ORIGIN` и
+снимает `Secure`/`SameSite=None` у проксируемых cookie — чтобы вход работал с localhost.
 
-`robots.txt` хранится в `Frontend/public`, а `sitemap.xml` генерируется при
-сборке — даты `lastmod` подставляются автоматически.
+Сборка и проверки:
 
-### Ускорение индексирования: IndexNow
-
-IndexNow позволяет уведомить поисковые системы (Яндекс, Bing и других
-участников) о новых, изменённых и удалённых адресах, не дожидаясь обхода
-роботом. Право на домен подтверждается файлом ключа в корне сайта:
-`public/<key>.txt` должен содержать сам `<key>` — имя файла и его содержимое
-обязаны совпадать.
-
-```bash
+```powershell
 cd Frontend
-npm run indexnow:dry        # показать, какие адреса будут отправлены
-npm run indexnow            # отправить все адреса из sitemap
-npm run indexnow /plants /care            # только конкретные разделы
-npm run indexnow -- --engine=yandex       # отправить напрямую в Яндекс
+npm run build      # generate-plant-images → generate-seo-meta → vite build → prerender → build-manifest
+npm run verify     # verify-build + verify-routing + check-security-headers + build-manifest --check
+npm run verify:admin
 ```
 
-Список адресов берётся из `src/data/siteMap.js` — тот же источник, что и для
-`sitemap.xml`, поэтому новые страницы попадают в отправку автоматически.
+## Переменные окружения
 
-**Перед отправкой скрипт проверяет, что файл ключа действительно доступен на
-сайте.** Если ключа ещё нет (например, сборка не выгружена), отправка
-отменяется: иначе обращения уходят впустую и тратят лимит, а поисковик получает
-повод не доверять ключу.
+Значения в репозитории не хранятся: `Backend/.env` (и `Frontend/.env`) в `.gitignore`.
+В Kubernetes те же имена приходят из ConfigMap `webplant-config`, ConfigMap `webplant-env`
+и Secret `webplant-secrets` (создаются `Backend/k8s/scripts/deploy.ps1` из `Backend/.env`).
 
-`indexnow` намеренно **не входит в `npm run build`**: иначе каждая локальная
-сборка уведомляла бы поисковые системы. Запускайте его вручную или из CI после
-выгрузки `dist` на хостинг.
+### Backend — обязательные в production
 
-### Изображения для соцсетей и PWA
+Валидация выполняется при старте (`validateProductionConfig()` в `Backend/index.js`).
 
-| Файл | Размер | Назначение |
+| Переменная | Назначение | Обязательна |
 | --- | --- | --- |
-| `public/og-image.png` | 1200×630 | превью ссылки в соцсетях и мессенджерах |
-| `public/icons/icon-192.png` | 192×192 | иконка приложения и favicon |
-| `public/icons/icon-512.png` | 512×512 | манифест PWA |
-| `public/icons/icon-maskable-512.png` | 512×512 | адаптивная иконка Android |
-| `public/icons/apple-touch-icon.png` | 180×180 | иконка на экран «Домой» в iOS |
-| `public/favicon.ico` | 16/32/48 | favicon браузера |
-
-Размеры этих файлов проверяются автоматически: `verify:build` сравнивает
-реальные пиксели с заявленными в `manifest.json` и метатегах. Там же
-проверяется и файл ключа IndexNow.
-
-
-### Юридические согласия
-
-В проекте также предусмотрены юридические соглашения, такие как:
-
-- согласие на обработку персональных данных
-- пользовательское соглашение
-- запись информации о согласии в базу данных вместе с метаданными
-
-## Схема базы данных
-
-Используется PostgreSQL, а работа с ней идет через Sequelize.
-
-Основные сущности, которые уже видны в коде:
-
-### users
-
-Содержит данные о пользователях:
-
-- id
-- email
-- password
-- role
-- name, username, phone, bio, privilege_level
-- created_at (появляется после миграции `20261012_create_admin_analytics.sql`)
-
-### site_visit_days
-
-Ежедневная агрегация посещений для админ-панели: одна строка на посетителя в
-сутки по московскому времени.
-
-- id
-- visitor_id (случайный идентификатор браузера, не персональные данные)
-- day (дата в `Europe/Moscow`)
-- user_id (если посетитель авторизован)
-- views (просмотров за день)
-- first_path, referrer_host, device
-- created_at, updated_at
-
-Таблица наполняется публичным маяком `POST /api/system/visit` только при
-согласии посетителя на аналитику; данные старше 400 дней удаляет ежедневная
-задача очистки.
-
-### user_cookie_consents
-
-Хранит информацию о cookie-согласиях:
-
-- id
-- user_id
-- guest_token
-- consent_type
-- is_accepted
-- version
-- accepted_at
-- expires_at
-- is_revoked
-- revoked_at
-- revoked_reason
-- ip_address
-- user_agent
-- source
-- metadata
-
-### user_legal_consents
-
-Содержит юридические согласия пользователя или гостя, связанные с обработкой данных и соглашениями.
-
-### password_reset_tokens
-
-Одноразовые ссылки сброса пароля (миграция `20261012_create_password_reset_tokens.sql`):
-
-- id
-- user_id
-- token_hash — SHA-256 хеш токена; сам токен существует только в письме
-- expires_at — ссылка живёт 30 минут
-- used_at — проставляется при смене пароля, повторно ссылка не работает
-- requested_ip, user_agent
-- created_at
-
-Неиспользованные ссылки гасятся при новом запросе, а строки старше 30 дней
-удаляет ежедневная задача очистки.
-
-## Сброс пароля
-
-Письмо со ссылкой отправляется через SMTP (по умолчанию `smtp.mail.ru:465`,
-сервис `Backend/services/mailService.js`). Пароль ящика задаётся переменной
-`SMTP_PASSWORD` — это «пароль для внешних приложений», обычный пароль от почты
-для SMTP не подходит. Пока `SMTP_PASSWORD` пуст, сайт работает как обычно, но
-`POST /api/users/password-reset/request` отвечает `503`.
-
-```env
-SMTP_HOST=smtp.mail.ru
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=checktheplants@mail.ru
-SMTP_PASSWORD=app_password_from_mail_settings
-MAIL_FROM=checktheplants@mail.ru
-```
-
-Проверить настройки и отправить тестовое письмо:
-
-```bash
-cd Backend
-node scripts/send-test-mail.mjs you@example.com
-```
-
-В Kubernetes `SMTP_PASSWORD` попадает в Secret `webplant-secrets` (остальные
-`SMTP_*` — в ConfigMap `webplant-env`). Переменные окружения читаются только при
-старте пода, а обновление Secret само по себе поды не перезапускает, поэтому после
-заполнения пароля нужны оба шага: обновить объекты кластера и перезапустить поды.
-
-```powershell
-powershell -File Backend/k8s/scripts/deploy.ps1 -SkipBuild -SkipImageLoad
-kubectl rollout restart deployment/backend -n webplant
-kubectl rollout status deployment/backend -n webplant
-```
-
-Статус почты виден в `GET /health` (поле `mail`: `configured`, `not-configured`
-или `disabled`). Проверка отправки из пода:
-
-```powershell
-kubectl exec -n webplant deployment/backend -- node scripts/send-test-mail.mjs checktheplants@mail.ru
-```
-
-### Что нужно на стороне mail.ru
-
-- **Пароль для внешних приложений.** Обычный пароль от почты SMTP не принимает:
-  Почта → Настройки → Все настройки → Безопасность → «Пароли для внешних приложений»
-  (прямая ссылка `https://account.mail.ru/user/2-step-auth/passwords/`). К ящику
-  должен быть привязан телефон, а в разделе «Внешние сервисы» — включён доступ по
-  IMAP/POP/SMTP.
-- **С 2026 года Mail отдаёт протокольный доступ только с подпиской Mail Space
-  «для работы».** Если при создании пароля интерфейс требует подписку, письма через
-  `smtp.mail.ru` не заработают на бесплатном ящике. Код при этом менять не нужно:
-  достаточно указать SMTP любого транзакционного провайдера (Яндекс 360,
-  Unisender, SendPulse, SMTP2GO, Brevo) в `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
-  `SMTP_USER`, `SMTP_PASSWORD`, `MAIL_FROM`.
-- **Свой домен в поле «От» через `smtp.mail.ru` использовать нельзя:** DKIM будет
-  `d=mail.ru` и не выровняется по домену `checktheplants.ru`. Для писем от домена
-  нужен свой релей или «Почта для бизнеса».
-- **Лимиты:** часовой лимит на ящик (число не публикуется, при превышении — ошибка
-  `451 Ratelimit exceeded for mailbox`), до 30 получателей в одном письме. Для
-  регулярных рассылок личный ящик не подходит.
-- **Спам:** первые письма с нового ящика часто попадают в «Спам»; попросите первых
-  получателей отметить письмо как «Не спам» и наращивайте объём постепенно.
-
-## Приветственное письмо
-
-Сразу после регистрации пользователю один раз уходит письмо от разработчика: приветствие
-по имени, три совета «с чего начать», блок «от разработчика» и кнопка «Открыть свой сад».
-Ответить на письмо можно прямо из почты — оно уходит с `Reply-To` из `MAIL_REPLY_TO`.
-
-Факт отправки хранится в `users.welcome_email_sent_at` (миграция
-`20261012_add_welcome_email_sent_at.sql`), поэтому письмо не дублируется: отметка
-ставится до отправки, а если SMTP не ответил — снимается, и письмо уйдёт при следующем
-запуске. Ошибка почты не влияет на регистрацию: ответ пользователю не ждёт отправки.
-
-Тем, кто зарегистрировался раньше, письмо рассылается отдельным скриптом:
-
-```bash
-cd Backend
-node scripts/send-welcome-emails.mjs                       # сухой прогон: список получателей и текст письма
-node scripts/send-welcome-emails.mjs --send                # отправить всем, кому ещё не уходило
-node scripts/send-welcome-emails.mjs --to you@example.com  # одно письмо для проверки вёрстки
-node scripts/send-welcome-emails.mjs --send --force        # отправить повторно, даже если уже уходило
-```
-
-В кластере то же самое:
-
-```powershell
-kubectl exec -n webplant deployment/backend -- node scripts/send-welcome-emails.mjs --send
-```
-
-Текст и вёрстка письма живут в `Backend/services/mailService.js` (`renderWelcomeEmail`),
-подпись разработчика и логотип задаются там же; логотип подтягивается с сайта.
-
-## API
-
-Ниже описаны основные маршруты backend.
-
-### Пользователи
-
-#### POST /api/users/registration
-
-Создание нового пользователя.
-
-Пример запроса:
-
-```json
-{
-  "email": "user@example.com",
-  "password": "securePassword123",
-  "privacyPolicyAccepted": true,
-  "termsAccepted": true
-}
-```
-
-#### POST /api/users/login
-
-Вход пользователя.
-
-```json
-{
-  "email": "user@example.com",
-  "password": "securePassword123"
-}
-```
-
-#### POST /api/users/logout
-
-Выход пользователя из системы.
-
-#### POST /api/users/password-reset/request
-
-Запрос ссылки для сброса пароля.
-
-```json
-{ "email": "user@example.com" }
-```
-
-Ответ всегда одинаковый (`200`), есть ли такой аккаунт: `{"message": "Если аккаунт с таким email существует, мы отправили на него ссылку для сброса пароля. Проверьте папку «Спам».", "expiresInMinutes": 30}` — это защита от проверки существования пользователей. Если SMTP не настроен, вернётся `503`. Лимиты: не более 5 запросов с одного IP в час, не чаще одной ссылки в минуту и не более 3 в час на аккаунт.
-
-#### GET /api/users/password-reset/verify?token=…
-
-Проверка ссылки из письма перед показом формы нового пароля.
-
-```json
-{ "valid": true, "email": "an***@mail.ru", "expiresInMinutes": 30 }
-```
-
-Недействительная или истёкшая ссылка — `400`.
-
-#### POST /api/users/password-reset/confirm
-
-Смена пароля по ссылке.
-
-```json
-{ "token": "токен из ссылки", "password": "новыйПароль123" }
-```
-
-Пароль — минимум 8 символов. После успешной смены backend закрывает все
-активные сессии пользователя (в том числе refresh-токены), гасит остальные
-ссылки сброса и очищает cookie текущего браузера, поэтому вход выполняется
-заново с новым паролем.
-
-#### GET /api/users/me
-
-Получение текущего авторизованного пользователя.
-
-#### GET /api/users/
-
-Получение списка пользователей.
-
-### Уведомления аккаунта
-
-Все маршруты ниже требуют действующей авторизации. Уведомления создаются для
-напоминаний о поливе и утренних сводок; записи не дублируются при повторном
-запуске планировщика для того же события.
-
-- `GET /api/notifications?limit=20&offset=0` — получить страницу уведомлений и
-  счётчик непрочитанных. Ответ содержит `items`, `total`, `unreadCount`,
-  `limit`, `offset` и `nextOffset` (`null`, когда страниц больше нет).
-- `GET /api/notifications/unread-count` — получить `{ "unreadCount": 3 }`
-  отдельно для счётчика на кнопке.
-- `PATCH /api/notifications/:id/read` — отметить одно своё уведомление прочитанным.
-- `PATCH /api/notifications/read-all` — отметить прочитанными все свои
-  уведомления; ответ содержит `updatedCount`.
-
-Элементы списка содержат `id`, `plant_id`, `type`, `title`, `body`, `url`,
-`scheduled_for`, `read_at` и `created_at`. Запросы к чужому идентификатору
-возвращают `404`, не раскрывая наличие записи.
-
-Перед запуском новой версии примените миграцию таблицы уведомлений из корня
-репозитория:
-
-```bash
-psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -f Backend/migrations/20261006_create_notifications.sql
-```
-
-В PowerShell (из каталога `Backend`) эту миграцию можно применить так:
-
-```powershell
-Get-Content .\migrations\20261006_create_notifications.sql -Raw | docker-compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1'
-```
-
-После успешной миграции перезапустите backend командой
-`docker-compose restart backend`.
-
-### Cookie согласия
-
-#### GET /api/cookie-consents/
-
-Получение согласий текущего пользователя/гостя.
-
-#### GET /api/cookie-consents/:consentType
-
-Проверка конкретного согласия.
-
-#### POST /api/cookie-consents/
-
-Сохранение одного согласия.
-
-#### POST /api/cookie-consents/all
-
-Сохранение набора согласий сразу.
-
-#### PUT /api/cookie-consents/:consentType/revoke
-
-Отзыв согласия.
-
-#### POST /api/cookie-consents/link
-
-Связывание guest-согласий с пользователем.
-
-### Админ-панель
-
-Отдельный поддомен `admin.checktheplants.ru` обслуживает статическая панель из
-[Frontend/admin](Frontend/admin/README.md) — обычные HTML, CSS и ES-модули без
-сборки. Все данные она берёт из API под cookie-сессией администратора, а
-доступ проверяется на сервере (`requireAdmin`, `role = ADMIN`).
-
-Что умеет панель:
-
-- аналитика: посетители и просмотры, регистрации, растения, поливы, фото,
-  сообщения чата, push-подписки и активные сессии; графики по дням, распределение
-  поливов по дням недели и часам, топы по видам растений и пользователям;
-- раздел «Посетители»: уникальные визиты по дням, новые и авторизованные
-  посетители, устройства, страницы входа и источники переходов;
-- управление: карточка пользователя со всей активностью, смена роли,
-  удаление пользователей, растений, поливов, фотографий и сообщений чата;
-- выгрузка списков в CSV и состояние сервера (`/health`, Redis, Docker).
-
-Маршруты админ-API (все требуют `role = ADMIN`):
-
-```text
-GET    /api/admin/analytics/overview?days=30
-GET    /api/admin/analytics/timeseries?days=30
-GET    /api/admin/analytics/breakdown?days=30
-GET    /api/admin/visits?from=YYYY-MM-DD&to=YYYY-MM-DD
-GET    /api/admin/users | /api/admin/users/:id
-PATCH  /api/admin/users/:id          # роль и уровень привилегий
-DELETE /api/admin/users/:id          # каскадно: растения, поливы, фото, чат, согласия, сессии
-GET    /api/admin/plants             DELETE /api/admin/plants/:id
-GET    /api/admin/waterings          DELETE /api/admin/waterings/:id
-GET    /api/admin/photos             DELETE /api/admin/photos/:id
-GET    /api/admin/chat               DELETE /api/admin/chat/:id
-DELETE /api/admin/chat/session/:sessionId
-POST   /api/system/visit             # публичный маяк посещений (только при согласии на аналитику)
-```
-
-Счётчик посещений — собственный и приватный: сайт отправляет `POST /api/system/visit`
-один раз на загрузку страницы и только если посетитель принял согласие на
-аналитику (см. `Frontend/src/utils/visits.js`). Сохраняются случайный
-идентификатор браузера, путь входа, хост перехода и тип устройства; IP не
-записывается. Один посетитель в сутки — одна строка, данные хранятся 400 дней.
-
-Перед запуском панели в production:
-
-1. добавьте origin админки в `Backend/.env` и разрешите его в CORS:
-
-   ```env
-   ADMIN_PANEL_ORIGIN=https://admin.checktheplants.ru
-   ```
-
-2. примените миграцию, которая добавляет `users.created_at` и таблицу
-   `site_visit_days`:
-
-   ```bash
-   psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-     -v ON_ERROR_STOP=1 -f Backend/migrations/20261012_create_admin_analytics.sql
-   ```
-
-3. перезапустите backend и выгрузите содержимое `Frontend/admin` в корень
-   поддомена вместе со скрытым `.htaccess`.
-
-Без миграции backend продолжает работать: даты регистраций считаются по
-согласиям, а раздел «Посетители» показывает нули и подсказку применить
-миграцию. Полная инструкция по выгрузке, HTTPS и отладке — в
-[Frontend/admin/README.md](Frontend/admin/README.md).
-
-## Требования для запуска
-
-Для локального запуска необходимо:
-
-- Node.js 20+ (production Docker image uses Node.js 22)
-- npm
-- PostgreSQL 14+ или 15+
-- доступ к локальной базе данных
-
-## Подготовка окружения
-
-### 1. Клонирование репозитория
-
-```bash
-git clone <repository-url>
-cd WebPlant
-```
-
-### 2. Настройка PostgreSQL
-
-Создайте базу данных и пользователя для проекта.
-
-Пример:
-
-```sql
-CREATE DATABASE webplant;
-CREATE USER webplant_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE webplant TO webplant_user;
-```
-
-### 3. Создание .env файла для Backend
-
-В папке `Backend` создайте файл `.env`:
-
-```env
-PORT=5000
-NODE_ENV=development
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=webplant
-DB_USER=webplant_user
-DB_PASSWORD=your_password
-SECRET_KEY=replace_with_a_random_secret_of_at_least_32_bytes
-FRONTEND_URL=http://localhost:5173
-REDIS_URL=redis://localhost:6379/0
-SMTP_HOST=smtp.mail.ru
-SMTP_PORT=465
-SMTP_SECURE=true
-SMTP_USER=checktheplants@mail.ru
-SMTP_PASSWORD=app_password_from_mail_settings
-```
-
-Переменные `SMTP_*` нужны только для писем со ссылкой сброса пароля; без них
-backend стартует, а endpoint сброса отвечает `503` (см. «Сброс пароля»).
-
-Redis не обязателен: без `REDIS_URL` backend работает как раньше — лимиты запросов считаются в памяти процесса, cron-задачи выполняются без распределённых локов, кэш ответов ИИ отключён. Если Redis задан, он используется для общего rate-limit, распределённых локов cron-задач (напоминания, push-рассылки, очистка) и кэша ответов Yandex Cloud AI. При недоступности Redis backend продолжает работать в прежнем режиме, а `GET /health` показывает `"redis": "unavailable"`.
-
-Для production также задайте `VAPID_SUBJECT`, `VAPID_PUBLIC_KEY` и `VAPID_PRIVATE_KEY` для web push, укажите HTTPS-origin в `FRONTEND_URL`, установите `NODE_ENV=production` и используйте отдельные защищённые credentials PostgreSQL. Для passkey-аутентификации задайте `RP_ID` (домен сайта без схемы, например `checktheplants.ru`) и `FRONTEND_ORIGIN` (разрешённые HTTPS-origin через запятую; каждый должен быть в `FRONTEND_URL` и покрываться `RP_ID`). `YANDEX_CLOUD_FOLDER` и `YANDEX_CLOUD_API_KEY` используются чатом, подсказкой вида и диалогом рекомендаций полива. Для админ-панели задайте `ADMIN_PANEL_ORIGIN` (например `https://admin.checktheplants.ru`): этот origin добавляется к разрешённым для API отдельно от `FRONTEND_URL`, чтобы не расширять список passkey-origin.
-
-Push-уведомления работают в поддерживаемых браузерах на HTTPS. На iPhone и iPad требуется iOS/iPadOS 16.4 или новее: откройте сайт в Safari, добавьте его через «Поделиться» → «На экран Домой», запустите установленное приложение и разрешите уведомления. На Android разрешите уведомления в браузере или установленном PWA. Подписка и разрешение задаются отдельно для каждого браузера/устройства.
-
-Подсказка установки появляется на стартовой и главной страницах, когда браузер поддерживает установку PWA; её можно скрыть, а на iPhone/iPad открыть краткую инструкцию добавления на экран «Домой».
-
-Для локальной разработки Vite по умолчанию проксирует `/api` на backend `http://localhost:5000` и передаёт origin `http://localhost:5173`; запустите backend локально, чтобы пользоваться API. Для другого backend задайте `VITE_API_PROXY_TARGET` и при необходимости `VITE_API_PROXY_ORIGIN` в `Frontend/.env.local`, затем перезапустите Vite. Подключение к production API возможно только при явной настройке обоих значений, например `VITE_API_PROXY_TARGET=https://server.checktheplants.ru` и `VITE_API_PROXY_ORIGIN=https://checktheplants.ru`. В этом режиме операции локального интерфейса работают с реальными production-данными, а cookie адаптируются для HTTP-разработки без транспортной защиты на локальном участке. По возможности не используйте реальные аккаунты; тестируйте только на доверенном устройстве и не оставляйте на нём активную сессию.
-
-Passkey/WebAuthn не работает на `localhost` против production API, поскольку браузерный origin и RP ID не совпадают с production. Для работы с passkey используйте production-сайт.
-
-Важно:
-
-- `SECRET_KEY` должен быть уникальным, случайным и не короче 32 байт в production
-- для продакшена его нельзя хранить в репозитории
-- значения должны быть заменены на реальные
-
-## Запуск проекта
-
-### Установка зависимостей Backend
-
-```bash
-cd Backend
-npm install
-```
-
-Запуск backend unit-тестов:
-
-```bash
-npm test
-```
-
-### Запуск Backend
-
-```bash
-npm run dev
-```
-
-Либо обычный запуск:
-
-```bash
-npm start
-```
-
-По умолчанию сервер запускается на:
-
-```text
-http://localhost:5000
-```
-
-### Установка зависимостей Frontend
-
-```bash
-cd ../Frontend
-npm install
-```
-
-### Запуск Frontend
-
-```bash
-npm run dev
-```
-
-Обычно Vite запускает интерфейс по адресу:
-
-```text
-http://localhost:5173
-```
-
-В dev-режиме запросы `/api` по умолчанию проксируются на `http://localhost:5000`. Для удалённого backend задайте `VITE_API_PROXY_TARGET` и, если требуется, `VITE_API_PROXY_ORIGIN` в `Frontend/.env.local`; production API подключайте только осознанно, учитывая доступ к реальным данным. `VITE_API_URL` задаёт полный API URL для frontend.
-
-Корневой адрес `/` показывает публичный экран знакомства с приложением. Вход и регистрация доступны по адресам `/login` и `/register`.
-
-## Развёртывание
-
-### Docker Compose
-
-Боевая схема — `Backend/docker-compose.yml`: PostgreSQL, Redis, backend, nginx с TLS (Let's Encrypt через certbot), резервное копирование и прокси docker-сокета. Запуск и обновление:
-
-```bash
-cd Backend
-docker compose up -d --build
-docker compose ps
-docker compose logs -f backend
-```
-
-Redis в compose (`ctp_redis`) хранит общий rate-limit, распределённые локи cron-задач и кэш ответов ИИ; пароль задаётся переменной `REDIS_PASSWORD` в `Backend/.env`, данные лежат в томе `redis_data`.
-
-Перед стартом backend compose запускает одноразовый сервис `migrate` (`ctp_migrate`): он прогоняет все файлы `Backend/migrations/*.sql` по порядку и только после успешного завершения поднимает backend (`condition: service_completed_successfully`). Это обязательно, потому что production-backend завершает запуск ошибкой, если таблиц или колонок моделей нет в базе. Вручную миграции применяются так:
-
-```bash
-cd Backend
-docker compose run --rm migrate                                   # через compose
-powershell -File scripts/apply-migrations.ps1 -Target compose      # через скрипт (Windows)
-```
-
-### Kubernetes
-
-Стек также разворачивается в Kubernetes (PostgreSQL, Redis, две реплики backend, перенос боевых данных и шлюз наружу). Манифесты, скрипты и описание переезда — в [Backend/k8s/README.md](Backend/k8s/README.md):
-
-```powershell
-# первый запуск: сборка образа, доставка на ноды, перенос данных из compose
-powershell -File Backend/k8s/scripts/deploy.ps1 -RestoreData
-
-# состояние стека, Redis и базы
-powershell -File Backend/k8s/scripts/status.ps1
-```
-
-В кластере фоновые задачи по умолчанию выключены (`BACKGROUND_JOBS_ENABLED=false`), чтобы не дублировать push-уведомления рядом с работающим compose-стеком; включаются флагом `-EnableBackgroundJobs` после переключения трафика.
-
-`deploy.ps1` перед раскаткой backend сам применяет миграции из `Backend/migrations` (все файлы идемпотентны). Если поды не выходят в Ready, скрипт выводит их состояние и логи: типичная причина `Database schema is missing required tables or columns` лечится прогоном миграций и перезапуском подов.
-
-```powershell
-powershell -File Backend/scripts/apply-migrations.ps1            # применить миграции в кластере
-kubectl rollout restart deployment/backend -n webplant           # перезапустить поды
-```
-
-## Основные сценарии использования
-
-### Регистрация пользователя
-
-1. Открыть Frontend и ознакомиться с главным экраном
-2. Нажать «Начать бесплатно» или открыть `/register`
-3. Ввести email и пароль
-4. Подтвердить согласия на обработку персональных данных и пользовательское соглашение
-5. Отправить форму
-6. Система создаст пользователя и сохранит JWT в cookie
-
-### Авторизация
-
-1. Использовать форму входа
-2. Ввести корректный email и пароль
-3. При успешной аутентификации токен сохраняется в cookie
-
-### Работа с согласиями
-
-1. Пользователь или гость может принять/отклонить cookie-согласия
-2. Согласия сохраняются с таймингом и метаданными
-3. При регистрации/входе guest-согласия связываются с профилем пользователя
-
-## Безопасность и ограничения
-
-Backend устанавливает production-настройки cookie, ограничивает production CORS значениями `FRONTEND_URL` и явно заданного `LOCAL_DEV_ORIGINS`, защищает изменяющие запросы проверкой источника, ограничивает частоту входа/регистрации/чата/AI-подсказок, проверяет часть входных данных и не выполняет `sequelize.sync()` в production. AI-рекомендация интервала полива является ориентировочной: пользователь подтверждает применение вручную, а фактический полив следует корректировать по влажности грунта. Перед публикацией всё равно необходимо:
-
-Не привязанные к растению загруженные фотофайлы и незавершённые временные загрузки старше 24 часов удаляются ежедневной очисткой. Резервное копирование каталога `uploads` настраивайте отдельно от PostgreSQL.
-
-Часовой пояс пользователя хранится в `users.timezone` (IANA-имя, миграция `Backend/migrations/20261013_add_user_timezone.sql`). Фронтенд определяет пояс устройства и сохраняет его в профиль при входе (`Frontend/src/utils/timeZone.js`), поэтому «9:00 / 14:00 / 19:00» и сутки просрочки совпадают с местными часами. Уже сохранённые расписания, созданные прежним кодом (в контейнере UTC время сдвинуто на +3 часа к Москве), приводятся к местному времени разовым скриптом: `node Backend/scripts/normalize-watering-hours.mjs` (по умолчанию dry-run, запись — с `--apply`).
-
-Миниатюры фото лежат в `uploads/thumbs/<hash>.thumb.jpg` и удаляются вместе с оригиналом. Новые загрузки получают миниатюру сразу (`Backend/controllers/uploadController.js`), старые — на первом запросе превью через `plantThumbRequestHandler`; разом их можно собрать командой `node Backend/scripts/generate-plant-thumbs.mjs`. Каталог `uploads` отдаётся статикой с годовым неизменяемым кэшем, поэтому превью дня открывается без повторной загрузки фотографий.
-
-- использовать HTTPS и отдельный случайный `SECRET_KEY` длиной не менее 32 байт; не хранить секреты в репозитории
-- применить SQL-миграцию новых сессий и passkey до обновления backend (см. команду ниже); backend завершит запуск ошибкой, если таблицы или колонки моделей отсутствуют
-- настроить резервное копирование и проверенное восстановление PostgreSQL и загруженных файлов
-- проверить production Docker-конфигурацию и убедиться, что порт PostgreSQL доступен только локально/из доверенной сети
-- настроить мониторинг ошибок, резервирование диска для `uploads` и безопасное хранение production-секретов
-- выполнить интеграционные проверки API с тестовой PostgreSQL и smoke-тесты после деплоя
-
-## Текущие ограничения проекта
-
-В текущем виде проект может иметь следующие ограничения:
-
-- отсутствует полноценная система ролей и прав доступа: есть только `USER`/`ADMIN` и уровень `privilege_level`
-- админ-панель закрывает аналитику и управление данными, но не редактирует содержимое пользователей (только удаляет и меняет роль)
-- автоматизированные тесты backend не заменяют интеграционные тесты API с отдельной PostgreSQL
-- frontend build и lint не заменяют браузерные e2e-тесты критических сценариев
-- возможны изменения структуры API
-- в репозитории не настроены CI/CD и автоматический production smoke-test
-- перед публичным запуском необходимы проверка доменов/HTTPS, мониторинг, восстановление backup и тестирование нагрузки
-
-## Дорожная карта развития
-
-Планируется дальнейшее развитие проекта в таких направлениях:
-
-- полноценный личный кабинет пользователя
-- ✅ восстановление пароля по одноразовой ссылке из письма (30 минут, сброс всех сессий)
-- подтверждение email
-- ✅ админ-панель для управления пользователями, растениями и поливами (`Frontend/admin`)
-- улучшенная система ролей и permissions
-- интеграционные и браузерные e2e-тесты
-- рефакторинг структуры проекта
-- добавление unit и integration тестов
-- Docker и Docker Compose для локальной сборки
-- CI/CD pipeline
-- улучшение UX/UI
-- международная локализация
-- документация по API
-
-## Разработка и участие в проекте
-
-Так как проект находится в активной разработке, приветствуется участие в доработке и улучшении.
-
-Рекомендуемый процесс:
-
-1. Создать feature branch
-2. Реализовать изменения
-3. Проверить локально
-4. Открыть pull request
-5. Обсудить доработки и интеграцию
-
-Пример:
-
-```bash
-git checkout -b feature/new-module
-git add .
-git commit -m "Add new feature"
-git push origin feature/new-module
-```
-
-## Команда и ответственность
-
-Это внутренний/учебный проект, и по мере развития будут появляться новые компоненты, правила и соглашения по разработке.
-
-## Лицензия
-
-На данный момент лицензия проекта не назначена явно. Если это не было согласовано дополнительно, рекомендуется считать проект учебным/внутренним прототипом без публичного коммерческого использования.
-
-## Заключение
-
-WebPlant — это ранний, но уже функциональный прототип web-приложения с системой регистрации, авторизации и согласий. Проект активно развивается, и текущая версия предназначена прежде всего для локальной разработки, проверки архитектуры и дальнейшей доработки.
-
-Если вы открываете этот проект, важно помнить:
-
-- он продолжает развиваться
-- части API и структуры могут меняться
-- код пока не является финальной production-версией
-- основная ценность на данном этапе — архитектура, рабочие сценарии и эксперименты
-
-## Полезные ссылки
-
-- Frontend: `Frontend/`
-- Backend: `Backend/`
-- README Frontend: `Frontend/README.md`
-
-## Примечание для разработчиков
-
-Перед запуском проекта в локальной среде рекомендуется проверить:
-
-- наличие PostgreSQL и корректных параметров подключения
-- наличие файла `.env` в `Backend`
-- корректность `SECRET_KEY`
-- отсутствие конфликтов портов 5000 и 5173
-- актуальность зависимостей после `npm install`
-
-Перед production-деплоем из папки `Backend` выполните `npm test`, проверьте переменные окружения и наличие всех таблиц/колонок моделей в базе: production-запуск завершится ошибкой при несоответствии и не создаёт/не изменяет схему автоматически. До внедрения миграций любые изменения схемы выполняйте отдельно и проверяйте на восстановленной копии production-базы.
-
-Для актуальной схемы с отзывом auth-сессий и passkey примените идемпотентную миграцию из корня репозитория до запуска новой версии:
-
-```bash
-psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -f Backend/migrations/20261002_create_auth_and_passkey_tables.sql
-```
-
-Команда создаёт `auth_sessions`, `passkeys` и `passkey_challenges`. Храните production credentials вне репозитория и сначала проверяйте миграцию на резервной копии базы.
-
-Для пользовательской настройки утренней push-сводки примените миграцию до запуска новой версии:
-
-```bash
-psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -f Backend/migrations/20261005_create_notification_preferences.sql
-```
-
-Планировщик отправляет сводку ежедневно в 09:00 по Москве пользователям, включившим её в профиле и имеющим активную push-подписку. В неё входят активные растения, запланированные к поливу до конца текущего московского дня. Миграция также создаёт аккаунтную настройку темы: светлая, тёмная или системная. Системный режим автоматически следует настройке ОС и синхронизируется между устройствами.
-
-Для уведомлений (таблица `notifications`) примените миграцию до запуска backend:
-
-```bash
-psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -f Backend/migrations/20261006_create_notifications.sql
-```
-
-Для админ-панели (дата регистрации `users.created_at` и таблица посещений
-`site_visit_days`) примените миграцию до выгрузки поддомена:
-
-```bash
-psql -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" -d "$DB_NAME" \
-  -v ON_ERROR_STOP=1 -f Backend/migrations/20261012_create_admin_analytics.sql
-```
-
-Миграция идемпотентна: дата регистрации существующих пользователей
-заполняется по первому согласию с источником `registration`, затем по первой
-серверной сессии. Без неё backend работает, но аналитика регистраций и
-посещений деградирует (см. раздел «Админ-панель»).
-
-### Доступ к pgAdmin из локальной сети
-
-Compose публикует pgAdmin на `5050` всех интерфейсах по умолчанию. Чтобы
-ограничить доступ LAN-интерфейсом сервера (например, `192.168.0.103`), задайте
-`PGADMIN_BIND_ADDRESS=192.168.0.103` в `Backend/.env`, затем из каталога
-`Backend` выполните:
-
-```powershell
-docker-compose -f docker-compose.yml -f docker-compose.pgadmin.yml up -d pgadmin
-```
-
-После этого откройте `http://192.168.0.103:5050` с клиентских компьютеров.
-Если подключения нет, разрешите входящий TCP-порт `5050` в firewall сервера
-только для локальной сети. Не публикуйте HTTP-доступ к pgAdmin в интернет.
-
-После первого деплоя этой версии существующие remember-me JWT без идентификатора серверной сессии будут отклонены; пользователям потребуется войти один раз заново.
-
-Если проект будет использоваться как основа для дальнейшего развития, стоит сразу подготовить:
-
-- миграции Sequelize
-- тестовую базу данных
-- Docker Compose
-- базовую документацию API
-- соглашения по стилю кода и ветвлению
-
----
-
-Этот README составлен с учетом того, что проект еще находится в разработке, поэтому он описывает текущее состояние, структуру и принципы работы без завышения готовности продукта.
+| `NODE_ENV` | `production` включает проверку схемы, secure-cookie, строгие origin | да (production) |
+| `PORT` | порт HTTP, по умолчанию 5000 | нет |
+| `DB_NAME` | имя базы PostgreSQL | да |
+| `DB_USER` | пользователь БД | да |
+| `DB_PASSWORD` | пароль БД | да |
+| `DB_HOST` | хост БД (`postgres` в compose/k8s, `localhost` локально) | нет (default `localhost`) |
+| `DB_PORT` | порт БД (default 5432) | нет |
+| `SECRET_KEY` | подпись JWT; в production ≥ 32 байт | **да** |
+| `FRONTEND_URL` | HTTPS-origin(ы) фронта через запятую; используется в CORS, письмах, passkey | **да** |
+| `FRONTEND_ORIGIN` | origin для проверки passkey (WebAuthn) | **да** |
+| `RP_ID` | Relying Party ID для passkey (`checktheplants.ru`) | **да** |
+| `VAPID_SUBJECT` | контакт владельца push-подписки (`mailto:`/URL) | **да** |
+| `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` | ключи web-push | **да** |
+| `RP_NAME` | отображаемое имя для passkey (по умолчанию «Лейка») | нет |
+| `PASSKEY_REQUIRE_USER_VERIFICATION` | требовать биометрию/PIN при passkey-входе (по умолчанию `true`) | нет |
+
+### Backend — функциональные (без них сервис работает в деградированном режиме)
+
+| Переменная | Назначение |
+| --- | --- |
+| `ADMIN_PANEL_ORIGIN` | origin(ы) админки для CORS (без пути, через запятую) |
+| `ADMIN_PANEL_ALLOW_FRONTEND_ORIGIN` | временно разрешить админ-API с основного origin фронта (`false` по умолчанию; ослабляет изоляцию админки) |
+| `LOCAL_DEV_ORIGINS` | HTTP-origin'ы localhost/приватных IP для локальной отладки (только не-production) |
+| `AUTH_COOKIE_DOMAIN` | домен cookie (по умолчанию в production `.checktheplants.ru`; `host-only` отключает) |
+| `APP_TIME_ZONE` | часовой пояс по умолчанию (`Europe/Moscow` в ConfigMap) |
+| `REDIS_URL` | строка подключения Redis; альтернатива — `REDIS_HOST`/`REDIS_PORT`/`REDIS_PASSWORD` |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_USERNAME`, `REDIS_DB` | разбор адреса Redis по частям |
+| `REDIS_KEY_PREFIX` | префикс ключей (`ctp`) |
+| `REDIS_CONNECT_TIMEOUT_MS`, `REDIS_COMMAND_TIMEOUT_MS` | таймауты Redis |
+| `REDIS_FAILURE_THRESHOLD`, `REDIS_BREAKER_COOLDOWN_MS` | circuit breaker Redis |
+| `REDIS_DEBUG` | подробные логи Redis (`true`) |
+| `YANDEX_CLOUD_FOLDER` | folder ID Yandex Cloud для `gpt://<folder>/<model>` |
+| `YANDEX_CLOUD_API_KEY` | API-ключ сервисного аккаунта Yandex Cloud |
+| `YANDEX_CLOUD_MODEL` | модель для чата/советов (default `deepseek-v4-flash/latest`) |
+| `YANDEX_CLOUD_VISION_MODEL` | модель для анализа фото (default `deepseek-v4.1-flash/latest`) |
+| `AI_CACHE_ENABLED`, `AI_CACHE_TTL_SECONDS`, `AI_CHAT_CACHE_TTL_SECONDS` | кэш ответов ИИ в Redis |
+| `AI_DAILY_REQUEST_BUDGET` | суточный лимит обращений к модели (0/пусто — без лимита) |
+| `AI_CHAT_TIMEOUT_MS`, `AI_ADVICE_TIMEOUT_MS`, `AI_VISION_TIMEOUT_MS` | таймауты одного вызова модели |
+| `AI_CHAT_DEADLINE_MS`, `AI_ADVICE_DEADLINE_MS`, `AI_VISION_DEADLINE_MS` | сквозной дедлайн запроса |
+| `AI_CHAT_GUEST_DAILY_LIMIT`, `AI_CHAT_USER_DAILY_LIMIT` | суточные лимиты сообщений чата |
+| `WATERING_ADVICE_MAX_QUESTIONS` | потолок уточняющих вопросов советника |
+| `AI_PRICE_INPUT_PER_1K`, `AI_PRICE_OUTPUT_PER_1K`, `AI_PRICE_CACHED_PER_1K`, `AI_PRICE_CURRENCY` | тариф для оценки стоимости в админке |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD` | отправка писем (без них сброс пароля и рассылки → `503`) |
+| `MAIL_FROM`, `MAIL_REPLY_TO` | адрес отправителя и reply-to |
+| `MAIL_BROADCAST_BATCH_SIZE`, `MAIL_BROADCAST_SYNC_BATCH`, `MAIL_BROADCAST_DELAY_MS`, `MAIL_BROADCAST_DEDUPE_WINDOW_MS` | параметры рассылок писем |
+| `PUSH_CONCURRENCY` | параллелизм отправки push |
+| `UNSUBSCRIBE_URL_BASE` | базовый URL страницы отписки от рассылок (по умолчанию `<FRONTEND_URL>/unsubscribe`) |
+| `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | сроки хранения чатов и журнала ИИ (0 — бессрочно) |
+| `NOTIFICATION_RETENTION_DAYS` | срок хранения уведомлений |
+| `GUEST_PUSH_RETENTION_DAYS`, `INVALIDATED_PUSH_RETENTION_DAYS` | сроки хранения push-подписок |
+| `BACKUP_RETENTION_DAYS` | срок хранения дампов (по умолчанию 14 дней) |
+| `BACKUP_ENCRYPTION_PASSPHRASE` | пароль шифрования бэкапов (gpg/age); пусто — без шифрования |
+| `BACKUP_OFFSITE_TARGET` | offsite-копирование дампов через `rclone`; пусто — выключено |
+| `BACKGROUND_JOBS_ENABLED` | `false` полностью отключает cron-задачи |
+| `DEPLOY_TARGET` | метка окружения в `/health` (`compose` / `kubernetes`) |
+| `DB_POOL_MAX`, `DB_POOL_MIN`, `DB_POOL_ACQUIRE_MS`, `DB_POOL_IDLE_MS`, `DB_POOL_EVICT_MS` | пул соединений Sequelize |
+| `DB_STATEMENT_TIMEOUT_MS`, `DB_QUERY_TIMEOUT_MS`, `DB_RETRY_MAX` | таймауты и ретраи запросов |
+| `DOCKER_HOST`, `DOCKER_STATS_ENABLED` | телеметрия контейнеров в админке (`DOCKER_STATS_ENABLED=false` отключает) |
+| `DEPLOY_PROTOCOL`, `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_PASSWORD`, `DEPLOY_REMOTE_ROOT`, `DEPLOY_SITE_URL`, `DEPLOY_CONFIG_PATH` | параметры FTP-деплоя фронта (`deploy.config.example.json`, `.env.example`) |
+
+### Frontend
+
+| Переменная | Назначение |
+| --- | --- |
+| `VITE_API_URL` | базовый URL API (по умолчанию `https://server.checktheplants.ru/api`) |
+| `VITE_API_PROXY_TARGET` | цель dev-прокси `/api` (по умолчанию боевой API) |
+| `VITE_API_PROXY_ORIGIN` | подменяемый `Origin` для dev-прокси |
+| `VITE_APP_VERSION` | подставляется Vite из `package.json` (не задаётся вручную) |
+
+Секреты и порядок их ротации — в `SECRETS.md`.
+
+## Тесты и проверки
+
+| Команда | Что проверяет |
+| --- | --- |
+| `cd Backend; npm test` | unit-тесты backend (`node --test`): auth, guest-токены, Redis, планировщик, расписание полива, ИИ, push/mail-валидация, экспорт/удаление аккаунта (интеграционные кейсы без `RUN_INTEGRATION=1` помечаются `skip`) |
+| `cd Backend; RUN_INTEGRATION=1 npm run test:integration` | интеграционные тесты на живых Postgres и Redis: миграции и их идемпотентность, ограничения схемы, транзакции, распределённая блокировка (нужны `DB_*` и `REDIS_URL`) |
+| `cd Backend; npm run lint` | ESLint для backend (`eslint.config.js`) |
+| `cd Frontend; npm test` | unit-тесты фронта (`node --test "src/**/*.test.js"`) |
+| `cd Frontend; npm run lint` | ESLint (0 ошибок в CI) |
+| `cd Frontend; npm run build` | сборка + prerender + `dist/build-info.json` |
+| `cd Frontend; npm run verify` | сборка, роутинг, security-заголовки/CSP, манифест |
+| `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (8 разделов) |
+| `cd Frontend; npm run test:e2e` | E2E через `scripts/run-e2e.mjs` (нужен Chrome; в CI `WEBPLANT_E2E_REQUIRED=1`) |
+| `powershell -File Backend/scripts/verify-notifications.ps1` | проверка уведомлений/идемпотентности на одноразовой БД |
+| `node Backend/scripts/admin-api-integration.mjs seed|verify` | 94 проверки админ-API на отдельной тестовой БД |
+| `cd Backend; node scripts/watering-prediction-audit.mjs --days=365` | read-only аудит адаптивного интервала полива |
+| `k6 run Backend/scripts/load-test.k6.js` | нагрузочный профиль (нужен установленный [k6](https://k6.io); запускать на тестовой среде) |
+
+Интеграционный тест распределённой блокировки запускается только при заданном
+`REDIS_TEST_URL` (`node --test utils/distributedLock.test.js`). Подробности — в
+`Backend/k8s/README.md`.
+
+CI (`.github/workflows/ci.yml`) на каждый push/PR:
+
+* `frontend` — `npm ci` → lint → unit → build → verify → артефакт `build-info.json`;
+* `backend` — lint → unit → подготовка БД (`scripts/init-integration-db.mjs`) → применение
+  всех миграций → повторный прогон (идемпотентность) → интеграционные тесты на сервисах
+  PostgreSQL и Redis (`RUN_INTEGRATION=1`);
+* `security` — `npm audit --audit-level=high` (backend и frontend), `gitleaks`
+  (скан секретов), CodeQL (`javascript-typescript`, `security-and-quality`);
+* `notify-failure` — создаёт/обновляет issue с меткой `ci-failure`;
+* `a11y-smoke` — опционально: axe-smoke, E2E, admin-smoke (если в чекауте есть
+  `state/frontend-audit/tools/audit.mjs`).
+
+Обновления зависимостей приходят PR-ами от `.github/dependabot.yml`. Прикладные секреты в
+CI не используются (только `GITHUB_TOKEN` и, при необходимости, `GITLEAKS_LICENSE`).
+
+## Где документация
+
+| Документ | О чём |
+| --- | --- |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | компоненты, потоки (auth, passkeys, ИИ, push, рассылки), схема БД, фоновые задачи и локи, точки отказа |
+| [DEPLOY.md](DEPLOY.md) | порядок деплоя (бэкап → миграции → раскатка), compose и k8s, FTP-деплой фронта, проверки, откат, окно и ответственный, чек-лист |
+| [RUNBOOK.md](RUNBOOK.md) | инциденты: 5xx, БД, Redis, диск, TLS, SMTP/ИИ, утечка секретов; восстановление БД и uploads; ротации; RPO/RTO |
+| [INCIDENT-RUNBOOK.md](INCIDENT-RUNBOOK.md) | роли и каналы при инциденте, шаблоны коммуникации, статус-страница, уведомление РКН, постмортем |
+| [SECRETS.md](SECRETS.md) | реестр секретов: где хранится, владелец, ротация, действия при утечке |
+| [CHANGELOG.md](CHANGELOG.md) | версии Backend 1.2.6 и Frontend 1.2.20, раздел Unreleased |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | лицензии зависимостей, шрифт Inter, иллюстрации |
+| [docs/api/openapi.yaml](docs/api/openapi.yaml) | контракт API (OpenAPI 3.1) |
+| [docs/DATA-RETENTION.md](docs/DATA-RETENTION.md) | сроки хранения данных, удаление и экспорт, публикация изменений документов |
+| [docs/REVIEW-CHECKLIST.md](docs/REVIEW-CHECKLIST.md) | Definition of Ready/Done, чек-лист ревью PR, календарь регулярных проверок |
+| [docs/ADR/0001-architecture.md](docs/ADR/0001-architecture.md) | решение по стеку, cookie-сессиям, отдельному origin админки и Redis-локам |
+| [Backend/k8s/README.md](Backend/k8s/README.md) | Kubernetes: деплой, cutover, Redis, перенос данных, диагностика |
+| [Backend/PGADMIN.md](Backend/PGADMIN.md) | pgAdmin, доступ к БД, изоляция сетей |
+| [Frontend/admin/README.md](Frontend/admin/README.md) | админ-панель: разделы, выгрузка на поддомен, CSP |
+| [.githooks/README.md](.githooks/README.md) | автотег версии при push |
+
+## Известные ограничения репозитория
+
+* `.gitignore` содержит строки `DEPLOY.md` и `upload-dist.ps1`: файл `DEPLOY.md` создан в
+  рабочем каталоге, но **не попадёт в git**, пока правило не удалено; `upload-dist.ps1`
+  (FTP-выгрузка) по этой же причине не версионируется. Рекомендуется убрать обе строки
+  и закоммитить документ и скрипт — см. `DEPLOY.md`, раздел «FTP-деплой фронта».
+* `Frontend/package.json` содержит скрипт `deploy` (`node ../deploy.mjs`), но файла
+  `deploy.mjs` в репозитории нет (он в `.gitignore`) — `npm run deploy` не работает.
+  Рабочий способ выгрузки фронта — `upload-dist.ps1` (см. `DEPLOY.md`).
+* Фоновые задачи выполняются внутри процесса backend; единственность выполнения в
+  нескольких репликах обеспечивают Redis-локи, при недоступном Redis каждая реплика
+  выполняет задачу сама (см. `ARCHITECTURE.md`).
+* Шрифт Inter (OFL 1.1) лежит в `Frontend/public/fonts/`, текст лицензии в репозиторий
+  не добавлен (см. `THIRD_PARTY_NOTICES.md`).
+* В JSON-экспорте аккаунта (`GET /api/users/me/export`) поля истории полива
+  `wateredAt`/`daysLate`/`comment` приходят пустыми (формируются из несуществующих
+  атрибутов модели). Для полной истории используйте `GET /api/plants/history` или CSV
+  `GET /api/plants/export`; пробел описан в `docs/DATA-RETENTION.md` §3.
+* В Kubernetes CronJob `db-backup` сохраняет только дамп БД; архив `uploads` туда не
+  входит — фото нужно архивировать отдельно (`DEPLOY.md` §1.2, `RUNBOOK.md` §7.3).

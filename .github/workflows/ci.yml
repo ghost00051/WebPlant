@@ -1,0 +1,398 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    name: Frontend (lint, unit, build, verify)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Установка зависимостей (npm ci)
+        run: npm ci
+
+      - name: Линтер (eslint, 0 ошибок)
+        run: npm run lint
+
+      - name: Unit-тесты (node --test)
+        run: npm test
+
+      - name: Сборка (Vite + prerender + build-manifest)
+        run: npm run build
+
+      - name: Проверки сборки, роутинга, CSP и манифеста
+        run: npm run verify
+
+      - name: Манифест сборки (версия/коммит)
+        run: |
+          cat dist/build-info.json
+          node -e "const m=require('./dist/build-info.json'); if(!m.version||!m.commit||!m.builtAt||!m.routes) process.exit(1)"
+
+      - name: Артефакт build-info.json
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-info
+          path: Frontend/dist/build-info.json
+          retention-days: 14
+
+  backend:
+    name: Backend (lint, unit, миграции, интеграция)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: Backend
+    env:
+      NODE_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: '5432'
+      DB_NAME: webplant_test
+      DB_USER: webplant
+      DB_PASSWORD: webplant_test_password
+      PGPASSWORD: webplant_test_password
+      REDIS_URL: redis://127.0.0.1:6379/0
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: webplant_test
+          POSTGRES_USER: webplant
+          POSTGRES_PASSWORD: webplant_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U webplant -d webplant_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Установка зависимостей (npm ci)
+        run: npm ci
+
+      - name: Линтер (eslint)
+        run: npm run lint
+
+      - name: Unit-тесты (node --test)
+        run: npm test
+
+      - name: Клиент PostgreSQL (psql) для прогона миграций
+        run: |
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends postgresql-client
+          fi
+          psql --version
+
+      - name: Базовая схема для миграций (users, plants, push_subscriptions, chat_logs)
+        run: node scripts/init-integration-db.mjs
+
+      - name: Миграции (psql, ON_ERROR_STOP=1)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(migrations/*.sql)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "::error::В Backend/migrations нет SQL-файлов"
+            exit 1
+          fi
+          for file in "${files[@]}"; do
+            echo "→ ${file}"
+            psql -X -q -v ON_ERROR_STOP=1 \
+              -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+              -f "$file"
+          done
+          echo "Применено файлов: ${#files[@]}"
+
+      - name: Миграции — повторный прогон (идемпотентность)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(migrations/*.sql)
+          for file in "${files[@]}"; do
+            echo "→ ${file} (повторно)"
+            psql -X -q -v ON_ERROR_STOP=1 \
+              -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" \
+              -f "$file"
+          done
+          echo "Повторный прогон прошёл: ${#files[@]} файлов идемпотентны"
+
+      - name: Интеграционные тесты (Postgres + Redis)
+        env:
+          RUN_INTEGRATION: '1'
+        run: npm run test:integration
+
+      - name: Smoke-тест старта приложения (/livez и /health)
+        env:
+          PORT: '5050'
+          BACKGROUND_JOBS_ENABLED: 'false'
+        run: |
+          set -euo pipefail
+          work_dir="${RUNNER_TEMP:-/tmp}"
+          node index.js >"$work_dir/backend-smoke.log" 2>&1 &
+          server_pid=$!
+
+          cleanup() {
+            kill "$server_pid" 2>/dev/null || true
+            for _ in $(seq 1 10); do
+              kill -0 "$server_pid" 2>/dev/null || break
+              sleep 0.5
+            done
+            kill -9 "$server_pid" 2>/dev/null || true
+            wait "$server_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in $(seq 1 45); do
+            if curl -fsS "http://127.0.0.1:${PORT}/livez" >"$work_dir/livez.json"; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" -ne 1 ]; then
+            echo "::error::Сервер не ответил на /livez за 45 секунд"
+            cat "$work_dir/backend-smoke.log"
+            exit 1
+          fi
+
+          cat "$work_dir/livez.json"
+          curl -fsS "http://127.0.0.1:${PORT}/health" | tee "$work_dir/health.json"
+
+
+
+          HEALTH_JSON="$work_dir/health.json" node -e "const fs = require('node:fs'); const h = JSON.parse(fs.readFileSync(process.env.HEALTH_JSON, 'utf8')); if (h.status !== 'ok') { console.error(h); process.exit(1) } console.log('health:', JSON.stringify({ status: h.status, redis: h.redis, mail: h.mail, backgroundJobs: h.backgroundJobs }))"
+          cat "$work_dir/backend-smoke.log"
+
+  security:
+    name: Security (SCA, секреты, CodeQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout (полная история для gitleaks)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: |
+            Backend/package-lock.json
+            Frontend/package-lock.json
+
+      - name: SCA Backend (npm audit --audit-level=high)
+        working-directory: Backend
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --audit-level=high
+
+      - name: SCA Frontend (npm audit --audit-level=high)
+        working-directory: Frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm audit --audit-level=high
+
+      - name: Скан секретов (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+      - name: CodeQL init (javascript-typescript)
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-and-quality
+
+      - name: CodeQL analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: '/language:javascript-typescript'
+
+  notify-failure:
+    name: Уведомление о падении CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [frontend, backend, security]
+    if: ${{ failure() && github.event_name != 'pull_request' }}
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Issue с меткой ci-failure (создать или обновить)
+        uses: actions/github-script@v7
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        with:
+          script: |
+            const label = 'ci-failure'
+            const { owner, repo } = context.repo
+            const needs = JSON.parse(process.env.NEEDS)
+            const failed = Object.entries(needs)
+              .filter(([, result]) => result.result === 'failure')
+              .map(([job]) => job)
+
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`
+            const workflow = context.workflow || 'CI'
+            const title = `CI упал: ${workflow} @ ${context.ref}`
+
+            // Метку нельзя передать в issues.create, если её ещё нет в репозитории.
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: label })
+            } catch (error) {
+              if (error.status !== 404) throw error
+              await github.rest.issues.createLabel({
+                owner,
+                repo,
+                name: label,
+                color: 'd73a4a',
+                description: 'Авто-issue: упал CI'
+              })
+            }
+
+            const body = [
+              `**Workflow:** ${workflow}`,
+              `**Ветка:** \`${context.ref}\``,
+              `**Коммит:** ${context.sha}`,
+              `**Упавшие джобы:** ${failed.length ? failed.map(job => `\`${job}\``).join(', ') : 'неизвестно (см. лог)'}`,
+              `**Лог:** ${runUrl}`
+            ].join('\n')
+
+            // Не плодим issue на каждый push: обновляем существующую по этому workflow/ветке.
+            const { data: openIssues } = await github.rest.issues.listForRepo({
+              owner,
+              repo,
+              state: 'open',
+              labels: label,
+              per_page: 50
+            })
+            const existing = openIssues.find(issue => issue.title === title)
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body
+              })
+              core.info(`Обновил issue
+            } else {
+              const created = await github.rest.issues.create({
+                owner,
+                repo,
+                title,
+                body,
+                labels: [label]
+              })
+              core.info(`Создал issue
+            }
+
+  a11y-smoke:
+    name: A11y/E2E smoke (опционально, аудит-харнесс)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Проверить наличие аудит-харнесса
+        id: harness
+        run: |
+          if [ -f ../state/frontend-audit/tools/audit.mjs ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::state/frontend-audit/tools/audit.mjs отсутствует в чекауте — a11y/E2E smoke пропущен"
+          fi
+
+      - name: Google Chrome
+        if: ${{ steps.harness.outputs.present == 'true' }}
+        id: chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Установка зависимостей (npm ci)
+        if: ${{ steps.harness.outputs.present == 'true' }}
+        run: npm ci
+
+      - name: Сборка dist для smoke-прогонов
+        if: ${{ steps.harness.outputs.present == 'true' }}
+        run: npm run build
+
+      - name: 'axe-smoke: /, /login, /home'
+        if: ${{ steps.harness.outputs.present == 'true' }}
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          node ../state/frontend-audit/tools/audit.mjs axe / --mock=guest --w=1440
+          node ../state/frontend-audit/tools/audit.mjs axe /login --mock=guest --w=1440
+          node ../state/frontend-audit/tools/audit.mjs axe /home --mock=user --w=1440
+
+      - name: E2E (логин, полив, добавление растения, CSP)
+        if: ${{ steps.harness.outputs.present == 'true' }}
+        env:
+          CHROME_PATH: ${{ steps.chrome.outputs.chrome-path }}
+          WEBPLANT_E2E_REQUIRED: '1'
+        run: npm run test:e2e
+
+      - name: Admin smoke (если Frontend/admin в чекауте)
+        if: ${{ steps.harness.outputs.present == 'true' && hashFiles('Frontend/admin/index.html') != '' }}
+        run: npm run verify:admin

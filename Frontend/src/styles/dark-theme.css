@@ -4,7 +4,13 @@
     --theme-surface: #ffffff;
     --theme-raised: #f5f3ef;
     --theme-text: #2d2d2d;
-    --theme-muted: #858781;
+    --theme-muted: #686c66;
+    --theme-accent-text: #2f6b47;
+    --theme-on-accent: #10301f;
+    --theme-focus-ring: #52705c;
+    --theme-cta-strong: #1f6e73;
+    --theme-danger: #b3352c;
+    --theme-danger-soft: #fcf0ef;
     --theme-border: #e5e5df;
     --theme-accent: #7FD1A0;
     --theme-accent-soft: #e9efea;
@@ -26,6 +32,12 @@
     --theme-raised: #222329;
     --theme-text: #f4f5f4;
     --theme-muted: #a7aaa8;
+    --theme-accent-text: #a5c0ae;
+    --theme-on-accent: #10301f;
+    --theme-focus-ring: #a5c0ae;
+    --theme-cta-strong: #1f6e73;
+    --theme-danger: #ffb7b7;
+    --theme-danger-soft: #482a2c;
     --theme-border: #303238;
     --theme-accent: #7FD1A0;
     --theme-accent-soft: #24332b;
@@ -334,6 +346,96 @@ html[data-theme='dark'] .wateringDeleteDialog__confirm {
 
 html[data-theme='dark'] .appleSwitchSettings input:checked + .sliderSettings {
     background-color: var(--theme-accent);
+}
+
+
+html body .siteHeaderLogin,
+html body .landingLoginLink,
+html body .landingFooter a,
+html body .contentBreadcrumbs a {
+    color: var(--theme-accent-text);
+}
+
+html body .contentCta a {
+    background: var(--theme-cta-strong);
+    color: #ffffff;
+}
+
+html body .contentCta a:hover {
+    background: #176066;
+}
+
+html body .saveOfEditProfile,
+html body .check-button,
+html body .check-button span {
+    color: var(--theme-on-accent);
+}
+
+html body .editProfile label p {
+    color: var(--theme-muted);
+}
+
+html body .tabbarButton .tab-label {
+    color: var(--theme-accent-text);
+}
+
+html body .desktopDashboardHeader p,
+html body .desktopProfileText small,
+html body .desktopDashboardAssistant small,
+html body .desktopAssistantLink small,
+html body .desktopDateBadge {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] body .desktopAssistantLink {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] body .desktopAssistantLink strong,
+html[data-theme='dark'] body .desktopDashboardAssistant strong {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] body .pwaInstallHintAction,
+html[data-theme='dark'] body .pwaInstallHintDismiss {
+    color: var(--theme-accent-text);
+}
+
+html body .aiTicker,
+html[data-theme='dark'] body .aiTicker {
+    background-color: #FFD54A;
+}
+
+html body :is(a, button, input, textarea, select, summary):focus-visible {
+    outline-color: var(--theme-focus-ring);
+}
+
+html[data-theme='dark'] body .landingPrimaryAction {
+    color: #ffffff;
+}
+
+html[data-theme='dark'] body .aiTicker,
+html[data-theme='dark'] body .aiTickerTrack {
+    background-color: #FFD54A;
+}
+
+html[data-theme='dark'] body .aiTicker {
+    background-image: none;
+}
+
+html[data-theme='dark'] body .tabbar li.active {
+    background-color: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] body .tabbar li:hover {
+    background-color: var(--theme-raised);
+}
+
+html[data-theme='dark'] body .mini-calendar__month-day.is-today .mini-calendar__day-number,
+html[data-theme='dark'] body .mini-calendar__day.is-today .mini-calendar__day-number {
+    color: #ffffff;
 }
 
 @media (prefers-reduced-motion: reduce) {

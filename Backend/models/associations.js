@@ -3,6 +3,8 @@ import User from './userModels.js'
 import Plant from './Plant.js'
 import PlantPhoto from './PlantPhoto.js'
 import ChatLog from './ChatLog.js'
+import AiAdviceLog from './AiAdviceLog.js'
+import AdminAuditLog from './AdminAuditLog.js'
 import './Passkey.js'
 import './PasskeyChallenge.js'
 
@@ -14,6 +16,9 @@ User.hasMany(Plant, {
 
 User.hasMany(ChatLog, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 ChatLog.belongsTo(User, { foreignKey: 'user_id' })
+
+User.hasMany(AiAdviceLog, { foreignKey: 'user_id', onDelete: 'SET NULL' })
+AiAdviceLog.belongsTo(User, { foreignKey: 'user_id' })
 
 Plant.belongsTo(User, {
     foreignKey: 'user_id',
@@ -36,4 +41,14 @@ WateringLog.belongsTo(Plant, { foreignKey: 'plant_id', as: 'plant' })
 User.hasMany(WateringLog, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 WateringLog.belongsTo(User, { foreignKey: 'user_id' })
 
-export { User, Plant, PlantPhoto }
+User.hasMany(AdminAuditLog, {
+    foreignKey: 'admin_id',
+    as: 'auditLogs',
+    onDelete: 'SET NULL'
+})
+AdminAuditLog.belongsTo(User, {
+    foreignKey: 'admin_id',
+    as: 'admin'
+})
+
+export { User, Plant, PlantPhoto, AdminAuditLog }

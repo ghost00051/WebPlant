@@ -1,0 +1,77 @@
+
+
+DirectoryIndex index.html
+Options -Indexes
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    RewriteCond %{HTTPS} !=on
+    RewriteCond %{HTTP:X-Forwarded-Proto} !https
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
+
+    RewriteCond %{THE_REQUEST} ^\S+\s+/index\.html[\s?] [NC]
+    RewriteRule ^ / [R=301,L]
+
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+    RewriteRule ^ - [R=404,L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "geolocation=(), microphone=(), camera=()"
+    Header always set Content-Security-Policy "default-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https://server.checktheplants.ru; connect-src 'self' https://server.checktheplants.ru; font-src 'self'"
+
+
+    <FilesMatch "\.html$">
+        Header set Cache-Control "no-store, must-revalidate"
+    </FilesMatch>
+    <FilesMatch "\.(js|css)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+    <FilesMatch "\.(png|jpe?g|svg|webp|ico)$">
+        Header set Cache-Control "public, max-age=86400"
+    </FilesMatch>
+    <FilesMatch "\.(txt|json)$">
+        Header set Cache-Control "public, max-age=600"
+    </FilesMatch>
+</IfModule>
+
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/css application/javascript application/json image/svg+xml
+</IfModule>
+
+<IfModule mod_authz_core.c>
+    <FilesMatch "(?i)^readme(\..*)?$">
+        Require all denied
+    </FilesMatch>
+    <FilesMatch "(?i)\.(md|markdown|map)$">
+        Require all denied
+    </FilesMatch>
+    <FilesMatch "(?i)^config\.local\.js$">
+        Require all denied
+    </FilesMatch>
+    <FilesMatch "(?i)^\.(env|git)">
+        Require all denied
+    </FilesMatch>
+    <FilesMatch "^\.(?!well-known)">
+        Require all denied
+    </FilesMatch>
+</IfModule>
+
+<IfModule !mod_authz_core.c>
+    <FilesMatch "(?i)^(readme(\..*)?|config\.local\.js|\.env.*|\.git.*)$|\.(md|markdown|map)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+    <FilesMatch "^\.(?!well-known)">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>

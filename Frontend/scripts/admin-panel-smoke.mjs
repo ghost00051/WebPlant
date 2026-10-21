@@ -308,6 +308,21 @@ const pushPayload = {
     }]
 }
 
+const mailPayload = {
+    mailConfigured: true,
+    mailStatus: 'configured',
+    mailProblems: [],
+    from: 'Лейка <lejka@mail.ru>',
+    users: { total: 12, withEmail: 11, withoutEmail: 1 },
+    broadcasts: { total: 3, pending: 1, sending: 0, sent: 1, failed: 1, canceled: 0 },
+    totals: { sent: 14, failed: 2, skipped: 1 },
+    recent: [{
+        id: 1, subject: 'Как поливать растения в отпуске', status: 'sent', target_mode: 'all',
+        scheduled_for: null, sent_at: new Date().toISOString(), sent_count: 11, failed_count: 0,
+        skipped_count: 0, total_recipients: 11, created_at: new Date().toISOString()
+    }]
+}
+
 const healthPayload = {
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -404,6 +419,23 @@ function route(url) {
                 : pushPayload
         }
     }
+    if (path.includes('/admin/mail/overview')) {
+        return {
+            status: 200,
+            data: empty
+                ? {
+                    mailConfigured: false,
+                    mailStatus: 'not-configured',
+                    mailProblems: [],
+                    from: '',
+                    users: { total: 0, withEmail: 0, withoutEmail: 0 },
+                    broadcasts: { total: 0, pending: 0, sending: 0, sent: 0, failed: 0, canceled: 0 },
+                    totals: { sent: 0, failed: 0, skipped: 0 },
+                    recent: []
+                }
+                : mailPayload
+        }
+    }
     if (path.includes('/system/docker-stats')) {
         if (empty) return { status: 503, data: { error: 'Docker недоступен' } }
         return { status: 200, data: dockerPayload }
@@ -464,6 +496,7 @@ const views = await import(new URL('../admin/js/views/overview.js', import.meta.
 const visitors = await import(new URL('../admin/js/views/visitors.js', import.meta.url).href)
 const users = await import(new URL('../admin/js/views/users.js', import.meta.url).href)
 const resources = await import(new URL('../admin/js/views/resources.js', import.meta.url).href)
+const ai = await import(new URL('../admin/js/views/ai.js', import.meta.url).href)
 const system = await import(new URL('../admin/js/views/system.js', import.meta.url).href)
 
 const allViews = [
@@ -474,10 +507,11 @@ const allViews = [
     resources.wateringsView,
     resources.photosView,
     resources.chatView,
+    ai.aiView,
     system.systemView
 ]
 
-check('восемь разделов объявлены', allViews.length === 8)
+check('девять разделов объявлены', allViews.length === 9)
 check('у всех разделов есть id, заголовок и render', allViews.every(view =>
     typeof view.id === 'string' && typeof view.title === 'string' && typeof view.render === 'function'))
 check('идентификаторы уникальны', new Set(allViews.map(view => view.id)).size === allViews.length)
@@ -521,7 +555,7 @@ try {
     check('раздел пользователей принимает параметры из адреса', false, error.message)
 }
 
-const { loadInto } = await import(new URL('../admin/js/ui.js', import.meta.url).href)
+const { loadInto, table } = await import(new URL('../admin/js/ui.js', import.meta.url).href)
 const errorRoot = makeEl('div')
 const failed = await loadInto(errorRoot, () => Promise.reject(new Error('сломалось')), () => makeEl('div'))
 check('loadInto показывает ошибку', failed === null && errorRoot.children.length === 1)
@@ -625,12 +659,41 @@ console.log('\n== Оболочка приложения')
 const appRoot = document.getElementById('app')
 try {
     await import(new URL('../admin/js/app.js', import.meta.url).href)
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await new Promise(resolve => setTimeout(resolve, 400))
     check('app.js отрисовал оболочку', appRoot.children.length >= 1, `узлов: ${appRoot.children.length}`)
     check('запросы к API ушли', requests.length >= 5, requests.slice(0, 3).join(', '))
 } catch (error) {
     check('app.js отрисовал оболочку', false, `${error?.name}: ${error?.message}`)
 }
+
+console.log('\n== Безопасность и доступность')
+const format = await import(new URL('../admin/js/format.js', import.meta.url).href)
+check('CSV: формула с = экранирована апострофом', format.csvCell('=1+1') === "'=1+1")
+check('CSV: формула с @ экранирована апострофом', format.csvCell('@SUM(A1)') === "'@SUM(A1)")
+check('CSV: число не превращается в текст', format.csvCell(-5) === '-5' && format.csvCell(42) === '42')
+check('CSV: обычный текст не меняется', format.csvCell('Монстера') === 'Монстера')
+check('email в списках маскируется', format.maskEmail('b@example.com') === 'b***@example.com')
+check('маска не ломает строку без @', format.maskEmail('без-почты') === 'без-почты')
+
+const scopedTable = table({ columns: [{ key: 'a', label: 'Колонка A' }], rows: [{ a: 1 }] })
+const headCell = findNode(scopedTable, node => node.tagName === 'TH')
+check('th имеет scope=col', headCell?.getAttribute('scope') === 'col')
+const tableRegion = findNode(scopedTable, node => node.getAttribute?.('role') === 'region')
+check('обёртка таблицы доступна с клавиатуры и названа',
+    Boolean(tableRegion) && tableRegion.getAttribute('tabindex') === '0' &&
+    Boolean(tableRegion.getAttribute('aria-label')))
+
+const titledChart = lineChart({
+    title: 'Тестовый график',
+    series: [{ name: 'A', color: '#111', points: [{ x: '2026-01-01', y: 1 }] }],
+    table: { columns: [{ label: 'Дата', value: point => point.x }, { label: 'Значение', value: point => point.y }], rows: [{ x: '2026-01-01', y: 1 }] }
+})
+const chartSvg = findNode(titledChart, node => node.tagName === 'SVG')
+check('SVG-график имеет доступное имя', chartSvg?.getAttribute('aria-label') === 'Тестовый график')
+check('у графика есть кнопка «Показать таблицей»',
+    Boolean(findNode(titledChart, node => node.tagName === 'BUTTON' && node.textContent === 'Показать таблицей')))
+check('данные графика продублированы таблицей',
+    Boolean(findNode(titledChart, node => node.tagName === 'TABLE')))
 
 console.log(`\n${failures.length ? '❌' : '✅'} Проверок: ${checks}, ошибок: ${failures.length}`)
 if (failures.length) console.log(failures.map(name => ` - ${name}`).join('\n'))

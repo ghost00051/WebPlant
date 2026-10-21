@@ -1,0 +1,91 @@
+.notificationsButtonWrap {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.notificationsTrigger {
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+
+.notificationsTrigger>img {
+  display: block;
+  width: 44px;
+  height: 44px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.notificationsTrigger:focus-visible,
+.desktopNotificationsButton:focus-visible {
+  outline: 2px solid #4c9a52;
+  outline-offset: 2px;
+}
+
+@media (min-width: 1024px) {
+  .desktopHeaderActions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .desktopNotificationsButton {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 1px solid #e8ece7;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+    flex: 0 0 auto;
+  }
+
+  .desktopNotificationsButton>img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .desktopNotificationsBadge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #2d2d2d;
+    color: #ffffff;
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+}
+
+html[data-theme='dark'] .notificationsTrigger>img {
+  background: #f4f5f4;
+}
+
+html[data-theme='dark'] .desktopNotificationsButton {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .desktopNotificationsBadge {
+  background: #f4f5f4;
+  color: #191a1f;
+}

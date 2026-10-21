@@ -109,18 +109,18 @@
   }
 
   .mini-calendar__month-day.is-outside {
-    color: #c8c7c3;
+    color: var(--theme-muted);
   }
 
   .mini-calendar__month-day.is-watering-day {
     border-color: #a8b7aa;
     background: #f4f6f3;
-    color: #718578;
+    color: var(--theme-muted);
   }
 
   .mini-calendar__month-day.is-today {
-    border-color: var(--color-white-tema);
-    background: var(--color-white-tema);
+    border-color: #5C7463;
+    background: #5C7463;
     color: #fff;
     font-weight: 600;
   }
@@ -134,7 +134,7 @@
     flex-wrap: wrap;
     gap: 6px 18px;
     margin-top: 13px;
-    color: #92928d;
+    color: var(--theme-muted);
     font-size: 10px;
   }
 

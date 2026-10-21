@@ -40,7 +40,7 @@ metadata:
   labels:
     app: webplant-backend
 spec:
-  replicas: 2
+  replicas: 1
   revisionHistoryLimit: 5
   strategy:
     type: RollingUpdate
@@ -55,6 +55,8 @@ spec:
       labels:
         app: webplant-backend
     spec:
+      serviceAccountName: webplant-backend
+      automountServiceAccountToken: false
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsUser: 1001
@@ -77,6 +79,8 @@ spec:
           volumeMounts:
             - name: uploads
               mountPath: /app/uploads
+            - name: tmp
+              mountPath: /tmp
           startupProbe:
             httpGet:
               path: /health
@@ -93,13 +97,17 @@ spec:
             failureThreshold: 3
           livenessProbe:
             httpGet:
-              path: /health
+              path: /livez
               port: http
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 4
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            seccompProfile:
+              type: RuntimeDefault
             capabilities:
               drop:
                 - ALL
@@ -114,6 +122,9 @@ spec:
         - name: uploads
           persistentVolumeClaim:
             claimName: backend-uploads
+        - name: tmp
+          emptyDir:
+            sizeLimit: 128Mi
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget

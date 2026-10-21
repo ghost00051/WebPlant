@@ -18,9 +18,7 @@ export async function refreshRememberedSession(req, res, next) {
         }
 
         if (tokenPayload && tokenPayload.tokenType !== 'refresh') {
-            const legacySession =
-                tokenPayload.tokenType === 'session' && !tokenPayload.jti
-            if (legacySession || await isAuthTokenActive(tokenPayload)) return next()
+            if (await isAuthTokenActive(tokenPayload)) return next()
 
             clearAuthCookies(res)
             req.cookies.token = undefined
@@ -74,9 +72,7 @@ async function authenticate(req, res, next, required) {
             verified = undefined
         }
         if (verified) {
-            if (verified.tokenType === 'session' && !verified.jti) {
-                decoded = verified
-            } else if (
+            if (
                 verified.tokenType !== 'refresh' &&
                 await isAuthTokenActive(verified)
             ) {

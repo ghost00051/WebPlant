@@ -1,0 +1,610 @@
+.adminMailPanel {
+    box-sizing: border-box;
+    margin: 16px clamp(12px, 4vw, 24px) 0;
+    padding: clamp(16px, 4vw, 24px);
+    background-color: #FFFFFF;
+    border-radius: 20px;
+    font-family: 'Inter', sans-serif;
+    color: #2D2D2D;
+}
+
+.adminMailPanel h2 {
+    margin: 0;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    color: #2D2D2D;
+}
+
+.adminMailPanel *,
+.adminMailPanel *::before,
+.adminMailPanel *::after {
+    box-sizing: border-box;
+}
+
+.adminMailMessage {
+    margin: 12px 0 0;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+    color: #5A5A5A;
+}
+
+.adminMailFrom strong {
+    color: #2D2D2D;
+}
+
+.adminMailError {
+    color: #B42318;
+}
+
+.adminMailSuccess {
+    color: #2F6B45;
+}
+
+.adminMailWarning {
+    padding: 12px 14px;
+    border: 1px solid #E7C7A0;
+    border-radius: 14px;
+    background-color: #FDF4E7;
+    color: #8A4B08;
+    font-weight: 500;
+}
+
+.adminMailProblems {
+    margin: 12px 0 0;
+    padding: 12px 14px 12px 30px;
+    border: 1px solid #E7C7A0;
+    border-radius: 14px;
+    background-color: #FDF4E7;
+    color: #8A4B08;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.adminMailStats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.adminMailStat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 12px 8px;
+    background-color: #F5F3EF;
+    border-radius: 16px;
+    text-align: center;
+}
+
+.adminMailStatValue {
+    margin: 0;
+    font-size: var(--font-size-lg);
+    font-weight: bold;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminMailStatLabel {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    color: #8A8A8A;
+    line-height: 1.35;
+}
+
+.adminMailForm {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-top: 16px;
+}
+
+.adminMailFieldset {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.adminMailFieldset legend {
+    padding: 0;
+    margin-bottom: 8px;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminMailModeSwitch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.adminMailModeSwitch button {
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-md);
+    cursor: pointer;
+}
+
+.adminMailModeSwitch button.is-active {
+    border-color: #7FD1A0;
+    background: #E8F5E9;
+    color: #35463B;
+    font-weight: 600;
+}
+
+.adminMailRecipients {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 14px;
+    background-color: #F5F3EF;
+    border-radius: 16px;
+}
+
+.adminMailRecipientsToolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.adminMailSelectedCount {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: #35463B;
+}
+
+.adminMailRecipientsActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.adminMailRecipientsList {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.adminMailRecipient {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background-color: #FFFFFF;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    cursor: pointer;
+}
+
+.adminMailRecipientStatic {
+    cursor: default;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.adminMailRecipient input[type='checkbox'] {
+    width: 18px;
+    height: 18px;
+    margin: 3px 0 0;
+    flex: 0 0 auto;
+    accent-color: #7FD1A0;
+    cursor: pointer;
+}
+
+.adminMailRecipientInfo {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.adminMailRecipientName {
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminMailRecipientMeta {
+    font-size: var(--font-size-sm);
+    color: #8A8A8A;
+    overflow-wrap: anywhere;
+}
+
+.adminMailRecipientMail {
+    font-size: var(--font-size-xs);
+    color: #7FD1A0;
+}
+
+.adminMailRecipientNoMail {
+    color: #B26A00;
+}
+
+.adminMailSelected {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px dashed #DDD8CE;
+}
+
+.adminMailSelectedTitle {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: #5A5A5A;
+}
+
+.adminMailRemoveButton {
+    flex: 0 0 auto;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid #E5E5E5;
+    border-radius: 10px;
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-xs);
+    cursor: pointer;
+}
+
+.adminMailFields {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.adminMailFieldsRow {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.adminMailField {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.adminMailFieldLabel {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminMailCounter {
+    font-size: var(--font-size-xs);
+    font-weight: 400;
+    color: #8A8A8A;
+}
+
+.adminMailField input[type='text'],
+.adminMailField input[type='search'],
+.adminMailField textarea,
+.adminMailScheduleRow input {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background-color: #F5F3EF;
+    color: #2D2D2D;
+    font: inherit;
+    font-size: var(--font-size-md);
+}
+
+.adminMailField textarea {
+    resize: vertical;
+    min-height: 140px;
+    line-height: 1.45;
+}
+
+.adminMailField input:focus-visible,
+.adminMailField textarea:focus-visible,
+.adminMailScheduleRow input:focus-visible {
+    outline: 2px solid #7FD1A0;
+    outline-offset: 1px;
+}
+
+.adminMailHint {
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+    line-height: 1.4;
+}
+
+.adminMailScheduleRow {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+
+.adminMailScheduleRow input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.adminMailSecondaryButton {
+    min-height: 44px;
+    padding: 10px 14px;
+    border: 1px solid #E5E5E5;
+    border-radius: 12px;
+    background-color: #F5F3EF;
+    color: #5A5A5A;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    flex: 0 0 auto;
+}
+
+.adminMailSecondaryButton:disabled,
+.adminMailRemoveButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.adminMailPreview {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 14px;
+    background-color: #F5F3EF;
+    border-radius: 16px;
+}
+
+.adminMailPreviewHead {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.adminMailPreviewHeading {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+}
+
+.adminMailPreviewToggle {
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: var(--font-size-xs);
+}
+
+.adminMailPreviewFrame {
+    width: 100%;
+    height: 440px;
+    border: 1px solid #E5E5E5;
+    border-radius: 14px;
+    background-color: #FFFFFF;
+}
+
+.adminMailPreviewText {
+    margin: 0;
+    max-height: 440px;
+    overflow: auto;
+    padding: 14px;
+    border: 1px solid #E5E5E5;
+    border-radius: 14px;
+    background-color: #FFFFFF;
+    color: #2D2D2D;
+    font-family: 'Inter', monospace;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.adminMailPreviewMeta {
+    margin: 0;
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+    overflow-wrap: anywhere;
+}
+
+.adminMailPreviewMeta strong {
+    color: #2D2D2D;
+}
+
+.adminMailActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.adminMailSubmitButton {
+    min-height: 48px;
+    flex: 1 1 220px;
+    padding: 12px 16px;
+    border: 0;
+    border-radius: 14px;
+    background-color: #E8F5E9;
+    color: #2D2D2D;
+    font: inherit;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.adminMailSubmitButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.adminMailActions .adminMailSecondaryButton {
+    flex: 0 1 auto;
+}
+
+.adminMailRecent {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #EFEBE4;
+}
+
+.adminMailRecentList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 10px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.adminMailRecentItem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 12px;
+    background-color: #F5F3EF;
+    border-radius: 12px;
+}
+
+.adminMailRecentMain {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.adminMailRecentTitle {
+    margin: 0;
+    font-size: var(--font-size-md);
+    font-weight: 500;
+    color: #2D2D2D;
+    overflow-wrap: anywhere;
+}
+
+.adminMailRecentMeta,
+.adminMailRecentCounts {
+    margin: 4px 0 0;
+    font-size: var(--font-size-xs);
+    color: #8A8A8A;
+}
+
+.adminMailStatusPending {
+    color: #8A4B08;
+    font-weight: 600;
+}
+
+.adminMailStatusSending {
+    color: #1B5FA8;
+    font-weight: 600;
+}
+
+.adminMailStatusSent {
+    color: #2F6B45;
+    font-weight: 600;
+}
+
+.adminMailStatusFailed {
+    color: #B42318;
+    font-weight: 600;
+}
+
+.adminMailStatusCanceled {
+    color: #8A8A8A;
+    font-weight: 600;
+}
+
+.adminMailCancelButton {
+    flex: 0 0 auto;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid #E7C7A0;
+    border-radius: 10px;
+    background-color: #FDF4E7;
+    color: #8A4B08;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.adminMailCancelButton:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
+@media (max-width: 640px) {
+    .adminMailFieldsRow {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .adminMailStats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .adminMailScheduleRow {
+        flex-direction: column;
+    }
+
+    .adminMailScheduleRow .adminMailSecondaryButton {
+        width: 100%;
+    }
+
+    .adminMailRecentItem {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .adminMailCancelButton {
+        width: 100%;
+    }
+
+    .adminMailPreviewFrame,
+    .adminMailPreviewText {
+        height: 320px;
+        max-height: 320px;
+    }
+}
+
+@media (max-width: 380px) {
+    .adminMailModeSwitch {
+        grid-template-columns: 1fr;
+    }
+
+    .adminMailRecipientsToolbar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .adminMailRecipientsActions {
+        flex-direction: column;
+    }
+
+    .adminMailRecipientsActions .adminMailSecondaryButton {
+        width: 100%;
+    }
+
+    .adminMailActions {
+        flex-direction: column;
+    }
+
+    .adminMailActions .adminMailSecondaryButton {
+        width: 100%;
+    }
+}

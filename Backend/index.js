@@ -6,12 +6,15 @@ import helmet from 'helmet'
 import path from 'path'
 import { getGuestToken } from './middleware/guestToken.js'
 import { refreshRememberedSession } from './middleware/auth.js'
+import { accessLog, logError, requestContext } from './middleware/accessLog.js'
+import { validateJsonShape } from './middleware/validateJsonShape.js'
 import { isAllowedOrigin, parseLocalDevOrigins } from './utils/origins.js'
 import { plantThumbRequestHandler } from './utils/plantPhotoThumb.js'
 import { validateProductionPasskeyConfig } from './utils/passkeyConfig.js'
 import { describeMailConfigProblems, describeMailStatus, isMailConfigured } from './services/mailService.js'
-import { describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
+import { closeRedis, describeRedisStatus, isRedisConfigured, pingRedis } from './redis.js'
 import { getAiCacheStats } from './utils/aiCache.js'
+import * as pushServiceModule from './services/pushService.js'
 import sequelize from "./db.js"
 
 import "./models/userModels.js"
@@ -22,11 +25,15 @@ import "./models/NotificationPreference.js"
 import "./models/Notification.js"
 import "./models/PushBroadcast.js"
 import "./models/PushBroadcastRecipient.js"
+import "./models/MailBroadcast.js"
+import "./models/MailBroadcastRecipient.js"
 import "./models/PasswordResetToken.js"
 import "./models/Plant.js"
+import "./models/PlantCarePlan.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
 import "./models/ChatLog.js"
+import "./models/AiAdviceLog.js"
 import "./models/SiteVisit.js"
 
 
@@ -34,10 +41,12 @@ import "./models/associations.js"
 
 import pushRouter from "./routes/pushRoutes.js"
 import adminPushRouter from './routes/adminPushRoutes.js'
+import adminMailRouter from './routes/adminMailRoutes.js'
 import adminRouter from './routes/adminRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
+import { startMailBroadcastJob } from './jobs/mailBroadcastJob.js'
 import userRouter from "./routes/userRoutes.js"
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
 import plantRouter from "./routes/plantRoutes.js"
@@ -54,12 +63,40 @@ const MIGRATION_FILES_BY_TABLE = {
     passkeys: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     passkey_challenges: 'Backend/migrations/20261002_create_auth_and_passkey_tables.sql',
     notification_preferences: 'Backend/migrations/20261005_create_notification_preferences.sql',
+    'notification_preferences.care_advice_enabled': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
+    'notification_preferences.last_care_advice_date': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
     notifications: 'Backend/migrations/20261006_create_notifications.sql',
+    'notifications.payload': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
+    'notifications.type': 'Backend/migrations/20261020_extend_notifications_for_care.sql',
     push_broadcasts: 'Backend/migrations/20261010_create_push_broadcasts.sql',
     push_broadcast_recipients: 'Backend/migrations/20261010_create_push_broadcasts.sql',
+    'push_subscriptions.last_success_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.last_error': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.failed_attempts': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.invalidated_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_subscriptions.invalid_reason': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.idempotency_key': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.started_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.updated_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.last_processed_id': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcasts.chunk_size': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.status': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.attempts': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.sent_at': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    'push_broadcast_recipients.last_error': 'Backend/migrations/20261022_push_delivery_hardening.sql',
+    mail_broadcasts: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
+    mail_broadcast_recipients: 'Backend/migrations/20261014_create_mail_broadcasts.sql',
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
+    ai_advice_logs: 'Backend/migrations/20261016_create_ai_advice_logs.sql',
+    plant_care_plans: 'Backend/migrations/20261021_create_plant_care_plans.sql',
+    chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
+    'users.marketing_email_opt_in': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_in_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_in_source': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.marketing_email_opt_out_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    admin_audit_logs: 'Backend/migrations/20261025_create_admin_audit_logs.sql',
     site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
@@ -67,7 +104,7 @@ function formatSchemaMigrationHint(missing) {
     const hintedFiles = new Set()
     for (const entry of missing) {
         const [tableName] = entry.split('.')
-        const migrationFile = MIGRATION_FILES_BY_TABLE[tableName]
+        const migrationFile = MIGRATION_FILES_BY_TABLE[entry] || MIGRATION_FILES_BY_TABLE[tableName]
         if (migrationFile) hintedFiles.add(migrationFile)
     }
     if (!hintedFiles.size) return 'Review Backend/migrations/ and apply the missing SQL manually.'
@@ -125,13 +162,22 @@ function validateProductionConfig() {
 
 app.set('trust proxy', 1)
 
+app.use(requestContext)
+app.use(accessLog)
+
+app.use((req, res, next) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+    next()
+})
+
 app.use(cors({
     origin: (origin, callback) => {
         callback(null, isAllowedOrigin(origin))
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'Idempotency-Key'],
+    maxAge: 600
 }))
 
 app.use(helmet({
@@ -140,11 +186,38 @@ app.use(helmet({
 app.use(cookieParser())
 app.use(express.json({ limit: '100kb' }))
 app.use(express.urlencoded({ extended: true, limit: '100kb', parameterLimit: 1000 }))
+app.use(validateJsonShape)
+
+const ALLOWED_CONTENT_TYPES = new Set([
+    'application/json',
+    'application/x-www-form-urlencoded',
+    'multipart/form-data'
+])
+
+app.use((req, res, next) => {
+    if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next()
+
+    const hasBody = Number(req.get('content-length') || 0) > 0 || Boolean(req.get('transfer-encoding'))
+    if (!hasBody) return next()
+
+    const rawType = String(req.get('content-type') || '').split(';')[0].trim().toLowerCase()
+    if (!rawType) {
+        return res.status(415).json({ message: 'Требуется заголовок Content-Type: application/json' })
+    }
+    if (ALLOWED_CONTENT_TYPES.has(rawType) || rawType.endsWith('+json')) return next()
+
+    return res.status(415).json({ message: 'Неподдерживаемый Content-Type' })
+})
+
 app.use((req, res, next) => {
     if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
         const origin = req.get('origin')
         const fetchSite = req.get('sec-fetch-site')
-        const hasAuthCookie = Boolean(req.cookies?.token || req.cookies?.refresh_token)
+        const hasAuthCookie = Boolean(
+            req.cookies?.token ||
+            req.cookies?.refresh_token ||
+            req.cookies?.guest_token
+        )
         if ((origin && !isAllowedOrigin(origin)) ||
             (!origin && fetchSite === 'cross-site') ||
             (hasAuthCookie && !origin)) {
@@ -166,12 +239,28 @@ app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/admin/push", adminPushRouter)
+app.use("/api/admin/mail", adminMailRouter)
 app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
 app.use('/api/chat', getGuestToken, chatRouter)
+
+app.get('/livez', (req, res) => {
+    return res.json({ status: 'ok', timestamp: new Date().toISOString() })
+})
+
+function describePushStatus() {
+    try {
+        const getPushStatus = pushServiceModule.getPushStatus
+        return typeof getPushStatus === 'function'
+            ? getPushStatus()
+            : { configured: null }
+    } catch (error) {
+        return { configured: false, error: error?.message || String(error) }
+    }
+}
 
 app.get('/health', async (req, res) => {
     try {
@@ -182,11 +271,12 @@ app.get('/health', async (req, res) => {
             deployTarget: process.env.DEPLOY_TARGET || null,
             redis: describeRedisStatus(),
             mail: describeMailStatus(),
+            push: describePushStatus(),
             backgroundJobs: BACKGROUND_JOBS_ENABLED,
             aiCache: getAiCacheStats()
         })
     } catch (error) {
-        console.error('❌ Проверка готовности не пройдена:', error)
+        logError(error, req, 'health_check_failed')
         return res.status(503).json({ status: 'unavailable' })
     }
 })
@@ -195,17 +285,12 @@ app.get('/robots.txt', (req, res) => {
     res.type('text/plain').send('User-agent: *\nDisallow: /\n')
 })
 
-app.use((req, res, next) => {
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
-    next()
-})
-
 app.use((req, res) => {
     res.status(404).json({ message: 'Маршрут не найден' })
 })
 
 app.use((err, req, res, next) => {
-    console.error("❌ Error:", err)
+    logError(err, req, 'unhandled_error')
     const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600
         ? err.status
         : err.code === 'LIMIT_FILE_SIZE'
@@ -239,9 +324,9 @@ async function startServer() {
         }
 
         if (isMailConfigured()) {
-            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля будут отправляться`)
+            console.log(`✅ SMTP настроен (${process.env.SMTP_HOST || 'smtp.mail.ru'}): письма сброса пароля и рассылки из админки будут отправляться`)
         } else {
-            console.warn("⚠️ SMTP не настроен: восстановление пароля вернёт 503 (см. SMTP_USER/SMTP_PASSWORD)")
+            console.warn("⚠️ SMTP не настроен: восстановление пароля и рассылки писем вернут 503 (см. SMTP_USER/SMTP_PASSWORD)")
         }
 
         if (process.env.NODE_ENV === 'production') {
@@ -279,15 +364,42 @@ async function startServer() {
             console.log("⏰ Запущена очистка истекших согласий и auth-данных")
             reminderService.start()
             startPushBroadcastJob()
+            startMailBroadcastJob()
             console.log("📣 Планировщик отложенных рассылок запущен")
         } else {
             console.log("⏸ Фоновые задачи отключены (BACKGROUND_JOBS_ENABLED=false)")
         }
 
-        app.listen(PORT, () => {
+        const server = app.listen(PORT, () => {
             console.log(`🚀 Сервер запущен на порту ${PORT}`)
             console.log(`🌐 http://localhost:${PORT}`)
         })
+
+        let shuttingDown = false
+        const shutdown = signal => {
+            if (shuttingDown) return
+            shuttingDown = true
+            console.log(`⏹ Получен ${signal}: останавливаю приём новых запросов`)
+
+            const forceExit = setTimeout(() => {
+                console.error('⚠️ Соединения не завершились за 20 секунд, принудительный выход')
+                process.exit(1)
+            }, 20_000)
+            forceExit.unref()
+
+            server.close(async () => {
+                try {
+                    await closeRedis()
+                } catch (error) {
+                    console.error('❌ Ошибка закрытия Redis:', error)
+                }
+                clearTimeout(forceExit)
+                process.exit(0)
+            })
+        }
+
+        process.on('SIGTERM', () => shutdown('SIGTERM'))
+        process.on('SIGINT', () => shutdown('SIGINT'))
     } catch (error) {
         console.error("❌ Ошибка при запуске сервера:", error)
         process.exit(1)

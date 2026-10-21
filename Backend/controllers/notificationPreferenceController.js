@@ -9,6 +9,7 @@ class NotificationPreferenceController {
 
             return res.json({
                 morning_summary_enabled: preference?.morning_summary_enabled ?? false,
+                care_advice_enabled: preference?.care_advice_enabled ?? true,
                 dark_theme_enabled: preference?.dark_theme_enabled ?? false,
                 theme_mode: preference?.theme_mode ??
                     (preference ? (preference.dark_theme_enabled ? 'dark' : 'light') : 'system')
@@ -22,7 +23,7 @@ class NotificationPreferenceController {
     async update(req, res) {
         try {
             const updates = {}
-            for (const key of ['morning_summary_enabled', 'dark_theme_enabled']) {
+            for (const key of ['morning_summary_enabled', 'care_advice_enabled', 'dark_theme_enabled']) {
                 if (Object.hasOwn(req.body || {}, key)) {
                     if (typeof req.body[key] !== 'boolean') {
                         return res.status(400).json({
@@ -66,6 +67,7 @@ class NotificationPreferenceController {
 
             return res.json({
                 morning_summary_enabled: preference.morning_summary_enabled,
+                care_advice_enabled: preference.care_advice_enabled,
                 dark_theme_enabled: preference.dark_theme_enabled,
                 theme_mode: preference.theme_mode ??
                     (preference.dark_theme_enabled ? 'dark' : 'light')

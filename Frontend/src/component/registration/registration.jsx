@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import './registration.css'
 import './dark-theme.css'
 import './adaptiv.css'
 import {
   subscribeToPush,
+  isPushDisabledOnThisDevice,
   isPushSupported,
   isIOS,
   isStandalone
@@ -33,6 +34,19 @@ async function getResponseMessage (response, fallback) {
   }
 }
 
+const PUSH_REATTACH_TIMEOUT_MS = 3000
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const NEUTRAL_REGISTRATION_CONFLICT =
+  'Не удалось создать аккаунт. Если этот email уже зарегистрирован, войдите в аккаунт или восстановите пароль.'
+
+
+function waitAtMost (promise, timeoutMs) {
+  return Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(resolve, timeoutMs))
+  ])
+}
+
 function Registration ({ initialMode = 'login' }) {
   const [isLogin, setIsLogin] = useState(initialMode !== 'register')
   const [mobilePanelsHeight, setMobilePanelsHeight] = useState(null)
@@ -44,6 +58,7 @@ function Registration ({ initialMode = 'login' }) {
   const [name, setName] = useState('')
   const [privacyPolicyAccepted, setPrivacyPolicyAccepted] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
+  const [marketingConsent, setMarketingConsent] = useState(false)
   const [emailEntr, setEmailEntr] = useState('')
   const [passwordEntr, setPasswordEntr] = useState('')
   const [rememberMe, setRememberMe] = useState(false)
@@ -53,6 +68,17 @@ function Registration ({ initialMode = 'login' }) {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isPasskeyLoginLoading, setIsPasskeyLoginLoading] = useState(false)
   const [formError, setFormError] = useState('')
+  const [loginErrorField, setLoginErrorField] = useState('')
+  const [registerErrorField, setRegisterErrorField] = useState('')
+  const [loginAttempted, setLoginAttempted] = useState(false)
+  const [registerAttempted, setRegisterAttempted] = useState(false)
+  const loginEmailRef = useRef(null)
+  const loginPasswordRef = useRef(null)
+  const registerNameRef = useRef(null)
+  const registerEmailRef = useRef(null)
+  const registerPasswordRef = useRef(null)
+  const privacyConsentRef = useRef(null)
+  const termsConsentRef = useRef(null)
   const navigate = useNavigate()
 
   useLayoutEffect(() => {
@@ -111,27 +137,118 @@ function Registration ({ initialMode = 'login' }) {
     if (!isPushSupported()) return
     if (isIOS() && !isStandalone()) return
     if (Notification.permission !== 'granted') return
+    if (isPushDisabledOnThisDevice()) return
 
     try {
       await subscribeToPush()
-      console.info('Push-подписка привязана к аккаунту')
     } catch (error) {
       console.warn('Не удалось привязать push-подписку:', error)
     }
+  }
+
+  const focusField = ref => {
+    window.setTimeout(() => {
+      ref.current?.focus()
+    }, 0)
+  }
+
+  const clearLoginFieldError = field => {
+    if (loginErrorField === field) {
+      setFormError('')
+      setLoginErrorField('')
+    }
+  }
+
+  const clearRegisterFieldError = field => {
+    if (registerErrorField === field) {
+      setFormError('')
+      setRegisterErrorField('')
+    }
+  }
+
+  const validateLoginForm = () => {
+    if (!emailEntr.trim()) {
+      return { field: 'email', message: 'Введите email.', ref: loginEmailRef }
+    }
+    if (!EMAIL_PATTERN.test(emailEntr.trim())) {
+      return {
+        field: 'email',
+        message: 'Введите email в формате name@example.com.',
+        ref: loginEmailRef
+      }
+    }
+    if (!passwordEntr) {
+      return { field: 'password', message: 'Введите пароль.', ref: loginPasswordRef }
+    }
+    return null
+  }
+
+  const validateRegistrationForm = () => {
+    const normalizedName = name.trim()
+    if (!normalizedName) {
+      return { field: 'name', message: 'Введите имя.', ref: registerNameRef }
+    }
+    if (normalizedName.length > 20) {
+      return {
+        field: 'name',
+        message: 'Имя должно содержать не более 20 символов.',
+        ref: registerNameRef
+      }
+    }
+    if (!email.trim()) {
+      return { field: 'email', message: 'Введите email.', ref: registerEmailRef }
+    }
+    if (!EMAIL_PATTERN.test(email.trim())) {
+      return {
+        field: 'email',
+        message: 'Введите email в формате name@example.com.',
+        ref: registerEmailRef
+      }
+    }
+    if (!password) {
+      return { field: 'password', message: 'Придумайте пароль.', ref: registerPasswordRef }
+    }
+    if (password.length < 8) {
+      return {
+        field: 'password',
+        message: 'Пароль должен содержать не менее 8 символов.',
+        ref: registerPasswordRef
+      }
+    }
+    if (!privacyPolicyAccepted) {
+      return {
+        field: 'consent',
+        message: 'Отметьте согласие на обработку персональных данных.',
+        ref: privacyConsentRef
+      }
+    }
+    if (!termsAccepted) {
+      return {
+        field: 'consent',
+        message: 'Примите пользовательское соглашение.',
+        ref: termsConsentRef
+      }
+    }
+    return null
   }
 
   const handleRegister = async event => {
     event.preventDefault()
     if (isSubmitting) return
 
-    const normalizedName = name.trim()
-    if (!normalizedName) {
-      setFormError('Укажите имя.')
+    setRegisterAttempted(true)
+    const validationError = validateRegistrationForm()
+    if (validationError) {
+      setFormError(validationError.message)
+      setRegisterErrorField(validationError.field)
+      focusField(validationError.ref)
       return
     }
 
+    const normalizedName = name.trim()
     setIsSubmitting(true)
     setFormError('')
+    setRegisterErrorField('')
     try {
       const response = await fetch(`${API_URL}/users/registration`, {
         method: 'POST',
@@ -141,6 +258,7 @@ function Registration ({ initialMode = 'login' }) {
           password,
           privacyPolicyAccepted,
           termsAccepted,
+          marketingConsent,
           name: normalizedName,
           rememberMe,
           timezone: detectTimeZone()
@@ -148,13 +266,18 @@ function Registration ({ initialMode = 'login' }) {
         credentials: 'include'
       })
 
+      if (response.status === 409) {
+        setFormError(NEUTRAL_REGISTRATION_CONFLICT)
+        return
+      }
+
       if (!response.ok) {
         throw new Error(
           await getResponseMessage(response, 'Не удалось зарегистрироваться.')
         )
       }
 
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка регистрации:', error)
@@ -170,8 +293,18 @@ function Registration ({ initialMode = 'login' }) {
     event.preventDefault()
     if (isSubmitting) return
 
+    setLoginAttempted(true)
+    const validationError = validateLoginForm()
+    if (validationError) {
+      setFormError(validationError.message)
+      setLoginErrorField(validationError.field)
+      focusField(validationError.ref)
+      return
+    }
+
     setIsSubmitting(true)
     setFormError('')
+    setLoginErrorField('')
     try {
       const response = await fetch(`${API_URL}/users/login`, {
         method: 'POST',
@@ -190,7 +323,7 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка входа:', error)
@@ -207,7 +340,7 @@ function Registration ({ initialMode = 'login' }) {
     setFormError('')
     try {
       await loginWithPasskey(emailEntr.trim(), rememberMe)
-      await reattachPush()
+      await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
       console.error('Ошибка входа по ключу доступа:', error)
@@ -246,6 +379,10 @@ function Registration ({ initialMode = 'login' }) {
   const handleSwitch = () => {
     setIsLogin(value => !value)
     setFormError('')
+    setLoginErrorField('')
+    setRegisterErrorField('')
+    setLoginAttempted(false)
+    setRegisterAttempted(false)
   }
 
   return (
@@ -254,6 +391,15 @@ function Registration ({ initialMode = 'login' }) {
         isLogin ? 'authModeLogin' : 'authModeRegistration'
       }`}
     >
+      <header className='authBrand'>
+        <Link to='/' className='authBrandLink' aria-label='Лейка — на главную страницу'>
+          <ThemedIcon src={LogoBox} alt='' />
+          <span className='authBrandName'>Лейка</span>
+        </Link>
+        <Link to='/' className='authHomeLink'>
+          На главную
+        </Link>
+      </header>
       <section className='borderOther' aria-label='Вход и регистрация'>
         <div className='borderInner'>
           <div className={`slider-panel ${isLogin ? 'right' : 'left'}`}>
@@ -282,12 +428,13 @@ function Registration ({ initialMode = 'login' }) {
               inert={!isLogin}
               ref={loginPanelRef}
             >
-              <form onSubmit={handleLogin}>
-                <label className='emailEntrance'>
+              <form onSubmit={handleLogin} noValidate>
+                <label className='emailEntrance' htmlFor='login-email'>
                   <span>Email</span>
                   <div className='inputShell'>
                     <img src={mail} alt='' />
                     <input
+                      id='login-email'
                       type='email'
                       name='login-email'
                       placeholder='name@example.com'
@@ -295,28 +442,58 @@ function Registration ({ initialMode = 'login' }) {
                       autoCapitalize='none'
                       spellCheck='false'
                       required
+                      ref={loginEmailRef}
+                      aria-invalid={
+                        loginAttempted && loginErrorField === 'email'
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        loginAttempted && loginErrorField === 'email'
+                          ? 'loginFormError'
+                          : undefined
+                      }
                       value={emailEntr}
-                      onChange={event => setEmailEntr(event.target.value)}
+                      onChange={event => {
+                        setEmailEntr(event.target.value)
+                        clearLoginFieldError('email')
+                      }}
                     />
                   </div>
                 </label>
 
-                <label className='passwordEntrance'>
-                  <span>Пароль</span>
+                <div className='passwordEntrance'>
+                  <label htmlFor='login-password'>Пароль</label>
                   <div className='inputShell'>
                     <img src={lock} alt='' />
                     <input
+                      id='login-password'
                       type={showLoginPassword ? 'text' : 'password'}
                       name='login-password'
                       placeholder='Пароль'
                       autoComplete='current-password'
                       required
+                      ref={loginPasswordRef}
+                      aria-invalid={
+                        loginAttempted && loginErrorField === 'password'
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        loginAttempted && loginErrorField === 'password'
+                          ? 'loginFormError'
+                          : undefined
+                      }
                       value={passwordEntr}
-                      onChange={event => setPasswordEntr(event.target.value)}
+                      onChange={event => {
+                        setPasswordEntr(event.target.value)
+                        clearLoginFieldError('password')
+                      }}
                     />
                     <button
                       className='passwordVisibility'
                       type='button'
+                      aria-controls='login-password'
                       aria-label={
                         showLoginPassword ? 'Скрыть пароль' : 'Показать пароль'
                       }
@@ -326,7 +503,7 @@ function Registration ({ initialMode = 'login' }) {
                       <img src={eye} alt='' />
                     </button>
                   </div>
-                </label>
+                </div>
                 <div className='loginOptions'>
                   <label className='rememberMeLabel'>
                     <input
@@ -339,14 +516,14 @@ function Registration ({ initialMode = 'login' }) {
                   </label>
                   <button
                     className='resetPassword'
-                    type=''
+                    type='button'
                     onClick={() => navigate('/reset-password')}
                   >
                     Забыли пароль?
                   </button>
                 </div>
                 {formError && (
-                  <p className='formError' role='alert'>
+                  <p id='loginFormError' className='formError' role='alert'>
                     {formError}
                   </p>
                 )}
@@ -399,29 +576,45 @@ function Registration ({ initialMode = 'login' }) {
               inert={isLogin}
               ref={registrationPanelRef}
             >
-              <form onSubmit={handleRegister}>
-                <label className='goodOfRegistrationName'>
+              <form onSubmit={handleRegister} noValidate>
+                <label className='goodOfRegistrationName' htmlFor='registration-name'>
                   <span>Имя</span>
                   <div className='inputShell'>
                     <img src={user} alt='' />
                     <input
+                      id='registration-name'
                       type='text'
                       name='name'
                       placeholder='Как вас зовут'
                       autoComplete='name'
                       maxLength={20}
                       required
+                      ref={registerNameRef}
+                      aria-invalid={
+                        registerAttempted && registerErrorField === 'name'
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        registerAttempted && registerErrorField === 'name'
+                          ? 'registrationFormError'
+                          : undefined
+                      }
                       value={name}
-                      onChange={event => setName(event.target.value)}
+                      onChange={event => {
+                        setName(event.target.value)
+                        clearRegisterFieldError('name')
+                      }}
                     />
                   </div>
                 </label>
 
-                <label className='goodOfRegistrationEmail'>
+                <label className='goodOfRegistrationEmail' htmlFor='registration-email'>
                   <span>Email</span>
                   <div className='inputShell'>
                     <img src={mail} alt='' />
                     <input
+                      id='registration-email'
                       type='email'
                       name='registration-email'
                       placeholder='name@example.com'
@@ -429,29 +622,59 @@ function Registration ({ initialMode = 'login' }) {
                       autoCapitalize='none'
                       spellCheck='false'
                       required
+                      ref={registerEmailRef}
+                      aria-invalid={
+                        registerAttempted && registerErrorField === 'email'
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        registerAttempted && registerErrorField === 'email'
+                          ? 'registrationFormError'
+                          : undefined
+                      }
                       value={email}
-                      onChange={event => setEmail(event.target.value)}
+                      onChange={event => {
+                        setEmail(event.target.value)
+                        clearRegisterFieldError('email')
+                      }}
                     />
                   </div>
                 </label>
 
-                <label className='goodOfRegistrationPassword'>
-                  <span>Пароль</span>
+                <div className='goodOfRegistrationPassword'>
+                  <label htmlFor='registration-password'>Пароль</label>
                   <div className='inputShell'>
                     <img src={lock} alt='' />
                     <input
+                      id='registration-password'
                       type={showRegistrationPassword ? 'text' : 'password'}
                       name='registration-password'
                       placeholder='Не менее 8 символов'
                       autoComplete='new-password'
                       minLength={8}
                       required
+                      ref={registerPasswordRef}
+                      aria-invalid={
+                        registerAttempted && registerErrorField === 'password'
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        registerAttempted && registerErrorField === 'password'
+                          ? 'registrationFormError'
+                          : undefined
+                      }
                       value={password}
-                      onChange={event => setPassword(event.target.value)}
+                      onChange={event => {
+                        setPassword(event.target.value)
+                        clearRegisterFieldError('password')
+                      }}
                     />
                     <button
                       className='passwordVisibility'
                       type='button'
+                      aria-controls='registration-password'
                       aria-label={
                         showRegistrationPassword
                           ? 'Скрыть пароль'
@@ -465,7 +688,7 @@ function Registration ({ initialMode = 'login' }) {
                       <img src={eye} alt='' />
                     </button>
                   </div>
-                </label>
+                </div>
 
                 <div
                   className='passwordStrengthContainer'
@@ -505,10 +728,22 @@ function Registration ({ initialMode = 'login' }) {
                     <input
                       type='checkbox'
                       checked={privacyPolicyAccepted}
-                      onChange={event =>
-                        setPrivacyPolicyAccepted(event.target.checked)
+                      ref={privacyConsentRef}
+                      aria-required='true'
+                      aria-invalid={
+                        registerAttempted && !privacyPolicyAccepted
+                          ? 'true'
+                          : undefined
                       }
-                      required
+                      aria-describedby={
+                        registerAttempted && !privacyPolicyAccepted
+                          ? 'registrationFormError'
+                          : undefined
+                      }
+                      onChange={event => {
+                        setPrivacyPolicyAccepted(event.target.checked)
+                        clearRegisterFieldError('consent')
+                      }}
                     />
                     <span>
                       Даю отдельное согласие на обработку{' '}
@@ -525,8 +760,22 @@ function Registration ({ initialMode = 'login' }) {
                     <input
                       type='checkbox'
                       checked={termsAccepted}
-                      onChange={event => setTermsAccepted(event.target.checked)}
-                      required
+                      ref={termsConsentRef}
+                      aria-required='true'
+                      aria-invalid={
+                        registerAttempted && !termsAccepted
+                          ? 'true'
+                          : undefined
+                      }
+                      aria-describedby={
+                        registerAttempted && !termsAccepted
+                          ? 'registrationFormError'
+                          : undefined
+                      }
+                      onChange={event => {
+                        setTermsAccepted(event.target.checked)
+                        clearRegisterFieldError('consent')
+                      }}
                     />
                     <span>
                       Принимаю{' '}
@@ -535,7 +784,7 @@ function Registration ({ initialMode = 'login' }) {
                       </a>
                     </span>
                   </label>
-                    <p className='consentPolicyNotice'>
+                  <p className='consentPolicyNotice'>
                     До регистрации ознакомьтесь с{' '}
                     <a
                       href={privacyPolicyDocument}
@@ -546,9 +795,31 @@ function Registration ({ initialMode = 'login' }) {
                     </a>
                     .
                   </p>
+                  <label className='consentOption'>
+                    <input
+                      type='checkbox'
+                      checked={marketingConsent}
+                      onChange={event => setMarketingConsent(event.target.checked)}
+                    />
+                    <span>
+                      Хочу получать письма о растениях и новостях
+                    </span>
+                  </label>
+                  <p className='consentPolicyNotice'>
+                    Необязательно: согласие на маркетинговые письма отдельное.
+                    Отписаться можно в один клик в любом письме. Подробнее — в{' '}
+                    <a
+                      href={privacyPolicyDocument}
+                      target='_blank'
+                      rel='noreferrer'
+                    >
+                      Политике
+                    </a>
+                    .
+                  </p>
                 </div>
                 {formError && (
-                  <p className='formError' role='alert'>
+                  <p id='registrationFormError' className='formError' role='alert'>
                     {formError}
                   </p>
                 )}

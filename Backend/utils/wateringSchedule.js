@@ -1,3 +1,5 @@
+import { resolveTimeZone } from './timeZone.js'
+
 const DAY_IN_MILLISECONDS = 24 * 60 * 60 * 1000
 const HOUR_IN_MILLISECONDS = 60 * 60 * 1000
 export const APP_TIME_ZONE = 'Europe/Moscow'
@@ -5,6 +7,11 @@ export const APP_TIME_ZONE = 'Europe/Moscow'
 export const WATERING_TIME_OF_DAY_HOURS = { morning: 9, day: 14, evening: 19 }
 
 export const MISSED_GRACE_HOUR = 24
+export const MISSED_GRACE_MS = MISSED_GRACE_HOUR * HOUR_IN_MILLISECONDS
+
+const MAX_ADVANCE_STEPS = 40000
+const MIN_SLOT_YEAR = 2000
+const MAX_SLOT_YEAR = 2100
 
 const formatterCache = new Map()
 
@@ -79,7 +86,6 @@ export function zonedDayHourAfter(value, days, hour, timeZone = APP_TIME_ZONE) {
     )
 }
 
-/** `days` суток вперёд с сохранением московского времени суток. */
 export function addZonedDays(value, days, timeZone = APP_TIME_ZONE) {
     const date = toValidDate(value)
     if (!date || !Number.isInteger(days)) return null
@@ -134,13 +140,13 @@ export function isWateringMissed(
 export function generateWateringOccurrences(
     nextWateringAt,
     intervalDays,
-    { now = new Date(), daysAhead = 90 } = {}
+    { now = new Date(), daysAhead = 90, timeZone = APP_TIME_ZONE } = {}
 ) {
-    const firstOccurrence = new Date(nextWateringAt)
-    const start = new Date(now)
+    const first = toValidDate(nextWateringAt)
+    const start = toValidDate(now)
     if (
-        !Number.isFinite(firstOccurrence.getTime()) ||
-        !Number.isFinite(start.getTime()) ||
+        !first ||
+        !start ||
         !Number.isInteger(intervalDays) ||
         intervalDays < 1 ||
         !Number.isInteger(daysAhead) ||
@@ -149,24 +155,155 @@ export function generateWateringOccurrences(
         return []
     }
 
-    const interval = intervalDays * DAY_IN_MILLISECONDS
+    const zone = resolveTimeZone(timeZone)
+    const hour = zonedParts(first, zone).hour
     const end = start.getTime() + daysAhead * DAY_IN_MILLISECONDS
     const occurrences = []
+    let cursor = zonedDayHourAfter(first, 0, hour, zone)
+    let steps = 0
 
-    if (firstOccurrence < start) {
-        occurrences.push(new Date(firstOccurrence))
-        const periodsToAdvance = Math.floor(
-            (start.getTime() - firstOccurrence.getTime()) / interval
-        ) + 1
-        firstOccurrence.setTime(firstOccurrence.getTime() + periodsToAdvance * interval)
+    if (!cursor) return []
+
+    if (cursor.getTime() < start.getTime()) {
+        occurrences.push(new Date(cursor))
+        do {
+            cursor = zonedDayHourAfter(cursor, intervalDays, hour, zone)
+            steps += 1
+        } while (cursor && cursor.getTime() <= start.getTime() && steps < MAX_ADVANCE_STEPS)
     }
 
-    while (firstOccurrence.getTime() <= end) {
-        occurrences.push(new Date(firstOccurrence))
-        firstOccurrence.setTime(firstOccurrence.getTime() + interval)
+    while (cursor && cursor.getTime() <= end && steps < MAX_ADVANCE_STEPS) {
+        occurrences.push(new Date(cursor))
+        cursor = zonedDayHourAfter(cursor, intervalDays, hour, zone)
+        steps += 1
     }
 
     return occurrences
+}
+
+export function advanceZonedWatering(
+    value,
+    intervalDays,
+    hour,
+    timeZone = APP_TIME_ZONE,
+    now = new Date()
+) {
+    const date = toValidDate(value)
+    const current = toValidDate(now)
+    if (!date || !current || !Number.isInteger(intervalDays) || intervalDays < 1) return null
+
+    const zone = resolveTimeZone(timeZone)
+    const safeHour = Number.isInteger(hour) ? hour : 0
+    let next = zonedDayHourAfter(date, 0, safeHour, zone)
+    if (!next) return null
+
+
+
+
+
+    if (next.getTime() <= current.getTime()) {
+        const daysBehind = Math.ceil(
+            (current.getTime() - next.getTime()) / DAY_IN_MILLISECONDS
+        )
+        const jumps = Math.floor(daysBehind / intervalDays) - 1
+        if (jumps > 1) {
+            const jumped = zonedDayHourAfter(next, intervalDays * jumps, safeHour, zone)
+            if (jumped && Number.isFinite(jumped.getTime())) {
+                next = jumped
+            }
+        }
+    }
+
+    let steps = 0
+    while (next && next.getTime() <= current.getTime() && steps < MAX_ADVANCE_STEPS) {
+        next = zonedDayHourAfter(next, intervalDays, safeHour, zone)
+        steps += 1
+    }
+
+    return next
+}
+
+
+export function splitMissedWaterings(
+    scheduledFor,
+    intervalDays,
+    hour,
+    timeZone = APP_TIME_ZONE,
+    now = new Date(),
+    { graceMs = MISSED_GRACE_MS } = {}
+) {
+    const scheduled = toValidDate(scheduledFor)
+    const current = toValidDate(now)
+    if (!scheduled || !current || !Number.isInteger(intervalDays) || intervalDays < 1) {
+        return { missed: [], next: null }
+    }
+
+    const grace = Number.isFinite(graceMs) && graceMs >= 0 ? graceMs : MISSED_GRACE_MS
+    const missedDeadline = current.getTime() - grace
+    const zone = resolveTimeZone(timeZone)
+    const safeHour = Number.isInteger(hour) ? hour : 0
+    const missed = []
+    let cursor = zonedDayHourAfter(scheduled, 0, safeHour, zone)
+    let steps = 0
+
+    while (
+        cursor &&
+        cursor.getTime() <= missedDeadline &&
+        steps < MAX_ADVANCE_STEPS
+    ) {
+        missed.push(cursor)
+        cursor = zonedDayHourAfter(cursor, intervalDays, safeHour, zone)
+        steps += 1
+    }
+
+    return { missed, next: cursor ?? null }
+}
+
+export function localDayRange(value, timeZone = APP_TIME_ZONE) {
+    const date = toValidDate(value)
+    if (!date) return null
+
+    const zone = resolveTimeZone(timeZone)
+    const from = zonedDayHourAfter(date, 0, 0, zone)
+    const to = zonedDayHourAfter(date, 1, 0, zone)
+    if (!from || !to) return null
+
+    return { from, to: new Date(to.getTime() - 1) }
+}
+
+export function weekdayOfZonedDate(value, timeZone = APP_TIME_ZONE) {
+    const date = toValidDate(value)
+    if (!date) return null
+
+    const parts = zonedParts(date, resolveTimeZone(timeZone))
+    return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
+}
+
+export function reminderWeekdaysForInterval(intervalDays, date, timeZone = APP_TIME_ZONE) {
+    if (!weekdayRestrictionApplies(intervalDays)) return []
+    if (intervalDays === 1) return [0, 1, 2, 3, 4, 5, 6]
+
+    const weekday = weekdayOfZonedDate(date, timeZone)
+    return weekday === null ? [] : [weekday]
+}
+
+export function normalizeReminderWeekdays(
+    intervalDays,
+    weekdays,
+    nextWateringAt,
+    timeZone = APP_TIME_ZONE
+) {
+    const list = Array.isArray(weekdays)
+        ? weekdays.filter(day => Number.isInteger(day) && day >= 0 && day <= 6)
+        : []
+    const unique = [...new Set(list)]
+
+    if (!weekdayRestrictionApplies(intervalDays)) return []
+    if (intervalDays === 1) return unique
+
+    const weekday = weekdayOfZonedDate(nextWateringAt, timeZone)
+    if (weekday === null || unique.length === 0 || unique.includes(weekday)) return unique
+    return [weekday]
 }
 
 export function findFirstWateringAfter(wateringTimes, scheduledFor) {
@@ -212,13 +349,16 @@ export function parseWateringSlot(value, timeOfDayHours = 8, timeZone = APP_TIME
     if (typeof value !== 'string') return null
 
     const trimmed = value.trim()
+    if (!trimmed || trimmed.length > 64) return null
     const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed)
 
     if (dateOnly) {
         const year = Number(dateOnly[1])
         const month = Number(dateOnly[2]) - 1
         const day = Number(dateOnly[3])
+        if (year < MIN_SLOT_YEAR || year > MAX_SLOT_YEAR) return null
         const hour = Number.isInteger(timeOfDayHours) ? timeOfDayHours : 8
+        if (hour < 0 || hour > 23) return null
         const slot = zonedDateTimeToUtc({ year, month: month + 1, day, hour }, timeZone)
 
         const check = zonedParts(slot, timeZone)
@@ -233,8 +373,15 @@ export function parseWateringSlot(value, timeOfDayHours = 8, timeZone = APP_TIME
         return slot
     }
 
+    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(trimmed)) return null
+
     const parsed = new Date(trimmed)
-    return Number.isFinite(parsed.getTime()) ? parsed : null
+    if (!Number.isFinite(parsed.getTime())) return null
+
+    const year = parsed.getUTCFullYear()
+    if (year < MIN_SLOT_YEAR || year > MAX_SLOT_YEAR) return null
+
+    return parsed
 }
 
 export function resolvePastWatering(scheduledFor, {
@@ -260,11 +407,15 @@ export function resolvePastWatering(scheduledFor, {
 
     const previousLast = toValidDate(lastWateredAt)
     const last = previousLast && previousLast > slot ? previousLast : slot
+    const hoursLate = Math.max(
+        0,
+        Math.round((current.getTime() - slot.getTime()) / HOUR_IN_MILLISECONDS)
+    )
 
     return {
         actionAt: slot,
         scheduledFor: slot,
-        hoursLate: 0,
+        hoursLate,
         lastWateredAt: last,
         nextWateringAt: next,
         scheduleChanged: !previousNext || previousNext.getTime() !== next.getTime()
@@ -285,9 +436,9 @@ export function utcDayRange(date) {
     return { from: start, to: new Date(start.getTime() + DAY_IN_MILLISECONDS - 1) }
 }
 
-export function pickWateringLogForSlot(logs, action, slot) {
+export function pickWateringLogForSlot(logs, action, slot, timeZone = APP_TIME_ZONE) {
     const slotAt = toValidDate(slot)
-    const range = utcDayRange(slotAt)
+    const range = localDayRange(slotAt, timeZone)
     if (!slotAt || !range || !Array.isArray(logs)) return null
 
     const inDay = value => {
@@ -295,7 +446,15 @@ export function pickWateringLogForSlot(logs, action, slot) {
         return at !== null && at.getTime() >= range.from.getTime() && at.getTime() <= range.to.getTime()
     }
 
-    const candidates = logs.filter(log => log && log.action === action)
+    const isEarlyWatering = log => {
+        const scheduled = toValidDate(log.scheduled_for)
+        const actionAt = toValidDate(log.action_at)
+        return scheduled !== null && actionAt !== null && scheduled.getTime() > actionAt.getTime()
+    }
+
+    const candidates = logs
+        .filter(log => log && log.action === action)
+        .filter(log => action !== 'watered' || !isEarlyWatering(log))
     const bySlot = candidates.filter(log => inDay(log.scheduled_for))
     const pool = bySlot.length
         ? bySlot
@@ -320,9 +479,12 @@ export function weekdayRestrictionApplies(intervalDays) {
         (intervalDays === 1 || intervalDays % 7 === 0)
 }
 
-export function isReminderWeekday(weekdays, date) {
+export function isReminderWeekday(weekdays, date, timeZone = APP_TIME_ZONE) {
     if (!Array.isArray(weekdays) || weekdays.length === 0) return true
-    const scheduledDate = new Date(date)
-    return Number.isFinite(scheduledDate.getTime()) &&
-        weekdays.includes(scheduledDate.getDay())
+    const scheduledDate = toValidDate(date)
+    if (!scheduledDate) return false
+
+    const parts = zonedParts(scheduledDate, resolveTimeZone(timeZone))
+    const weekday = new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay()
+    return weekdays.includes(weekday)
 }

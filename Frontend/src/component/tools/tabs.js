@@ -10,6 +10,12 @@ export const TABS = [
     { id: 'profile', icon: User, label: 'Профиль' }
 ]
 
-export const MOBILE_NAV_TABS = TABS.filter(tab => tab.id !== 'add')
+export const PRIMARY_TABS = TABS.filter(tab => tab.id !== 'add')
+
+export const MOBILE_NAV_TABS = PRIMARY_TABS
 
 export const ADD_TAB = TABS.find(tab => tab.id === 'add')
+
+export const TAB_PANEL_ID = tabId => `panel-${tabId}`
+
+export const TAB_ELEMENT_ID = tabId => `tab-${tabId}`

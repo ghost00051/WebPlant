@@ -40,12 +40,12 @@ export default defineConfig(({ mode }) => {
     server: {
       proxy: {
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'http://localhost:5000',
+          target: env.VITE_API_PROXY_TARGET || 'https://server.checktheplants.ru',
           changeOrigin: true,
           secure: true,
           cookieDomainRewrite: '',
           configure(proxy) {
-            const origin = env.VITE_API_PROXY_ORIGIN || 'http://localhost:5173'
+            const origin = env.VITE_API_PROXY_ORIGIN || 'https://checktheplants.ru'
             proxy.on('proxyReq', proxyReq => {
               proxyReq.setHeader('origin', origin)
             })

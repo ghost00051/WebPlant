@@ -1,4 +1,5 @@
 node_modules/
+state/
 
 *.log
 
@@ -21,8 +22,8 @@ out/
 .nuxt
 
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
 
 .k8s-images/
 
@@ -53,4 +54,16 @@ $RECYCLE.BIN/
 .history/
 
 *.vsix
-*dsa.htmlAnimated-Floating-Tab-bar-/
+*dsa.html
+Animated-Floating-Tab-bar-/
+Bug-Tracker-WebPlant.csv
+Bug-Tracker-WebPlant.xlsx
+deploy.config.json
+probe-upload-test.html
+
+state/notif-audit/fixes/*.txt
+Backend/nginx/pending/
+Backend_QA_Checklist.md
+Backend_QA_Checklist.xlsx
+WebPlant_QA_Checklist.md
+WebPlant_QA_Checklist.xlsx

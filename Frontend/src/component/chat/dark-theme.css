@@ -11,8 +11,54 @@ html[data-theme='dark'] .chatBubbleAi,
 html[data-theme='dark'] .chatInputWrapper,
 html[data-theme='dark'] .chatAiAdviceBox,
 html[data-theme='dark'] .chatSuggestion,
-html[data-theme='dark'] .chatTag {
+html[data-theme='dark'] .chatTag,
+html[data-theme='dark'] .chatAttachmentChip {
     background: var(--theme-surface);
     border-color: var(--theme-border);
     color: var(--theme-text);
+}
+html[data-theme='dark'] .chatDiagnosis {
+    background: var(--theme-surface);
+    border: 1px solid var(--theme-border);
+}
+
+html[data-theme='dark'] .chatDiagnosisPlant,
+html[data-theme='dark'] .chatDiagnosisList,
+html[data-theme='dark'] .chatDiagnosisSeverity {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .chatDiagnosisSectionTitle,
+html[data-theme='dark'] .chatDiagnosisHint {
+    color: var(--theme-muted, #8A8A8A);
+}
+
+html[data-theme='dark'] .chatDiagnosisDisclaimer {
+    color: var(--theme-muted, #8A8A8A);
+}
+
+html[data-theme='dark'] .chatDiagnosisConfidence {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .chatDiagnosisWhy {
+    color: var(--theme-muted, #B0B0B0);
+}
+
+html[data-theme='dark'] .chatPhoto {
+    background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .chatMenuBtn {
+    background: var(--theme-surface);
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .chatHeader {
+    border-bottom-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .chatAttachError {
+    color: #F3A79B;
 }

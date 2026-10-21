@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useLocation } from 'react-router-dom'
 import { API_URL } from '../utils/api.js'
 import ThemeContext from './themeContext.js'
@@ -29,6 +29,7 @@ function subscribeToSystemTheme(callback) {
 
 export function ThemeProvider({ children }) {
     const [themeMode, setThemeModeState] = useState(getStoredThemeMode)
+    const preferencesLoadedRef = useRef(false)
     const systemTheme = useSyncExternalStore(
         subscribeToSystemTheme,
         getSystemTheme,
@@ -49,7 +50,14 @@ export function ThemeProvider({ children }) {
     }, [theme, themeMode])
 
     useEffect(() => {
-        if (isPublicRoute) return undefined
+        if (isPublicRoute) {
+
+
+            preferencesLoadedRef.current = false
+            return undefined
+        }
+        if (preferencesLoadedRef.current) return undefined
+        preferencesLoadedRef.current = true
 
         let cancelled = false
 
@@ -57,7 +65,9 @@ export function ThemeProvider({ children }) {
             credentials: 'include'
         })
             .then(async response => {
-                if (response.status === 401) return null
+                if (response.status === 401) {
+                    throw new Error('Сессия истекла: настройки темы недоступны')
+                }
                 if (!response.ok) {
                     throw new Error(`Не удалось загрузить настройки темы: HTTP ${response.status}`)
                 }
@@ -73,12 +83,13 @@ export function ThemeProvider({ children }) {
             })
             .catch(error => {
                 console.error('Ошибка синхронизации темы:', error)
+                preferencesLoadedRef.current = false
             })
 
         return () => {
             cancelled = true
         }
-    }, [isPublicRoute, location.pathname])
+    }, [isPublicRoute])
 
     const setThemePreference = useCallback(async nextThemeMode => {
         if (!['system', 'light', 'dark'].includes(nextThemeMode)) {
@@ -95,7 +106,9 @@ export function ThemeProvider({ children }) {
                 credentials: 'include',
                 body: JSON.stringify({ theme_mode: nextThemeMode })
             })
-            if (response.status === 401) return true
+            if (response.status === 401) {
+                throw new Error('Сессия истекла — тема не сохранена')
+            }
             if (!response.ok) {
                 throw new Error(`Не удалось сохранить тему: HTTP ${response.status}`)
             }

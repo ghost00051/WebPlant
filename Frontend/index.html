@@ -26,16 +26,14 @@
   <meta property="og:image:type" content="image/png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt"
-    content="«Лейка» — календарь полива и уход за комнатными растениями">
+  <meta property="og:image:alt" content="«Лейка» — календарь полива и уход за комнатными растениями">
 
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="Лейка — календарь полива и уход за комнатными растениями">
   <meta name="twitter:description"
     content="Планируйте полив комнатных растений и получайте напоминания с приложением «Лейка».">
   <meta name="twitter:image" content="https://checktheplants.ru/og-image.png">
-  <meta name="twitter:image:alt"
-    content="«Лейка» — календарь полива и уход за комнатными растениями">
+  <meta name="twitter:image:alt" content="«Лейка» — календарь полива и уход за комнатными растениями">
 
   <link rel="icon" href="/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
@@ -63,12 +61,16 @@
       }
     })()
   </script>
-
-  <link rel="stylesheet" href="/indes.css">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet"
-    href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..700&display=swap">
+  <link rel="preconnect" href="https://server.checktheplants.ru" crossorigin>
+  <link rel="stylesheet" href="/base.css">
+  <link rel="preload" href="/fonts/inter-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/fonts/inter.css">
+  <style>
+    .skipLink{position:fixed;top:12px;left:12px;z-index:2100;transform:translateY(-160%)}
+    .skipLink:focus,.skipLink:focus-visible{transform:translateY(0)}
+    html.app-shell .appMain,body.app-shell .appMain{height:100%;min-height:0}
+    .appMain{display:block}
+  </style>
 
   <script type="application/ld+json">
     {

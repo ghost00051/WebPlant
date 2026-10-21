@@ -1,3 +1,4 @@
+
 .notification-prompt-overlay {
   position: fixed;
   inset: 0;
@@ -5,7 +6,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 9999;
+  z-index: 950;
   padding: 20px;
   animation: fadeIn 0.3s ease;
 }
@@ -31,6 +32,15 @@
   text-align: center;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   animation: slideUp 0.3s ease;
+}
+
+.notification-prompt:focus {
+  outline: none;
+}
+
+.notification-prompt:focus-visible {
+  outline: 3px solid #A9BCAF;
+  outline-offset: 3px;
 }
 
 .notification-prompt-icon {
@@ -131,4 +141,17 @@
   background: none;
   border: none;
   padding: 0;
+}
+
+.notification-prompt-btn-primary:focus-visible,
+.notification-prompt-btn-secondary:focus-visible {
+  outline: 3px solid #A9BCAF;
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notification-prompt-overlay,
+  .notification-prompt {
+    animation: none;
+  }
 }

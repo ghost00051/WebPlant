@@ -30,46 +30,44 @@
         box-shadow: none;
     }
 
-    .tabbar ul {
+    .tabbarTabs {
         display: flex;
         flex-direction: column;
         align-items: stretch;
         gap: 4px;
+        width: 100%;
         max-width: none;
         padding: 0;
-    }
-
-    .tabbar li {
-        width: 100%;
-        height: 32px;
-        border-radius: 9px;
-        transition: color 0.25s ease, background-color 0.25s ease;
-    }
-
-    .tabbar li:hover {
-        background-color: #f5f3ef;
-    }
-
-    .tabbar li.active {
-        background-color: #eef2eb;
-    }
-
-    .tabbar li.active::after {
-        display: none;
-    }
-
-    .tabbar li img {
-        width: 14px;
-        height: 14px;
     }
 
     .tabbarButton {
         flex-direction: row;
         justify-content: flex-start;
-        gap: 9px;
-        padding: 0 10px;
-        text-align: left;
         align-items: center;
+        gap: 9px;
+        width: 100%;
+        min-height: 32px;
+        padding: 0 10px;
+        border-radius: 9px;
+        text-align: left;
+        transition: color 0.25s ease, background-color 0.25s ease;
+    }
+
+    .tabbarButton:hover {
+        background-color: #f5f3ef;
+    }
+
+    .tabbarButton.is-active {
+        background-color: #eef2eb;
+    }
+
+    .tabbarButton.is-active::after {
+        display: none;
+    }
+
+    .tabbarButton > img {
+        width: 14px;
+        height: 14px;
     }
 
     .tab-label {

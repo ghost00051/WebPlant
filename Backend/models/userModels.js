@@ -50,6 +50,27 @@ const User = sequelize.define("user", {
         type: DataTypes.STRING(64),
         allowNull: true,
         comment: 'IANA-пояс пользователя: в нём считаются время полива и сутки календаря'
+    },
+    marketing_email_opt_in: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: false,
+        comment: 'Отдельное необязательное согласие на маркетинговые письма (L2.1, B19.6)'
+    },
+    marketing_email_opt_in_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Когда пользователь дал согласие на маркетинговые письма'
+    },
+    marketing_email_opt_in_source: {
+        type: DataTypes.STRING(32),
+        allowNull: true,
+        comment: 'Источник согласия: registration / settings / import'
+    },
+    marketing_email_opt_out_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Когда согласие отозвано (one-click отписка или настройки)'
     }
 }, {
     tableName: 'users',
@@ -59,6 +80,11 @@ const User = sequelize.define("user", {
             name: 'idx_users_username_unique',
             unique: true,
             fields: ['username']
+        },
+        {
+            name: 'idx_users_marketing_email_opt_in',
+            fields: ['marketing_email_opt_in'],
+            where: { marketing_email_opt_in: true }
         }
     ]
 })

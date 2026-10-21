@@ -6,6 +6,11 @@ export const MAX_USER_IDS = 1000
 export const MIN_SCHEDULE_DELAY_MS = 30 * 1000
 export const MAX_SCHEDULE_AHEAD_MS = 365 * 24 * 60 * 60 * 1000
 
+export const MAX_PUSH_PAYLOAD_BYTES = 3800
+
+const DEFAULT_PUSH_ICON = '/icons/icon-192.png'
+const DEFAULT_PUSH_BADGE = '/icons/icon-192.png'
+
 const TITLE_MESSAGE = 'Укажите заголовок до 120 символов'
 const BODY_MESSAGE = 'Укажите текст до 1000 символов'
 const URL_MESSAGE = 'Ссылка должна быть внутренним путём, например /home'
@@ -14,6 +19,7 @@ const TARGET_MODE_MESSAGE = 'Некорректный режим получат�
 const USER_IDS_MESSAGE = 'Выберите хотя бы одного получателя'
 const INCLUDE_GUESTS_MESSAGE = 'Гостевые подписки доступны только при рассылке всем'
 const SCHEDULED_MESSAGE = 'Время отправки должно быть в будущем'
+const PAYLOAD_MESSAGE = 'Уведомление слишком длинное: превышен допустимый размер push-сообщения'
 
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/
 const WHITESPACE = /\s/
@@ -24,6 +30,17 @@ function characterLength(value) {
 
 function failure(message) {
     return { ok: false, message }
+}
+
+export function measurePushPayloadBytes({ title = '', body = '', icon = null, url = '/' } = {}) {
+    const payload = {
+        title: String(title ?? ''),
+        body: String(body ?? ''),
+        icon: typeof icon === 'string' && icon ? icon : DEFAULT_PUSH_ICON,
+        badge: DEFAULT_PUSH_BADGE,
+        data: { url: typeof url === 'string' && url ? url : '/' }
+    }
+    return Buffer.byteLength(JSON.stringify(payload), 'utf8')
 }
 
 function normalizeTitle(value) {
@@ -168,6 +185,16 @@ export function validateBroadcastInput(payload) {
     const scheduledFor = normalizeScheduledFor(source.scheduledFor)
     if (!scheduledFor.ok) return scheduledFor
 
+    const payloadBytes = measurePushPayloadBytes({
+        title: title.value,
+        body: body.value,
+        icon: icon.value,
+        url: url.value
+    })
+    if (payloadBytes > MAX_PUSH_PAYLOAD_BYTES) {
+        return failure(PAYLOAD_MESSAGE)
+    }
+
     return {
         ok: true,
         value: {
@@ -178,7 +205,8 @@ export function validateBroadcastInput(payload) {
             targetMode: targetMode.value,
             userIds: userIds.value,
             includeGuests: includeGuests.value,
-            scheduledFor: scheduledFor.value
+            scheduledFor: scheduledFor.value,
+            payloadBytes
         }
     }
 }

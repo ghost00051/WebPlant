@@ -4,15 +4,32 @@ import PasskeyChallenge from '../models/PasskeyChallenge.js'
 import PasswordResetToken from '../models/PasswordResetToken.js'
 import PlantPhoto from '../models/PlantPhoto.js'
 import ChatLog from '../models/ChatLog.js'
+import AiAdviceLog from '../models/AiAdviceLog.js'
 import SiteVisit from '../models/SiteVisit.js'
+import Notification from '../models/Notification.js'
+import PushSubscription from '../models/PushSubscription.js'
 import { Op } from "sequelize"
+import sequelize from '../db.js'
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 
 const GUEST_DATA_RETENTION_MS = 180 * 24 * 60 * 60 * 1000
+const GUEST_PUSH_RETENTION_DAYS = 30
+const INVALIDATED_PUSH_RETENTION_DAYS = 30
 const VISIT_RETENTION_DAYS = 400
+const NOTIFICATION_RETENTION_DAYS = 180
 const CLEANUP_LOCK = 'job:cleanup-expired'
 const CLEANUP_LOCK_TTL_MS = 30 * 60 * 1000
+
+function readRetentionDays(value, fallback) {
+    const parsed = Number.parseInt(value ?? '', 10)
+    return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function retentionCutoff(days) {
+    if (!days) return null
+    return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
+}
 
 export async function cleanExpiredAuthData() {
     const thirtyDaysAgo = new Date()
@@ -21,10 +38,25 @@ export async function cleanExpiredAuthData() {
     const visitCutoff = new Date(Date.now() - VISIT_RETENTION_DAYS * 24 * 60 * 60 * 1000)
         .toISOString()
         .slice(0, 10)
+    const chatLogCutoff = retentionCutoff(readRetentionDays(process.env.CHAT_LOG_RETENTION_DAYS, 365))
+    const adviceLogCutoff = retentionCutoff(readRetentionDays(process.env.AI_ADVICE_LOG_RETENTION_DAYS, 365))
+    const notificationCutoff = retentionCutoff(
+        readRetentionDays(process.env.NOTIFICATION_RETENTION_DAYS, NOTIFICATION_RETENTION_DAYS)
+    )
+
+
+    const guestPushCutoff = retentionCutoff(
+        readRetentionDays(process.env.GUEST_PUSH_RETENTION_DAYS, GUEST_PUSH_RETENTION_DAYS)
+    )
+    const invalidatedPushCutoff = retentionCutoff(
+        readRetentionDays(process.env.INVALIDATED_PUSH_RETENTION_DAYS, INVALIDATED_PUSH_RETENTION_DAYS)
+    )
 
     const [
         deletedConsents,
         deletedGuestChatLogs,
+        deletedUserChatLogs,
+        deletedAdviceLogs,
         deletedSessions,
         deletedChallenges,
         deletedResetTokens,
@@ -46,6 +78,19 @@ export async function cleanExpiredAuthData() {
                 created_at: { [Op.lt]: guestDataCutoff }
             }
         }),
+        chatLogCutoff
+            ? ChatLog.destroy({
+                where: {
+                    user_id: { [Op.ne]: null },
+                    created_at: { [Op.lt]: chatLogCutoff }
+                }
+            })
+            : Promise.resolve(0),
+        adviceLogCutoff
+            ? AiAdviceLog.destroy({
+                where: { created_at: { [Op.lt]: adviceLogCutoff } }
+            })
+            : Promise.resolve(0),
         AuthSession.destroy({
             where: {
                 [Op.or]: [
@@ -74,15 +119,55 @@ export async function cleanExpiredAuthData() {
         })
     ])
 
+    const deletedNotifications = notificationCutoff
+        ? await Notification.destroy({ where: { created_at: { [Op.lt]: notificationCutoff } } })
+        : 0
+    const deletedGuestSubscriptions = guestPushCutoff
+        ? await PushSubscription.destroy({
+            where: {
+                user_id: null,
+
+
+
+                created_at: { [Op.lt]: guestPushCutoff },
+                updated_at: { [Op.lt]: guestPushCutoff }
+            }
+        })
+        : 0
+
+
+    const deletedInvalidatedSubscriptions = invalidatedPushCutoff
+        ? await PushSubscription.destroy({
+            where: { invalidated_at: { [Op.ne]: null, [Op.lt]: invalidatedPushCutoff } }
+        })
+        : 0
+
+    let deletedAdminAuditLogs = 0
+    try {
+        const [rows] = await sequelize.query('SELECT purge_admin_audit_logs() AS deleted')
+        deletedAdminAuditLogs = Number(rows?.[0]?.deleted) || 0
+    } catch (error) {
+        console.warn('⚠️ Не удалось очистить журнал действий администраторов:', error?.message || error)
+    }
+
     const deleted =
-        deletedConsents + deletedGuestChatLogs + deletedSessions + deletedChallenges +
-        deletedResetTokens
+        deletedConsents + deletedGuestChatLogs + deletedUserChatLogs + deletedAdviceLogs +
+        deletedSessions + deletedChallenges + deletedResetTokens
     console.log(
         `🧹 Очищено гостевых согласий: ${deletedConsents}, гостевых сообщений: ${deletedGuestChatLogs}, ` +
+        `сообщений пользователей: ${deletedUserChatLogs}, ` +
+        `записей журнала ИИ: ${deletedAdviceLogs}, ` +
         `сессий: ${deletedSessions}, ` +
         `passkey-челленджей: ${deletedChallenges}, ссылок сброса пароля: ${deletedResetTokens}, ` +
         `фото-файлов: ${deletedPhotos}, ` +
         `дней статистики посещений: ${deletedVisits}`
+    )
+    console.log(
+        `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}, ` +
+        `карантинных push-подписок: ${deletedInvalidatedSubscriptions}`
+    )
+    console.log(
+        `🧹 Аудит администраторов: удалено записей старше 365 дней: ${deletedAdminAuditLogs}`
     )
     return deleted
 }

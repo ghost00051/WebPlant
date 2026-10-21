@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit'
 import Docker from 'dockerode'
 import { requireAdmin } from '../middleware/admin.js'
 import { optionalAuth } from '../middleware/auth.js'
+import { getHttpMetrics } from '../middleware/accessLog.js'
 import visitController from '../controllers/visitController.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
@@ -57,11 +58,15 @@ let cache = {
 
 const CACHE_TTL = 3000
 
+router.get('/metrics', requireAdmin, (req, res) => {
+  res.json(getHttpMetrics())
+})
+
 router.get('/docker-stats', requireAdmin, async (req, res) => {
   try {
     if (!docker) {
       return res.status(503).json({
-        error: 'Docker stats недоступны: DOCKER_HOST не задан для этого окружения'
+        message: 'Docker stats недоступны: DOCKER_HOST не задан для этого окружения'
       })
     }
 
@@ -174,11 +179,11 @@ router.get('/docker-stats', requireAdmin, async (req, res) => {
   } catch (err) {
     if (isDockerUnavailable(err)) {
       console.warn('⚠️ Docker stats недоступны:', err.code)
-      return res.status(503).json({ error: 'Docker недоступен в этом окружении' })
+      return res.status(503).json({ message: 'Docker недоступен в этом окружении' })
     }
 
     console.error('Docker stats error:', err)
-    res.status(500).json({ error: 'Failed to get docker stats' })
+    res.status(500).json({ message: 'Не удалось получить статистику Docker' })
   }
 })
 

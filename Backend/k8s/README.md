@@ -198,12 +198,30 @@ Redis в кластере используется backend-ом в трёх ме
    Определение вида, совет по поливу и по времени полива кэшируются на
    `AI_CACHE_TTL_SECONDS` (по умолчанию 7 суток), ответы чата — на
    `AI_CHAT_CACHE_TTL_SECONDS` (10 минут), ключи `ctp:ai:*`. Экономит платные
-   вызовы Yandex Cloud.
+   вызовы Yandex Cloud. Одновременные одинаковые запросы считаются один раз:
+   первый берёт лок `ctp:lock:ai-cache:*`, остальные забирают готовый ответ из кэша.
 
 Ручки настройки (см. `10-configmap.yaml`): `AI_CACHE_ENABLED`,
 `AI_CACHE_TTL_SECONDS`, `AI_CHAT_CACHE_TTL_SECONDS`, `REDIS_KEY_PREFIX`,
 `REDIS_CONNECT_TIMEOUT_MS`, `REDIS_COMMAND_TIMEOUT_MS`, `REDIS_FAILURE_THRESHOLD`,
 `REDIS_BREAKER_COOLDOWN_MS`, `REDIS_DEBUG`.
+
+Расход и таймауты ИИ (тоже в `10-configmap.yaml`):
+
+| Переменная | Смысл |
+| --- | --- |
+| `AI_DAILY_REQUEST_BUDGET` | Суточный лимит обращений к модели на весь сервис. `0` или пусто — **лимита нет**. При исчерпании чат отвечает фолбэком по данным приложения, гости получают `503` |
+| `AI_PRICE_INPUT_PER_1K`, `AI_PRICE_OUTPUT_PER_1K`, `AI_PRICE_CACHED_PER_1K`, `AI_PRICE_CURRENCY` | Тариф для оценки стоимости в админке; без них стоимость не считается |
+| `AI_CHAT_TIMEOUT_MS`, `AI_ADVICE_TIMEOUT_MS` | Таймаут одного HTTP-вызова модели |
+| `AI_CHAT_DEADLINE_MS`, `AI_ADVICE_DEADLINE_MS` | Сквозной дедлайн на весь запрос (включая ретраи) |
+| `WATERING_ADVICE_MAX_QUESTIONS` | Потолок уточняющих вопросов советника (по умолчанию 6, максимум 10) |
+| `AI_CHAT_GUEST_DAILY_LIMIT`, `AI_CHAT_USER_DAILY_LIMIT` | Суточные лимиты сообщений гостя и пользователя |
+| `APP_TIME_ZONE` | Пояс для метрик и для пользователей без личного пояса |
+| `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | Срок хранения чатов и журнала подсказок; `0` — бессрочно |
+
+При недоступном Redis суточный бюджет продолжает считаться локально
+(счётчик в памяти пода) — иначе авария Redis снимала бы ограничитель стоимости.
+Значение видно в ответе `GET /api/admin/ai/metrics` как `budget.localFallbackUsed`.
 
 Проверить, что backend действительно видит Redis: `GET /health` возвращает
 `"redis": "ok"` (значения: `ok`, `unavailable`, `disabled`).
@@ -309,6 +327,19 @@ powershell -File Backend/k8s/scripts/switch-traffic.ps1 -Target compose
 Остановить лишний стек после переезда: `docker compose stop backend postgres backup`
 (nginx и certbot остаются на месте и продолжают держать TLS).
 
+> **Дубли push при двух запущенных бэкендах.** Пока оба бэкенда живы, а Redis у
+> них разный, напоминания уходят дважды: в базах продублированы одни и те же
+> пользователи и те же push-подписки (на 2026-10-19 совпадали 7 endpoint'ов из 8,
+> и оба стека отправили `morning_summary` в 06:00 одним и тем же людям). Общий
+> Redis защищает только от одновременного выполнения cron, но не от двух разных
+> наборов данных. Остановленный `ctp_backend` возвращается командой
+> `docker start ctp_backend`, а **не** `docker compose up -d backend`:
+> незакоммиченные правки `docker-compose.yml` (порты postgres, named volume для
+> certbot, сборка nginx из `./nginx`) могут пересоздать соседние контейнеры.
+> Пересборка только бэкенда — `docker compose up -d --build --no-deps backend`.
+> Контейнеру выставлен `--restart=no`, иначе он поднимался бы сам после
+> перезапуска Docker Desktop.
+
 Альтернатива для «полноценного» переезда: поднять в кластере ingress-контроллер
 (например, ingress-nginx) и cert-manager, освободив порты 80/443, — но это уже
 отдельная задача, потому что сейчас их занимает `ctp_nginx`.
@@ -371,6 +402,63 @@ $pass = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64Strin
 $env:REDIS_TEST_URL = "redis://default:$pass@127.0.0.1:16379/0"
 cd Backend; node --test utils/distributedLock.test.js
 ```
+
+## Адаптивный интервал полива и аудит прогноза
+
+Интервал полива растения подстраивается под фактическую историю: каждый полив
+сравнивается с графиком, ранние поливы сокращают интервал, редкие — удлиняют
+(автоскипы доказательством не считаются). Изменение ограничено группой растения
+(например, для кактусов не ниже 8 дней), максимум ±2 дня за событие, сезон
+учитывается только на стыке сезонов. Ручное изменение интервала в карточке
+сбрасывает обучение — дальнейшие наблюдения начинаются заново.
+
+Состояние хранится в `plants.metadata.prediction` (`baseIntervalDays`,
+`intervalDays`, `samples`, `confidence`, `windowDays`, `lastObservedAt`,
+`baseChangedAt`) — миграция не нужна, ключ защищён от записи через API.
+
+Посмотреть, насколько адаптивная модель точнее текущего интервала, можно
+read-only скриптом (ничего не меняет, только читает историю поливов):
+
+```powershell
+cd Backend
+node scripts/watering-prediction-audit.mjs --days=365
+node scripts/watering-prediction-audit.mjs --days=365 --json
+node scripts/watering-prediction-audit.mjs --plant=123
+```
+
+Скрипт печатает MAE прогноза «следующий полив» для текущего интервала и для
+адаптивной модели, долю попаданий в ±1 и ±2 дня и лучшие веса на этих данных.
+Перед включением любых новых коэффициентов стоит прогнать его на боевой истории
+(из кластера — через `kubectl port-forward` к PostgreSQL и `DB_HOST=127.0.0.1`).
+
+## Проверка подсистемы уведомлений
+
+Часть команд из ручного чек-листа приёмки пишет в боевую базу, поэтому
+безопасный путь — один скрипт:
+
+```powershell
+powershell -File Backend/scripts/verify-notifications.ps1
+```
+
+Он проверяет `/health` внутри пода, unique-индекс идемпотентности и API
+уведомлений на одноразовой БД. Что важно знать:
+
+* **Проба идемпотентности выполняется в `BEGIN … ROLLBACK`.** Голый `DO`-блок
+  коммитится: он оставляет рассылку со `status='pending'`, а `PushBroadcastJob`
+  (cron, раз в минуту) реально доставляет её подписчикам. Так 2026-10-19 в 08:59
+  ушёл push `title='verify'` на 9 устройств (broadcast `id=15`). Не запускайте
+  вариант без явной транзакции и без `ROLLBACK`.
+* **`_notif_smoke.mjs` намеренно отсутствует в образе** (`Backend/.dockerignore`):
+  он чеканит реальный `auth_sessions`-токен из `SECRET_KEY`. Скрипт кладёт его в
+  под на время прогона, сверяет md5, запускает на БД `webplant_notif_smoke*` и
+  удаляет файл. `node _notif_smoke.mjs` внутри пода упадёт с `MODULE_NOT_FOUND` —
+  это ожидаемо.
+* Одноразовую БД нельзя создавать заранее: тест откажется работать с уже
+  существующей базой и сам удалит свою.
+* Для рассылки `target_mode='all'` строки в `push_broadcast_recipients` не
+  создаются — это по дизайну: аудитория берётся из `push_subscriptions`, а
+  пер-получательский трекинг есть только у `target_mode='users'`. Поэтому «кому
+  именно дошло» по массовой рассылке видно только агрегатом `sent_count`.
 
 ## Удаление стека
 

@@ -26,7 +26,7 @@
   padding: 0 clamp(16px, 3vw, 36px);
 }
 
-.nameHeaderOfHomePage > img {
+.nameHeaderOfHomePage>img {
   display: block;
   width: 28px;
   height: 28px;
@@ -34,11 +34,10 @@
   object-fit: contain;
 }
 
-.headerOfHOmePagw > div:last-child > img {
+.headerOfHOmePagw>div:last-child>img {
   display: block;
   width: 44px;
   height: 44px;
-  padding: 10px;
   box-sizing: border-box;
   border-radius: 50%;
   background: #FFFFFF;
@@ -55,7 +54,7 @@
   font-size: var(--font-size-sm);
   font-weight: 500;
   font-style: normal;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   margin: 3% 0;
 }
 
@@ -66,6 +65,16 @@
   font-style: normal;
   color: #2d2d2d;
   margin: 2% 0;
+}
+
+.nameHeaderOfHomePage h1.homePageMobileTitle {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-2xl);
+  font-weight: bold;
+  font-style: normal;
+  color: #2d2d2d;
+  margin: 2% 0;
+  line-height: 1.2;
 }
 
 .headerNotificiotinsOfHomePAge {
@@ -163,7 +172,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
   font-weight: 500;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -198,7 +207,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-md);
   font-weight: 500;
-  color: #8a8a8a;
+  color: var(--theme-muted);
   text-align: center;
   padding: 24px 20px;
   margin: 0;
@@ -223,6 +232,10 @@
     background-color 0.2s ease,
     transform 0.15s cubic-bezier(0.4, 0, 0.2, 1),
     box-shadow 0.2s ease;
+}
+
+.check-button {
+  color: var(--theme-on-accent);
 }
 
 .check-button:hover:not(:disabled) {
@@ -428,7 +441,7 @@
   font-size: var(--font-size-sm);
   font-weight: 400;
   font-style: normal;
-  color: #8A8A8A;
+  color: var(--theme-muted);
   margin: 0;
 
 }
@@ -479,7 +492,7 @@
   font-family: 'Inter', sans-serif;
   font-size: var(--font-size-sm);
   font-weight: 400;
-  color: #8A8A8A;
+  color: var(--theme-muted);
   margin: 0;
 }
 
@@ -492,6 +505,7 @@
 }
 
 .godOfplantSoffSchedule {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -512,7 +526,50 @@
   border: none;
   border-radius: 12px;
   height: min-content;
-  padding: 2% 3%;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+
+.offScheduleList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4%;
+}
+
+.offScheduleList .godOfplantSoffSchedule {
+  margin-top: 0;
+  min-width: 0;
+}
+
+.offScheduleList .childOfmenuOfSoffSchedule,
+.offScheduleList .veryChildOfchildOfmenuOfSoffSchedule {
+  min-width: 0;
+}
+
+.offScheduleToggle {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px dashed #DAD5CC;
+  border-radius: 12px;
+  background: transparent;
+  color: #4C5A50;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.offScheduleToggle:hover {
+  background: #F4F2EE;
+  border-color: #C9C2B6;
+}
+
+.offScheduleToggle:active {
+  transform: scale(0.99);
 }
 
 .childOfmenuOfSoffSchedule img,
@@ -522,6 +579,45 @@
   border-radius: 8px;
   flex-shrink: 0;
   object-fit: cover;
+}
+
+.headerOfHOmePagw>div:last-child {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.headerOfHOmePagw>div:last-child::after {
+  content: attr(data-badge);
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #2D2D2D;
+  color: #FFFFFF;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+html[data-theme='dark'] .headerOfHOmePagw>div:last-child::after {
+  background: #F4F5F4;
+  color: #191A1F;
+}
+
+.headerOfHOmePagw>div:last-child:not([data-badge])::after,
+.headerOfHOmePagw>div:last-child[data-badge='']::after,
+.headerOfHOmePagw>div:last-child[data-badge='0']::after {
+  display: none;
 }
 
 @media (max-width: 480px) {
@@ -538,12 +634,354 @@
     gap: 12px;
   }
 
-  .descriptioOfoffScheduleWatering > img:last-child {
+  .descriptioOfoffScheduleWatering>img:last-child {
     margin-left: auto;
   }
 
   .descriptioOfoffScheduleWatering div {
     min-width: 0;
     margin-left: 0;
+  }
+
+  .offScheduleWatering {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .offScheduleList {
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .godOfplantSoffSchedule {
+    gap: 8px;
+    padding: 9px 10px;
+    border-radius: 12px;
+  }
+
+  .godOfplantSoffSchedule button {
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 10px;
+  }
+
+  .offScheduleToggle {
+    min-height: 44px;
+    margin-top: 8px;
+    padding: 12px;
+  }
+}
+
+.checkPlantSoffScheduleoverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(20, 30, 22, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.28s ease, visibility 0s linear 0.28s;
+}
+
+
+
+.checkPlantSoffScheduleoverlay.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.28s ease, visibility 0s linear 0s;
+}
+
+.checkPlantSoffSchedule {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 201;
+  width: 100%;
+  max-width: none;
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  padding: 20px 16px calc(20px + env(safe-area-inset-bottom, 0px));
+  box-shadow: 0 -10px 34px rgba(0, 0, 0, 0.18);
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.32s cubic-bezier(0.22, 1, 0.36, 1), transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform, opacity;
+}
+
+.checkPlantSoffSchedule.active {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (min-width: 640px) {
+  .checkPlantSoffSchedule {
+    left: 50%;
+    right: auto;
+    bottom: auto;
+    top: 50%;
+    width: min(420px, calc(100vw - 32px));
+    border-radius: 24px;
+    padding: 22px 24px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+    transform: translate(-50%, -50%) translateY(16px) scale(0.97);
+  }
+
+  .checkPlantSoffSchedule.active {
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule p:first-child {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 400;
+  color: var(--theme-muted);
+  margin: 0 0 6px;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule p:nth-child(2) {
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-lg);
+  font-weight: 600;
+  color: #2D2D2D;
+  margin: 0 0 18px;
+  overflow-wrap: anywhere;
+  line-height: 1.3;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule>div {
+  display: flex;
+  gap: 10px;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule button {
+  flex: 1 1 0;
+  height: auto;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.godOfplantSoffSchedule .checkPlantSoffSchedule button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffScheduleYes {
+  background-color: #5C7463;
+  color: #FFFFFF;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffScheduleYes:hover:not(:disabled) {
+  background-color: #6FBF91;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffScheduleNo {
+  background-color: #F1EFEB;
+  color: #2D2D2D;
+}
+
+.godOfplantSoffSchedule .checkPlantSoffScheduleNo:hover:not(:disabled) {
+  background-color: #E7E4DF;
+}
+
+.offScheduleWaterButton {
+  position: relative;
+  z-index: 3;
+  overflow: hidden;
+  transition: background-color 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+.offScheduleWaterButton:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+
+.offScheduleWaterButton.is-pouring {
+  background-color: #5C7463;
+  color: #FFFFFF;
+}
+
+html[data-theme='dark'] .offScheduleWaterButton {
+  background: var(--theme-raised);
+  color: var(--theme-text);
+  border: 1px solid var(--theme-border);
+}
+
+html[data-theme='dark'] .offScheduleWaterButton.is-pouring {
+  background-color: #5C7463;
+  color: #FFFFFF;
+}
+
+.offScheduleWaterButton.is-pouring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.5) 50%, transparent 80%);
+  transform: translateX(-130%);
+  animation: offScheduleSheen 1.2s ease-in-out infinite;
+}
+
+.offSchedulePourLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border-radius: inherit;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.godOfplantSoffSchedule.is-pouring .offSchedulePourLayer {
+  opacity: 1;
+}
+
+.offSchedulePourLayer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 22%, rgba(255, 255, 255, 0.55) 48%, transparent 74%);
+  transform: translateX(-130%);
+}
+
+.godOfplantSoffSchedule.is-pouring .offSchedulePourLayer::after {
+  animation: offScheduleSheen 1.2s ease-in-out infinite;
+}
+
+.offScheduleDrop {
+  position: absolute;
+  top: -14%;
+  width: 6px;
+  height: 10px;
+  border-radius: 50% 50% 50% 50% / 62% 62% 38% 38%;
+  background: linear-gradient(180deg, #CBEDFD 0%, #74C4E8 55%, #3F9FD2 100%);
+  box-shadow: 0 1px 3px rgba(63, 159, 210, 0.35);
+  opacity: 0;
+}
+
+.godOfplantSoffSchedule.is-pouring .offScheduleDrop {
+  animation-name: offScheduleDropFall;
+  animation-duration: 1.05s;
+  animation-timing-function: cubic-bezier(0.42, 0.05, 0.62, 0.95);
+  animation-iteration-count: infinite;
+}
+
+.offScheduleDrop--1 {
+  left: 7%;
+  animation-delay: 0s;
+}
+
+.offScheduleDrop--2 {
+  left: 24%;
+  animation-delay: 0.16s;
+}
+
+.offScheduleDrop--3 {
+  left: 46%;
+  animation-delay: 0.06s;
+}
+
+.offScheduleDrop--4 {
+  left: 68%;
+  animation-delay: 0.22s;
+}
+
+.offScheduleDrop--5 {
+  left: 88%;
+  animation-delay: 0.12s;
+}
+
+@keyframes offScheduleDropFall {
+  0% {
+    top: -14%;
+    opacity: 0;
+  }
+
+  16% {
+    opacity: 1;
+  }
+
+  80% {
+    opacity: 1;
+  }
+
+  100% {
+    top: 94%;
+    opacity: 0;
+  }
+}
+
+@keyframes offScheduleSheen {
+  0% {
+    transform: translateX(-130%);
+  }
+
+  55%,
+  100% {
+    transform: translateX(130%);
+  }
+}
+
+.godOfplantSoffSchedule.is-pouring .childOfmenuOfSoffSchedule img,
+.godOfplantSoffSchedule.is-pouring .childOfmenuOfSoffSchedule .no-photo {
+  animation: offScheduleWet 1.2s ease-in-out infinite;
+}
+
+@keyframes offScheduleWet {
+
+  0%,
+  100% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+.offSchedulePourStatus {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .checkPlantSoffScheduleoverlay,
+  .checkPlantSoffSchedule,
+  .offSchedulePourLayer,
+  .offScheduleWaterButton {
+    transition-duration: 0.01ms !important;
+  }
+
+  .godOfplantSoffSchedule.is-pouring .offScheduleDrop,
+  .godOfplantSoffSchedule.is-pouring .offSchedulePourLayer::after,
+  .godOfplantSoffSchedule.is-pouring .childOfmenuOfSoffSchedule img,
+  .godOfplantSoffSchedule.is-pouring .childOfmenuOfSoffSchedule .no-photo,
+  .offScheduleWaterButton.is-pouring::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
   }
 }

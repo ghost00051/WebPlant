@@ -17,6 +17,15 @@ const NotificationPreference = sequelize.define('notification_preference', {
         allowNull: false,
         defaultValue: false
     },
+    care_advice_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true
+    },
+    last_care_advice_date: {
+        type: DataTypes.DATEONLY,
+        allowNull: true
+    },
     dark_theme_enabled: {
         type: DataTypes.BOOLEAN,
         allowNull: false,

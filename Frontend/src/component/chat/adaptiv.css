@@ -1,3 +1,33 @@
+@media (max-width: 1023px) {
+    .godOfBlocksChat {
+        position: fixed;
+        top: var(--visual-viewport-top, 0px);
+        left: 0;
+        right: 0;
+        height: 100vh;
+        height: var(--visual-viewport-height, 100dvh);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+        background-color: var(--theme-page, #FAF8F5);
+    }
+
+    .godOfBlocksChat>.mobileNav {
+        order: -1;
+        flex: 0 0 auto;
+    }
+
+    .godOfBlocksChat>.chatWindow {
+        flex: 1 1 auto;
+        min-height: 0;
+        width: 100%;
+        max-width: 100%;
+        margin: 0;
+    }
+}
+
 @media (max-width: 640px) {
     .chatWindow {
         max-width: 100%;
@@ -36,19 +66,32 @@
 @media (min-width: 1024px) {
     .godOfBlocksChat {
         display: grid;
-        grid-template-columns: 170px min-content minmax(0, 1fr);
+        grid-template-columns: 170px 264px minmax(0, 1fr);
         grid-template-rows: 50px minmax(0, 1fr);
         padding-top: 0;
         background: #faf8f5;
         height: 100vh;
     }
 
-    .HistoryChat {
+    .HistoryChat,
+    .HistoryChat.is-open {
+        position: static;
         grid-column: 2;
         grid-row: 2;
+        display: flex;
+        width: auto;
         min-width: 0;
         min-height: 0;
-        overflow-y: auto;
+        padding: 10px 8px 12px;
+        overflow: hidden;
+        border-right: 1px solid var(--theme-border);
+        background: var(--theme-page);
+        box-shadow: none;
+        animation: none;
+    }
+
+    .chatHistoryBtn {
+        display: none;
     }
 
     .chatWindow {
@@ -62,6 +105,16 @@
         background: none;
         position: initial;
         margin-top: 0;
+    }
+
+    .chatHeader,
+    .chatMessages,
+    .chatInputArea {
+        box-sizing: border-box;
+        width: 100%;
+        max-width: 880px;
+        margin-left: auto;
+        margin-right: auto;
     }
 
     .chatHeader {

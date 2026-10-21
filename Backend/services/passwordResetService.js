@@ -83,21 +83,22 @@ export async function requestPasswordReset({
     const resetUrl = buildResetUrl(token, frontendUrl)
     const recipientName = typeof user.name === 'string' ? user.name.trim().split(/\s+/)[0] : ''
 
-    try {
-        await sendPasswordResetEmail({
-            to: user.email,
-            resetUrl,
-            userName: recipientName,
-            env
-        })
-        return { status: 'sent', user }
-    } catch (error) {
+    void sendPasswordResetEmail({
+        to: user.email,
+        resetUrl,
+        userName: recipientName,
+        env
+    }).then(() => {
+        console.log(`📧 Ссылка сброса пароля отправлена (user_id=${user.id})`)
+    }).catch(async error => {
+        console.error(`❌ Не удалось отправить письмо сброса (user_id=${user.id}):`, error?.message || error)
         await PasswordResetToken.update(
             { used_at: new Date() },
             { where: { token_hash: tokenHash, used_at: null } }
         ).catch(() => {})
-        return { status: 'failed', user, error }
-    }
+    })
+
+    return { status: 'queued', user }
 }
 
 export async function inspectPasswordResetToken(token) {

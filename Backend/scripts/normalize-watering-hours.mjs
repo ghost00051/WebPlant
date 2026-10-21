@@ -28,11 +28,6 @@ function parseArgs(argv) {
     return options
 }
 
-/**
- * Пояса владельцев растений. Пока миграция 20261013_add_user_timezone.sql не
- * применена, колонки нет — работаем без неё (тогда пояс берётся из --zone или
- * московский по умолчанию).
- */
 async function loadTimeZones() {
     try {
         const users = await User.findAll({ attributes: ['id', 'timezone'], raw: true })

@@ -14,6 +14,32 @@ html[data-theme='dark'] .plantDialog {
     color: var(--theme-text);
 }
 
+html[data-theme='dark'] .plantCardTitles h2,
+html[data-theme='dark'] .plantCardMeta dd {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantCardSpecies,
+html[data-theme='dark'] .plantCardRoom,
+html[data-theme='dark'] .plantCardMeta dt {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .plantCardPhoto {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .plantCardStatus--today,
+html[data-theme='dark'] .plantCardStatus--soon {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .plantCardStatus--unknown {
+    background: var(--theme-raised);
+    color: var(--theme-muted);
+}
+
 html[data-theme='dark'] .searchPlaceholder,
 html[data-theme='dark'] .plantDialog,
 html[data-theme='dark'] .plantDialog input:not([type='checkbox']),

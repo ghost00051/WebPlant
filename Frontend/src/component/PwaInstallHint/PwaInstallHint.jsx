@@ -5,11 +5,20 @@ import {
     getInstallState,
     subscribeToInstallState
 } from '../../utils/pwaInstall.js'
+import {
+    OVERLAY_IDS,
+    OVERLAY_PRIORITIES,
+    getActiveOverlay,
+    requestOverlay,
+    subscribeOverlays
+} from '../../utils/overlayQueue.js'
 import './PwaInstallHint.css'
 import './dark-theme.css'
 
 const DISMISSED_UNTIL_KEY = 'pwa_install_hint_dismissed_until'
 const DISMISS_DURATION = 30 * 24 * 60 * 60 * 1000
+const REVEAL_MIN_SCROLL_PX = 280
+const REVEAL_VIEWPORT_SHARE = 0.35
 const dismissedListeners = new Set()
 let dismissedInSession = false
 
@@ -36,6 +45,35 @@ function wasDismissed() {
     }
 }
 
+function revealThreshold() {
+    if (typeof window === 'undefined') return REVEAL_MIN_SCROLL_PX
+    return Math.max(
+        REVEAL_MIN_SCROLL_PX,
+        Math.round(window.innerHeight * REVEAL_VIEWPORT_SHARE)
+    )
+}
+
+function isRevealScrollReached(target) {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return false
+
+    const element = target && target.nodeType === 1
+        ? target
+        : (document.scrollingElement || document.documentElement)
+    if (!element) return false
+
+    const isRoot = element === document.scrollingElement
+        || element === document.documentElement
+        || element === document.body
+    const scrollTop = isRoot ? (window.scrollY || element.scrollTop || 0) : (element.scrollTop || 0)
+    if (scrollTop <= 0) return false
+
+    const maxScroll = Math.max(0, (element.scrollHeight || 0) - (element.clientHeight || 0))
+    if (maxScroll <= 40) return false
+
+    const effectiveThreshold = Math.min(revealThreshold(), Math.round(maxScroll * 0.5))
+    return scrollTop >= effectiveThreshold
+}
+
 function PwaInstallHint() {
     const installState = useSyncExternalStore(
         subscribeToInstallState,
@@ -54,6 +92,13 @@ function PwaInstallHint() {
     )
     const [showInstructions, setShowInstructions] = useState(false)
     const [installing, setInstalling] = useState(false)
+    const [revealed, setRevealed] = useState(false)
+
+    const activeOverlay = useSyncExternalStore(
+        subscribeOverlays,
+        getActiveOverlay,
+        () => null
+    )
 
     useEffect(() => {
         if (wasDismissed()) {
@@ -62,8 +107,34 @@ function PwaInstallHint() {
         }
     }, [])
 
-    if (isStandalone() || installState.installed || dismissed) return null
-    if (!needsIOSInstructions && !installState.deferredPrompt) return null
+    useEffect(() => {
+        if (typeof document === 'undefined') return undefined
+
+        const check = target => {
+            if (isRevealScrollReached(target)) setRevealed(true)
+        }
+
+        check(document.scrollingElement)
+
+        const onScroll = event => check(event.target)
+        document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+
+        return () => document.removeEventListener('scroll', onScroll, { capture: true })
+    }, [])
+
+    const eligible = !isStandalone()
+        && !installState.installed
+        && !dismissed
+        && (needsIOSInstructions || Boolean(installState.deferredPrompt))
+
+    useEffect(() => {
+        if (!eligible || !revealed) return undefined
+        return requestOverlay(OVERLAY_IDS.pwa, OVERLAY_PRIORITIES.pwa)
+    }, [eligible, revealed])
+
+    const visible = eligible && revealed && activeOverlay === OVERLAY_IDS.pwa
+
+    if (!visible) return null
 
     const dismiss = () => {
         try {
@@ -98,7 +169,11 @@ function PwaInstallHint() {
     }
 
     return (
-        <aside className='pwaInstallHint' aria-label='Установка приложения'>
+        <aside
+            className='pwaInstallHint'
+            aria-label='Установка приложения'
+            data-overlay='pwa'
+        >
             <span className='pwaInstallHintIcon' aria-hidden='true'>↗</span>
             <div className='pwaInstallHintContent'>
                 <p className='pwaInstallHintTitle'>

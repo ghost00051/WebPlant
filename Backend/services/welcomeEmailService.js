@@ -21,6 +21,7 @@ export async function sendWelcomeEmailToUser(user, { env = process.env, force = 
         await sendWelcomeEmail({
             to: user.email,
             userName: getFirstName(user.name),
+            userId: user.id,
             env
         })
         return { status: 'sent' }

@@ -1,0 +1,11 @@
+﻿Бэкап автозапуска, 2026-10-15 15:52:29
+
+Run: 
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
+    Yandex.Disk.4    REG_SZ    "C:\Users\yvan0\AppData\Local\Programs\Yandex\YandexDisk4\YandexDisk4.exe" -autostart
+
+
+StartupApproved: 
+HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run
+    Yandex.Disk.4    REG_BINARY    020000000000000000000000
+

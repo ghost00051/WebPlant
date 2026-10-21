@@ -15,6 +15,25 @@ import './adaptiv.css'
 
 const RESEND_COOLDOWN_SECONDS = 60
 const MIN_PASSWORD_LENGTH = 8
+const RESET_PASSWORD_PATH = '/reset-password'
+
+function readResetToken (searchParams) {
+  if (typeof window === 'undefined') return searchParams.get('token') || ''
+
+  const rawHash = window.location.hash.replace(/^#/, '')
+  if (rawHash) {
+    const hashToken = new URLSearchParams(rawHash).get('token') || ''
+    if (hashToken) return hashToken
+  }
+
+  return searchParams.get('token') || ''
+}
+
+function stripResetTokenFromUrl () {
+  if (typeof window === 'undefined') return
+  if (!window.location.search && !window.location.hash) return
+  window.history.replaceState(window.history.state, '', RESET_PASSWORD_PATH)
+}
 
 async function getResponseMessage (response, fallback) {
   try {
@@ -28,7 +47,7 @@ async function getResponseMessage (response, fallback) {
 function ResetPassword () {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const token = searchParams.get('token') || ''
+  const [token] = useState(() => readResetToken(searchParams))
 
   const [step, setStep] = useState(token ? 'checking' : 'request')
   const [email, setEmail] = useState('')
@@ -39,6 +58,10 @@ function ResetPassword () {
   const [formError, setFormError] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    stripResetTokenFromUrl()
+  }, [])
 
   const checkToken = useCallback(async signal => {
     try {

@@ -1,5 +1,5 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import './profile.css'
 import Pencil from '../../assets/pencil.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
@@ -9,20 +9,26 @@ import {
   registerPasskey
 } from '../../utils/passkey.js'
 import {
+  getActivePushSubscription,
   isIOS,
   isPushSupported,
   isStandalone,
   requestPermission,
   setPushDisabledOnThisDevice,
   subscribeToPush,
+  syncPushSubscription,
   unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
+import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import { API_URL } from '../../utils/api.js'
+import { openCookieConsentSettings } from '../../utils/cookieConsentSettings.js'
+import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
 import './dark-theme.css'
 
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
+const AdminMailPanel = lazy(() => import('../adminMail/AdminMailPanel.jsx'))
 
 function Profile () {
   const { theme, themeMode, setThemePreference } = useTheme()
@@ -43,8 +49,24 @@ function Profile () {
   const [summaryLoading, setSummaryLoading] = useState(true)
   const [summaryChanging, setSummaryChanging] = useState(false)
   const [summaryError, setSummaryError] = useState('')
+  const [careAdviceEnabled, setCareAdviceEnabled] = useState(true)
+  const [careAdviceLoading, setCareAdviceLoading] = useState(true)
+  const [careAdviceChanging, setCareAdviceChanging] = useState(false)
+  const [careAdviceError, setCareAdviceError] = useState('')
   const [themeError, setThemeError] = useState('')
   const [themeChanging, setThemeChanging] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportStatus, setExportStatus] = useState('')
+  const [exportError, setExportError] = useState('')
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleteConfirmText, setDeleteConfirmText] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const deleteTriggerRef = useRef(null)
+  const deleteDialogRef = useRef(null)
+  const deleteInputRef = useRef(null)
+  const navigate = useNavigate()
 
   const getProfile = useCallback(async () => {
     try {
@@ -163,6 +185,7 @@ function Profile () {
       .then(preferences => {
         if (isMounted) {
           setMorningSummaryEnabled(preferences.morning_summary_enabled === true)
+          setCareAdviceEnabled(preferences.care_advice_enabled !== false)
         }
       })
       .catch(error => {
@@ -170,7 +193,10 @@ function Profile () {
         if (isMounted) setSummaryError('Не удалось загрузить настройку сводки.')
       })
       .finally(() => {
-        if (isMounted) setSummaryLoading(false)
+        if (isMounted) {
+          setSummaryLoading(false)
+          setCareAdviceLoading(false)
+        }
       })
 
     return () => {
@@ -188,12 +214,27 @@ function Profile () {
       }
 
       try {
-        const registration = await navigator.serviceWorker.ready
-        const subscription = await registration.pushManager.getSubscription()
-        if (subscription) {
-          await subscribeToPush()
-          if (isMounted) setPushEnabled(true)
+        const subscription = await getActivePushSubscription()
+        if (!isMounted) return
+
+        if (!subscription) {
+          setPushEnabled(false)
+          return
         }
+
+        setPushEnabled(true)
+
+
+        await syncPushSubscription({
+          onError: error => {
+            if (isMounted) {
+              setPushError(
+                error?.message ||
+                  'Не удалось синхронизировать push-подписку с сервером. Включите уведомления ещё раз.'
+              )
+            }
+          }
+        })
       } catch (error) {
         console.error('Ошибка проверки push-подписки:', error)
         if (isMounted) {
@@ -231,7 +272,9 @@ function Profile () {
 
         const granted = await requestPermission()
         if (!granted) {
-          throw new Error('Разрешение на уведомления не получено')
+          throw new Error(
+            'Разрешение на уведомления не получено. Разрешите уведомления в настройках браузера и попробуйте включить ещё раз.'
+          )
         }
 
         await subscribeToPush()
@@ -240,9 +283,23 @@ function Profile () {
         return
       }
 
+      let unsubscribeError = null
+      try {
+        await unsubscribeFromPush()
+      } catch (error) {
+        unsubscribeError = error
+      }
+
+
+
       setPushDisabledOnThisDevice(true)
-      await unsubscribeFromPush()
       setPushEnabled(false)
+      if (unsubscribeError) {
+        setPushError(
+          unsubscribeError.message ||
+            'Локально уведомления отключены, но не удалось сообщить серверу. Позже подписка будет удалена автоматически.'
+        )
+      }
     } catch (error) {
       console.error('Ошибка изменения push-подписки:', error)
       setPushError(
@@ -288,6 +345,37 @@ function Profile () {
     }
   }
 
+  const handleCareAdviceChange = async event => {
+    const enabled = event.target.checked
+    if (careAdviceChanging) return
+
+    setCareAdviceChanging(true)
+    setCareAdviceError('')
+    try {
+      const response = await fetch(
+        `${API_URL}/users/me/notification-preferences`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ care_advice_enabled: enabled })
+        }
+      )
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.message || `HTTP ${response.status}`)
+      }
+
+      const preferences = await response.json()
+      setCareAdviceEnabled(preferences.care_advice_enabled !== false)
+    } catch (error) {
+      console.error('Ошибка изменения советов по уходу:', error)
+      setCareAdviceError(error.message || 'Не удалось изменить настройку советов.')
+    } finally {
+      setCareAdviceChanging(false)
+    }
+  }
+
   const handleThemeChange = async nextTheme => {
     if (themeChanging || themeMode === nextTheme) return
     setThemeChanging(true)
@@ -323,9 +411,197 @@ function Profile () {
       setIsRegisteringPasskey(false)
     }
   }
+  const exitOfProduct = async () => {
+    setLogoutError('')
+
+    await Promise.race([
+      unsubscribeFromPush().catch(() => {}),
+      new Promise(resolve => setTimeout(resolve, 3000))
+    ]).catch(() => {})
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        throw new Error(`Не удалось выйти из аккаунта: HTTP ${response.status}`)
+      }
+    } catch (error) {
+      console.error('Ошибка выхода:', error)
+      setLogoutError(
+        error.message || 'Не удалось выйти из аккаунта. Попробуйте ещё раз.'
+      )
+      return
+    }
+    navigate('/login')
+  }
+
+  const exportData = async () => {
+    if (exportBusy) return
+
+    setExportBusy(true)
+    setExportStatus('')
+    setExportError('')
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/me/export`, {
+        method: 'GET',
+        credentials: 'include'
+      })
+      if (response.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error(
+            'Экспорт данных пока недоступен. Функция появится после обновления сервера.'
+          )
+        }
+        const data = await response.json().catch(() => ({}))
+        throw new Error(
+          data.message || `Не удалось подготовить экспорт: HTTP ${response.status}`
+        )
+      }
+      const data = await response.json().catch(() => null)
+      if (!data || typeof data !== 'object') {
+        throw new Error('Сервер вернул некорректные данные для экспорта.')
+      }
+
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json'
+      })
+      const blobUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = blobUrl
+      link.download = `leyka-data-${new Date().toISOString().slice(0, 10)}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+
+      setExportStatus('Файл с вашими данными скачивается.')
+    } catch (error) {
+      console.error('Ошибка экспорта данных:', error)
+      setExportError(error.message || 'Не удалось экспортировать данные. Попробуйте ещё раз.')
+    } finally {
+      setExportBusy(false)
+    }
+  }
+
+  const openDeleteDialog = () => {
+    if (deleteBusy) return
+    setDeleteConfirmText('')
+    setDeleteError('')
+    setDeleteDialogOpen(true)
+  }
+
+  const closeDeleteDialog = () => {
+    if (deleteBusy) return
+    setDeleteDialogOpen(false)
+    setDeleteError('')
+    deleteTriggerRef.current?.focus?.()
+  }
+
+  const confirmDeleteAccount = async () => {
+    if (deleteBusy) return
+    if (deleteConfirmText.trim().toUpperCase() !== 'УДАЛИТЬ') {
+      setDeleteError('Введите слово УДАЛИТЬ, чтобы подтвердить удаление.')
+      return
+    }
+
+    setDeleteBusy(true)
+    setDeleteError('')
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/users/me`, {
+        method: 'DELETE',
+        credentials: 'include'
+      })
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error(
+            'Удаление аккаунта пока недоступно. Функция появится после обновления сервера.'
+          )
+        }
+        const data = await response.json().catch(() => ({}))
+        throw new Error(
+          data.message || `Не удалось удалить аккаунт: HTTP ${response.status}`
+        )
+      }
+
+      setDeleteDialogOpen(false)
+      await fetchWithTimeout(`${API_URL}/users/logout`, {
+        method: 'POST',
+        credentials: 'include'
+      }).catch(() => {})
+      navigate('/', { replace: true })
+    } catch (error) {
+      console.error('Ошибка удаления аккаунта:', error)
+      setDeleteError(error.message || 'Не удалось удалить аккаунт. Попробуйте ещё раз.')
+    } finally {
+      setDeleteBusy(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!deleteDialogOpen) return undefined
+
+    const dialog = deleteDialogRef.current
+    const previouslyFocused = deleteTriggerRef.current
+    const focusableSelector =
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+    const getFocusable = () =>
+      Array.from(dialog?.querySelectorAll(focusableSelector) ?? [])
+        .filter(element => element.offsetParent !== null)
+
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        if (!deleteBusy) {
+          setDeleteDialogOpen(false)
+          setDeleteError('')
+          deleteTriggerRef.current?.focus?.()
+        }
+        return
+      }
+      if (event.key !== 'Tab') return
+
+      const items = getFocusable()
+      if (!items.length) return
+      const first = items[0]
+      const last = items[items.length - 1]
+
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    const frame = window.requestAnimationFrame(() => deleteInputRef.current?.focus?.())
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus?.()
+    }
+  }, [deleteDialogOpen, deleteBusy])
+
 
   if (!profile) {
-    return <p>Загрузка...</p>
+    return (
+      <div
+        className='profilePage'
+        role='tabpanel'
+        id={TAB_PANEL_ID('profile')}
+        aria-labelledby={TAB_ELEMENT_ID('profile')}
+      >
+        <p>Загрузка...</p>
+      </div>
+    )
   }
 
   const displayName =
@@ -333,9 +609,14 @@ function Profile () {
   const isAdmin = profile.role === 'ADMIN'
 
   return (
-    <div className='profilePage'>
+    <div
+      className='profilePage'
+      role='tabpanel'
+      id={TAB_PANEL_ID('profile')}
+      aria-labelledby={TAB_ELEMENT_ID('profile')}
+    >
       <div className='headerBlocskProfils'>
-        <p>Личный кабинет</p>
+        <h1>Личный кабинет</h1>
       </div>
       <div className='blocksDescriptionProfile'>
         <div className='nameBlocksDescriptionProfile'>
@@ -415,8 +696,17 @@ function Profile () {
           <p>Поливов в истории</p>
         </div>
         <div className='interestPlant'>
-          {completion && <p>{completion.percent}%</p>}
+          <p className='interestPlantValue'>
+            {Number.isFinite(completion?.percent) ? `${completion.percent}%` : '—'}
+          </p>
           <p>Поливов вовремя</p>
+          {!Number.isFinite(completion?.percent) && (
+            <p className='interestPlantHint'>
+              {completion
+                ? 'Появится после первого полива.'
+                : 'Считаем статистику…'}
+            </p>
+          )}
         </div>
       </div>
       {isAdmin && (
@@ -428,6 +718,7 @@ function Profile () {
           }
         >
           <AdminPushPanel />
+          <AdminMailPanel />
         </Suspense>
       )}
       <div className='settingsNotification'>
@@ -442,7 +733,9 @@ function Profile () {
                   (!isPushSupported()
                     ? 'Push-уведомления не поддерживаются этим браузером'
                     : Notification.permission === 'denied'
-                    ? 'Уведомления заблокированы в настройках браузера'
+                    ? isIOS()
+                      ? 'Уведомления отключены. Откройте «Настройки» → «Уведомления» → «Лейка», разрешите их и вернитесь в приложение.'
+                      : 'Уведомления отключены. Нажмите на значок замка/«Настройки сайта» в адресной строке, разрешите уведомления и обновите страницу.'
                     : isIOS() && !isStandalone()
                     ? 'На iPhone добавьте приложение на экран «Домой»'
                     : 'Напомним, когда пора полить')}
@@ -452,7 +745,7 @@ function Profile () {
             <input
               type='checkbox'
               checked={pushEnabled}
-              disabled={pushLoading || pushChanging || !isPushSupported()}
+              disabled={pushLoading || pushChanging || !isPushSupported() || Notification.permission === 'denied'}
               onChange={handlePushChange}
               aria-label='Push-уведомления'
               aria-busy={pushLoading || pushChanging}
@@ -469,7 +762,7 @@ function Profile () {
                 : summaryError ||
                   (morningSummaryEnabled && !pushEnabled
                     ? 'Включите push на этом устройстве для получения сводки'
-                    : 'Каждый день в 9:00 по Москве: растения к поливу')}
+                    : 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу')}
             </p>
           </div>
           <label className='appleSwitchSettings'>
@@ -484,6 +777,30 @@ function Profile () {
               onChange={handleMorningSummaryChange}
               aria-label='Утренняя сводка'
               aria-busy={summaryLoading || summaryChanging}
+            />
+            <span className='sliderSettings'></span>
+          </label>
+        </div>
+        <div className='pushSettings'>
+          <div>
+            <p>Советы по уходу</p>
+            <p role={careAdviceError ? 'alert' : 'status'}>
+              {careAdviceLoading
+                ? 'Проверяем настройку...'
+                : careAdviceError ||
+                  (careAdviceEnabled
+                    ? 'Когда пора подкормить, увлажнить или осмотреть растение — с учётом сезона и лимитов'
+                    : 'Советы по уходу отключены')}
+            </p>
+          </div>
+          <label className='appleSwitchSettings'>
+            <input
+              type='checkbox'
+              checked={careAdviceEnabled}
+              disabled={careAdviceLoading || careAdviceChanging}
+              onChange={handleCareAdviceChange}
+              aria-label='Советы по уходу'
+              aria-busy={careAdviceLoading || careAdviceChanging}
             />
             <span className='sliderSettings'></span>
           </label>
@@ -533,9 +850,129 @@ function Profile () {
             : `Тема задана вручную: ${theme === 'dark' ? 'тёмная' : 'светлая'}`}
         </p>
       </div>
+      <section className='accountData' aria-labelledby='cookieSettingsTitle'>
+        <h2 id='cookieSettingsTitle'>Cookie и аналитика</h2>
+        <p className='accountDataText'>
+          Обязательные файлы cookie нужны для работы приложения, аналитика
+          включается только с вашего согласия. Здесь можно включить аналитику
+          или отозвать согласие в любой момент — выбор применяется сразу.
+        </p>
+        <div className='accountDataActions'>
+          <button
+            type='button'
+            className='accountDataExport'
+            aria-haspopup='dialog'
+            onClick={openCookieConsentSettings}
+          >
+            Настройки cookie
+          </button>
+        </div>
+      </section>
+      <section className='accountData' aria-labelledby='accountDataTitle'>
+        <h2 id='accountDataTitle'>Данные и аккаунт</h2>
+        <p className='accountDataText'>
+          Скачайте копию своих данных в формате JSON или удалите аккаунт вместе
+          со всеми растениями и историей полива.
+        </p>
+        <div className='accountDataActions'>
+          <button
+            type='button'
+            className='accountDataExport'
+            onClick={exportData}
+            disabled={exportBusy}
+            aria-busy={exportBusy}
+          >
+            {exportBusy ? 'Готовим файл…' : 'Экспорт данных'}
+          </button>
+          <button
+            type='button'
+            className='accountDataDelete'
+            ref={deleteTriggerRef}
+            onClick={openDeleteDialog}
+            disabled={deleteBusy}
+          >
+            Удалить аккаунт
+          </button>
+        </div>
+        {exportStatus && (
+          <p className='accountDataStatus' role='status'>
+            {exportStatus}
+          </p>
+        )}
+        {exportError && (
+          <p className='accountDataError' role='alert'>
+            {exportError}
+          </p>
+        )}
+      </section>
       <div className='exitButton'>
-        <button>Выйти</button>
+        {logoutError && (
+          <p className='themePreferenceError' role='alert'>
+            {logoutError}
+          </p>
+        )}
+        <button onClick={() => exitOfProduct()}>Выйти</button>
       </div>
+      {deleteDialogOpen && (
+        <div
+          className='accountDialogOverlay'
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeDeleteDialog()
+          }}
+        >
+          <section
+            className='accountDialog'
+            role='alertdialog'
+            aria-modal='true'
+            aria-labelledby='deleteAccountTitle'
+            aria-describedby='deleteAccountDescription'
+            ref={deleteDialogRef}
+          >
+            <h2 id='deleteAccountTitle'>Удалить аккаунт безвозвратно?</h2>
+            <p id='deleteAccountDescription'>
+              Будут удалены профиль, растения, история полива и настройки.
+              Отменить это действие нельзя. Копию данных можно сохранить заранее
+              кнопкой «Экспорт данных».
+            </p>
+            <label className='accountDialogLabel' htmlFor='deleteAccountConfirm'>
+              Введите слово УДАЛИТЬ, чтобы подтвердить
+            </label>
+            <input
+              id='deleteAccountConfirm'
+              ref={deleteInputRef}
+              className='accountDialogInput'
+              type='text'
+              autoComplete='off'
+              spellCheck={false}
+              value={deleteConfirmText}
+              onChange={event => {
+                setDeleteConfirmText(event.target.value)
+                if (deleteError) setDeleteError('')
+              }}
+              aria-invalid={deleteError ? 'true' : undefined}
+              aria-describedby={deleteError ? 'deleteAccountError' : undefined}
+            />
+            {deleteError && (
+              <p className='accountDialogError' id='deleteAccountError' role='alert'>
+                {deleteError}
+              </p>
+            )}
+            <div className='accountDialogActions'>
+              <button type='button' onClick={closeDeleteDialog} disabled={deleteBusy}>
+                Отмена
+              </button>
+              <button
+                type='button'
+                className='accountDialogConfirm'
+                onClick={confirmDeleteAccount}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? 'Удаляем…' : 'Удалить аккаунт'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <footer className='profileAppVersion'>
         <p>Версия приложения {import.meta.env.VITE_APP_VERSION}</p>
         <p className='profileFeedback'>

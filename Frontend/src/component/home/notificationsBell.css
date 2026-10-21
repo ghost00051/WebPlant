@@ -1,0 +1,57 @@
+.notificationsBell {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: #f5f4f1;
+    cursor: pointer;
+}
+
+.notificationsBell > img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.notificationsBell:hover {
+    filter: brightness(0.97);
+}
+
+.notificationsBell:focus-visible {
+    outline: 2px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+.notificationsBellBadge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 999px;
+    background: var(--theme-text);
+    color: var(--theme-page);
+    font-family: 'Inter', sans-serif;
+    font-size: 10px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+}
+
+html[data-theme='dark'] .notificationsBell {
+    background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .notificationsBell > img {
+    filter: brightness(0) invert(0.88);
+}

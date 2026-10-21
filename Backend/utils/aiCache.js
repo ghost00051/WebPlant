@@ -1,10 +1,14 @@
 import { createHash } from 'node:crypto'
 import { getRedisKeyPrefix, isRedisConfigured, redisCommand } from '../redis.js'
+import { acquireLock, releaseLock } from './distributedLock.js'
 
 const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60
 const DEFAULT_CHAT_TTL_SECONDS = 10 * 60
+const SINGLE_FLIGHT_TTL_MS = 60_000
+const SINGLE_FLIGHT_WAIT_ATTEMPTS = 40
+const SINGLE_FLIGHT_WAIT_DELAY_MS = 500
 
-const stats = { hits: 0, misses: 0, writes: 0, errors: 0, skipped: 0 }
+const stats = { hits: 0, misses: 0, writes: 0, errors: 0, skipped: 0, joined: 0, stampedes: 0 }
 
 function readTtl(value, fallback) {
     const parsed = Number.parseInt(value ?? '', 10)
@@ -56,6 +60,8 @@ export function resetAiCacheStats() {
     stats.writes = 0
     stats.errors = 0
     stats.skipped = 0
+    stats.joined = 0
+    stats.stampedes = 0
 }
 
 export async function readAiCache(key) {
@@ -80,6 +86,27 @@ export async function writeAiCache(key, value, ttlSeconds) {
     return reply === 'OK'
 }
 
+function sleep(ms) {
+    return new Promise(resolve => {
+        const timer = setTimeout(resolve, ms)
+        timer.unref?.()
+    })
+}
+
+async function waitForCachedValue(key, lockKey = null) {
+    for (let attempt = 0; attempt < SINGLE_FLIGHT_WAIT_ATTEMPTS; attempt += 1) {
+        await sleep(SINGLE_FLIGHT_WAIT_DELAY_MS)
+        const value = await readAiCache(key)
+        if (value !== null) return value
+
+        if (lockKey) {
+            const locked = await redisCommand(['EXISTS', lockKey])
+            if (locked === 0) return null
+        }
+    }
+    return null
+}
+
 export async function withAiCache({ namespace, payload, ttlSeconds, call }) {
     if (typeof call !== 'function') {
         throw new TypeError('withAiCache: call должен быть функцией')
@@ -98,17 +125,47 @@ export async function withAiCache({ namespace, payload, ttlSeconds, call }) {
         return { value: cached, cached: true }
     }
 
-    stats.misses++
-    const value = await call()
+    const effectiveTtl = ttlSeconds ?? getAiCacheTtlSeconds()
 
-    try {
-        await writeAiCache(key, value, ttlSeconds ?? getAiCacheTtlSeconds())
-    } catch (error) {
-        stats.errors++
-        if (process.env.REDIS_DEBUG === 'true') {
-            console.warn('⚠️ Не удалось записать ответ ИИ в кэш:', error?.message || error)
+    const produce = async () => {
+        const value = await call()
+        try {
+            await writeAiCache(key, value, effectiveTtl)
+        } catch (error) {
+            stats.errors++
+            if (process.env.REDIS_DEBUG === 'true') {
+                console.warn('⚠️ Не удалось записать ответ ИИ в кэш:', error?.message || error)
+            }
+        }
+        return value
+    }
+
+    if (!isRedisConfigured()) {
+        stats.misses++
+        return { value: await produce(), cached: false }
+    }
+
+    const lock = await acquireLock(`ai-cache:${namespace}:${key.slice(-32)}`, {
+        ttlMs: SINGLE_FLIGHT_TTL_MS
+    })
+
+    if (lock.acquired) {
+        stats.misses++
+        try {
+            return { value: await produce(), cached: false }
+        } finally {
+            await releaseLock(lock)
         }
     }
 
-    return { value, cached: false }
+    const shared = await waitForCachedValue(key, lock.key)
+    if (shared !== null) {
+        stats.joined++
+        return { value: shared, cached: true }
+    }
+
+    
+    stats.stampedes++
+    stats.misses++
+    return { value: await produce(), cached: false }
 }

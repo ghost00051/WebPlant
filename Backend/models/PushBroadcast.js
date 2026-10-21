@@ -72,6 +72,34 @@ const PushBroadcast = sequelize.define('push_broadcast', {
         allowNull: false,
         defaultValue: 0
     },
+
+    idempotency_key: {
+        type: DataTypes.STRING(200),
+        allowNull: true
+    },
+
+    started_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    updated_at: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    last_processed_id: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0
+    },
+    chunk_size: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 200,
+        validate: {
+            min: 1,
+            max: 500
+        }
+    },
     created_by: {
         type: DataTypes.INTEGER,
         allowNull: true,
@@ -94,6 +122,15 @@ const PushBroadcast = sequelize.define('push_broadcast', {
         {
             name: 'idx_push_broadcasts_created',
             fields: ['created_at', 'id']
+        },
+        {
+            name: 'idx_push_broadcasts_idempotency',
+            unique: true,
+            fields: ['idempotency_key']
+        },
+        {
+            name: 'idx_push_broadcasts_status_updated',
+            fields: ['status', 'updated_at']
         }
     ]
 })

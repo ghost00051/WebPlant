@@ -39,3 +39,42 @@ html[data-theme='dark'] .descritpionOfProfile .adminProfileBadge {
 html[data-theme='dark'] .adminPushLoading {
     color: var(--theme-muted);
 }
+
+html[data-theme='dark'] .profilePage .accountData {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .accountData h2,
+html[data-theme='dark'] .profilePage .accountDialog h2 {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .accountDataExport {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .accountDataText,
+html[data-theme='dark'] .profilePage .accountDialogLabel {
+  color: var(--theme-muted);
+}
+
+html[data-theme='dark'] body .profilePage .pushSettings div p:nth-child(1),
+html[data-theme='dark'] body .profilePage .headerOfsettingsNotification,
+html[data-theme='dark'] body .profilePage .descritpionOfProfile p:nth-child(1),
+html[data-theme='dark'] body .profilePage .passkeySettings h2,
+html[data-theme='dark'] body .profilePage .visualTheme > p:first-child,
+html[data-theme='dark'] body .profilePage .adminProfileBadge {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] body .profilePage .headerBlocskProfils {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] body .profilePage .passkeyCreateButton {
+  background-color: var(--theme-accent-soft);
+  color: var(--theme-text);
+}

@@ -49,6 +49,23 @@ const PRIVATE_META = {
         description: 'Список растений в вашей коллекции с расписанием полива и историей ухода.',
         indexable: false,
     },
+    '/reset-password': {
+        title: 'Восстановление пароля — Лейка',
+        description: 'Укажите email аккаунта и получите ссылку для создания нового пароля «Лейки».',
+        indexable: false,
+    },
+    '/notifications': {
+        title: 'Уведомления — Лейка',
+        description: 'Центр уведомлений «Лейки»: напоминания о поливе, советы по уходу и системные сообщения.',
+        indexable: false,
+    },
+}
+
+const UNKNOWN_META = {
+    title: 'Страница не найдена — Лейка',
+    description:
+        'Такой страницы нет. Вернитесь на главную «Лейки» — календарь полива и уход за комнатными растениями.',
+    indexable: false,
 }
 
 const PLANTS_INDEX_META = {
@@ -85,7 +102,7 @@ function resolveMeta(pathname) {
         if (article) return { ...article, indexable: true }
     }
 
-    return HOME_META
+    return UNKNOWN_META
 }
 
 function SeoMetadata() {
