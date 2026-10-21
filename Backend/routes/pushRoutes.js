@@ -22,7 +22,7 @@ const subscriptionLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 
-    ...rateLimitStoreOptions('push-subscription', { passOnStoreError: false })
+    ...rateLimitStoreOptions('push-subscription')
 })
 
 const subscriptionDailyLimiter = rateLimit({
@@ -32,7 +32,7 @@ const subscriptionDailyLimiter = rateLimit({
     message: { message: 'Дневной лимит обновлений push-подписки исчерпан. Попробуйте завтра.' },
     standardHeaders: true,
     legacyHeaders: false,
-    ...rateLimitStoreOptions('push-subscription-daily', { passOnStoreError: false })
+    ...rateLimitStoreOptions('push-subscription-daily')
 })
 
 const unsubscribeLimiter = rateLimit({
