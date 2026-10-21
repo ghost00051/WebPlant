@@ -111,10 +111,10 @@ const AI_CHAT_DEADLINE_MS = parseAiTimeout(
     Math.min(AI_CHAT_TIMEOUT_MS + 5000, 30_000)
 )
 const AI_ADVICE_DEADLINE_MS = parseAiTimeout(process.env.AI_ADVICE_DEADLINE_MS, 30_000)
-const AI_VISION_TIMEOUT_MS = parseAiTimeout(process.env.AI_VISION_TIMEOUT_MS, 30_000)
+const AI_VISION_TIMEOUT_MS = parseAiTimeout(process.env.AI_VISION_TIMEOUT_MS, 55_000)
 const AI_VISION_DEADLINE_MS = parseAiTimeout(
     process.env.AI_VISION_DEADLINE_MS,
-    Math.min(AI_VISION_TIMEOUT_MS + 5000, 45_000)
+    110_000
 )
 
 const client = buildAiClient(AI_CHAT_TIMEOUT_MS)
