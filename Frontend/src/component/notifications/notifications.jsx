@@ -9,6 +9,8 @@ import notificationAlert from '../../assets/notification-alert.svg'
 import notificationCheck from '../../assets/notification-check.svg'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
+import { publishUnreadCount } from '../../utils/appBadge.js'
 import { diffInDays } from '../../utils/date.js'
 import { TABS } from '../tools/tabs.js'
 import {
@@ -146,6 +148,7 @@ function Notifications () {
   const [pushError, setPushError] = useState('')
   const [pushSuccess, setPushSuccess] = useState('')
   const filterRefs = useRef(new Map())
+  const lastSyncRef = useRef(0)
 
   const setFilterRef = tabId => node => {
     if (node) {
@@ -228,6 +231,39 @@ function Notifications () {
       cancelled = true
     }
   }, [loadInitial])
+
+  const refreshFirstPage = useCallback(async () => {
+    try {
+      const page = await loadPage(0)
+      if (!page) return
+      setItems(current => {
+        const freshIds = new Set(page.items.map(item => item.id))
+        return [...page.items, ...current.filter(item => !freshIds.has(item.id))]
+      })
+      setUnreadCount(page.unreadCount)
+    } catch (refreshError) {
+      console.warn('Не удалось обновить уведомления:', refreshError)
+    }
+  }, [loadPage])
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return
+      const timestamp = Date.now()
+      if (timestamp - lastSyncRef.current < 5000) return
+      lastSyncRef.current = timestamp
+      void refreshFirstPage()
+    }
+
+    const stop = subscribeToNotificationChanges(refresh)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      stop()
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [refreshFirstPage])
 
   const pushNotice = useMemo(() => {
     if (!canUsePush()) {
@@ -359,7 +395,9 @@ function Notifications () {
       setItems(current => current.map(item =>
         item.read_at ? item : { ...item, read_at: readAt }
       ))
-      setUnreadCount(Number.isInteger(data.unreadCount) ? data.unreadCount : 0)
+      const nextUnread = Number.isInteger(data.unreadCount) ? data.unreadCount : 0
+      setUnreadCount(nextUnread)
+      publishUnreadCount(nextUnread)
     } catch (markError) {
       console.error('Ошибка отметки уведомлений:', markError)
       setError('Не удалось отметить уведомления прочитанными. Попробуйте ещё раз.')
@@ -387,11 +425,11 @@ function Notifications () {
           setItems(current => current.map(entry =>
             entry.id === item.id ? { ...entry, read_at: readAt } : entry
           ))
-          if (Number.isInteger(data.unreadCount)) {
-            setUnreadCount(data.unreadCount)
-          } else {
-            setUnreadCount(current => Math.max(0, current - 1))
-          }
+          const nextUnread = Number.isInteger(data.unreadCount)
+            ? data.unreadCount
+            : Math.max(0, unreadCount - 1)
+          setUnreadCount(nextUnread)
+          publishUnreadCount(nextUnread)
         }
       } catch (readError) {
         console.warn('Не удалось отметить уведомление прочитанным:', readError)

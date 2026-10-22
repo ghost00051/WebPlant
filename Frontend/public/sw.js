@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v7'
+const CACHE_VERSION = 'v9'
 const CACHE_NAME = `ctp-${CACHE_VERSION}`
 const DEFAULT_API_BASE = '/api'
 const VALID_API_PROTOCOLS = ['http:', 'https:']
@@ -251,6 +251,8 @@ self.addEventListener('push', (event) => {
             type: 'push-received',
             notificationId: data.data?.notificationId ?? null
         })
+
+        await syncAppBadge()
     })())
 })
 
@@ -268,6 +270,54 @@ async function markNotificationRead(notificationId) {
     } catch (error) {
 
         console.warn('⚠️ SW: mark-read failed:', error)
+    }
+}
+
+function resolveBadgeApi() {
+    const registration = self.registration
+    if (registration &&
+        (typeof registration.setAppBadge === 'function' ||
+            typeof registration.clearAppBadge === 'function')) {
+        return registration
+    }
+
+    if (typeof navigator !== 'undefined' &&
+        (typeof navigator.setAppBadge === 'function' ||
+            typeof navigator.clearAppBadge === 'function')) {
+        return navigator
+    }
+
+    return null
+}
+
+async function syncAppBadge() {
+    const badgeApi = resolveBadgeApi()
+    if (!badgeApi) return
+
+    try {
+        const response = await fetch(`${API_BASE}/notifications/unread-count`, {
+            credentials: 'include'
+        })
+
+        if (response.status === 401) {
+            if (typeof badgeApi.clearAppBadge === 'function') {
+                await badgeApi.clearAppBadge()
+            }
+            return
+        }
+        if (!response.ok) return
+
+        const data = await response.json().catch(() => ({}))
+        const unread = Number(data?.unreadCount)
+        const count = Number.isInteger(unread) && unread > 0 ? unread : 0
+
+        if (count > 0 && typeof badgeApi.setAppBadge === 'function') {
+            await badgeApi.setAppBadge(count)
+        } else if (typeof badgeApi.clearAppBadge === 'function') {
+            await badgeApi.clearAppBadge()
+        }
+    } catch (error) {
+        console.warn('⚠️ SW: не удалось обновить бейдж на иконке:', error)
     }
 }
 
@@ -292,7 +342,13 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil((async () => {
         if (notificationId) {
             await markNotificationRead(notificationId)
+            await notifyClients({
+                type: 'notifications-changed',
+                notificationId
+            })
         }
+
+        await syncAppBadge()
 
         const clientList = await self.clients.matchAll({
             type: 'window',

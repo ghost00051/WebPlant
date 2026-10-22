@@ -13,6 +13,8 @@ import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
+import { setAppBadgeCount } from '../../utils/appBadge.js'
 import { DEFAULT_TIME_ZONE } from '../../utils/timeZone.js'
 import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
 import {
@@ -27,6 +29,10 @@ import {
   toISODate,
   weekdayName
 } from '../../utils/date.js'
+import {
+  missedWateringLabel,
+  splitNeedWateringPlants
+} from '../../utils/wateringNeeds.js'
 
 import './homePage.css'
 import './homePage.desktop.css'
@@ -36,6 +42,14 @@ import './notifications-button.css'
 const EXIT_MS = 420
 const POUR_ANIMATION_MS = 1200
 const OFF_SCHEDULE_PREVIEW_COUNT = 3
+
+const WATERING_TABS = [
+  { id: 'today', label: 'Сегодня нужно полить' },
+  { id: 'missed', label: 'Пропущенные поливы' }
+]
+
+const WATERING_TAB_ID = tabId => `homePageWateringTab-${tabId}`
+const WATERING_PANEL_ID = 'homePageWateringPanel'
 
 function plantWordForm (count) {
   const mod10 = count % 10
@@ -153,8 +167,10 @@ function HomePage ({ user, onTabChange }) {
   const [offScheduleTarget, setOffScheduleTarget] = useState(null)
   const [pouringOffSchedule, setPouringOffSchedule] = useState(null)
   const [offScheduleExpanded, setOffScheduleExpanded] = useState(false)
+  const [wateringTab, setWateringTab] = useState('today')
 
   const calendarRef = useRef(null)
+  const wateringTabRefs = useRef(new Map())
   const pendingTimers = useRef(new Set())
   const currentDayRef = useRef(toISODate(new Date()))
   const lastRefreshAtRef = useRef(0)
@@ -175,6 +191,36 @@ function HomePage ({ user, onTabChange }) {
     pendingTimers.current.add(timer)
     return timer
   }, [])
+
+  const setWateringTabRef = tabId => node => {
+    if (node) {
+      wateringTabRefs.current.set(tabId, node)
+    } else {
+      wateringTabRefs.current.delete(tabId)
+    }
+  }
+
+  const handleWateringTabKeyDown = (event, index) => {
+    let nextIndex = null
+
+    if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+      nextIndex = index + 1
+    } else if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+      nextIndex = index - 1
+    } else if (event.key === 'Home') {
+      nextIndex = 0
+    } else if (event.key === 'End') {
+      nextIndex = WATERING_TABS.length - 1
+    }
+
+    if (nextIndex === null) return
+
+    event.preventDefault()
+    const nextTab =
+      WATERING_TABS[(nextIndex + WATERING_TABS.length) % WATERING_TABS.length]
+    wateringTabRefs.current.get(nextTab.id)?.focus()
+    setWateringTab(nextTab.id)
+  }
 
   const scheduleMap = useMemo(() => {
     const map = new Map()
@@ -242,6 +288,7 @@ function HomePage ({ user, onTabChange }) {
       const data = await response.json()
       if (Number.isInteger(data?.unreadCount)) {
         setBadgeText(data)
+        setAppBadgeCount(data.unreadCount)
       }
     } catch (error) {
       console.warn('Не удалось загрузить уведомления:', error)
@@ -349,22 +396,13 @@ function HomePage ({ user, onTabChange }) {
     return () => clearInterval(id)
   }, [])
 
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
-      return undefined
-    }
-
-    const handleServiceWorkerMessage = event => {
-      if (event.data?.type === 'push-received') {
+  useEffect(
+    () =>
+      subscribeToNotificationChanges(() => {
         void getNotifications()
-      }
-    }
-
-    navigator.serviceWorker.addEventListener('message', handleServiceWorkerMessage)
-    return () => {
-      navigator.serviceWorker.removeEventListener('message', handleServiceWorkerMessage)
-    }
-  }, [getNotifications])
+      }),
+    [getNotifications]
+  )
 
   useEffect(() => {
     const refresh = ({ force = false } = {}) => {
@@ -535,6 +573,15 @@ function HomePage ({ user, onTabChange }) {
     return map
   }, [allPlants])
 
+  const { today: todayPlants, missed: missedPlants } = useMemo(
+    () => splitNeedWateringPlants(plant, { now, timeZone }),
+    [plant, now, timeZone]
+  )
+
+  const missedCount = missedPlants.length
+  const needWateringUnavailable = Boolean(dataError) && plant.length === 0
+  const collectionEmpty = plant.length === 0 && allPlants.length === 0
+
   const buildDay = useCallback(
     date => {
       const target = toDate(date)
@@ -691,6 +738,54 @@ function HomePage ({ user, onTabChange }) {
     setPouringOffSchedule(null)
   }
 
+  const renderWateringCard = (item, { overdue = false, daysLate = 0 } = {}) => {
+    const fullInfo = allPlantsMap.get(item.id)
+    const mainPhoto =
+      fullInfo?.photos?.find(photo => photo.is_main)?.url ??
+      fullInfo?.photos?.[0]?.url
+    const isRemoving = removingId === item.id
+    const isWatering = wateringId === item.id
+
+    return (
+      <div
+        key={item.id}
+        className={`plantRender ${isRemoving ? 'is-removing' : ''}`}
+      >
+        <div className='description'>
+          {mainPhoto ? (
+            <PlantPhoto src={mainPhoto} alt={item.name} />
+          ) : (
+            <div className='no-photo' />
+          )}
+          <div className='plant-info'>
+            <p className='plant-name'>{item.name}</p>
+            <div className='plant-details'>
+              <span>{wateringEveryLabel(fullInfo?.watering_interval_days)}</span>
+            </div>
+            <div
+              className={`watering-badge${
+                overdue ? ' watering-badge--overdue' : ''
+              }`}
+            >
+              <img src={droplets} alt='' />
+              {overdue ? missedWateringLabel(daysLate) : 'Полить сегодня'}
+            </div>
+          </div>
+        </div>
+        <button
+          type='button'
+          className={`check-button ${isWatering ? 'is-watering' : ''}`}
+          onClick={() => waterPlant(item.id)}
+          disabled={!!wateringId}
+          aria-label={`Отметить, что «${item.name}» полит`}
+        >
+          <img src={check} alt='' />
+          <span>Полить</span>
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div
       className='homePageDashboard'
@@ -759,10 +854,63 @@ function HomePage ({ user, onTabChange }) {
           externalIso={selectedDay?.iso}
         />
         <section className='homePageWatering'>
-          <div className='headerNotificiotinsOfHomePAge'>
-            <p>Сегодня нужно полить</p>
+          <div
+            className='wateringTabs'
+            role='tablist'
+            aria-label='Полив растений'
+          >
+            <span
+              className={`wateringTabsIndicator${
+                wateringTab === 'missed' ? ' is-missed' : ''
+              }`}
+              aria-hidden='true'
+            />
+            {WATERING_TABS.map((tab, index) => {
+              const isActive = wateringTab === tab.id
+              const isMissed = tab.id === 'missed'
+
+              return (
+                <button
+                  key={tab.id}
+                  ref={setWateringTabRef(tab.id)}
+                  type='button'
+                  role='tab'
+                  id={WATERING_TAB_ID(tab.id)}
+                  aria-selected={isActive}
+                  aria-controls={WATERING_PANEL_ID}
+                  aria-label={
+                    isMissed
+                      ? `Пропущенные поливы, просрочено: ${missedCount}`
+                      : undefined
+                  }
+                  tabIndex={isActive ? 0 : -1}
+                  className={`wateringTab${
+                    isMissed ? ' wateringTab--missed' : ''
+                  }`}
+                  onClick={() => setWateringTab(tab.id)}
+                  onKeyDown={event => handleWateringTabKeyDown(event, index)}
+                >
+                  <span className='wateringTabLabel'>{tab.label}</span>
+                  {isMissed && (
+                    <span
+                      className={`wateringTabBadge${
+                        missedCount === 0 ? ' wateringTabBadge--empty' : ''
+                      }`}
+                      aria-hidden='true'
+                    >
+                      {missedCount > 99 ? '99+' : missedCount}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
           </div>
-          <div>
+          <div
+            className='wateringPanel'
+            id={WATERING_PANEL_ID}
+            role='tabpanel'
+            aria-labelledby={WATERING_TAB_ID(wateringTab)}
+          >
             {dataError && (
               <p className='homePageDataError' role='alert'>
                 {dataError}
@@ -781,68 +929,39 @@ function HomePage ({ user, onTabChange }) {
               <p className='plant-empty' role='status'>
                 Загружаем расписание…
               </p>
-            ) : plant.length === 0 ? (
-              dataError ? null : allPlants.length === 0 ? (
-                <div className='plant-empty'>
-                  <p>В коллекции пока нет растений.</p>
-                  <button
-                    type='button'
-                    className='homePageAddPlant'
-                    onClick={() => navigate('/add-plant')}
-                  >
-                    Добавить первое растение
-                  </button>
-                </div>
-              ) : (
-                <p className='plant-empty'>Все растения политы 💚</p>
-              )
+            ) : needWateringUnavailable ? null : collectionEmpty ? (
+              <div className='plant-empty'>
+                <p>В коллекции пока нет растений.</p>
+                <button
+                  type='button'
+                  className='homePageAddPlant'
+                  onClick={() => navigate('/add-plant')}
+                >
+                  Добавить первое растение
+                </button>
+              </div>
             ) : (
-              plant.map(item => {
-                const fullInfo = allPlantsMap.get(item.id)
-                const mainPhoto =
-                  fullInfo?.photos?.find(p => p.is_main)?.url ??
-                  fullInfo?.photos?.[0]?.url
-                const isRemoving = removingId === item.id
-                const isWatering = wateringId === item.id
-                return (
+              <div key={wateringTab} className='wateringPanelContent'>
+                {wateringTab === 'today' ? (
+                  todayPlants.length > 0 ? (
+                    todayPlants.map(item => renderWateringCard(item))
+                  ) : (
+                    <p className='plant-empty'>На сегодня всё полито 💚</p>
+                  )
+                ) : missedCount > 0 ? (
                   <div
-                    key={item.id}
-                    className={`plantRender ${isRemoving ? 'is-removing' : ''}`}
+                    className='wateringMissedList'
+                    role='group'
+                    aria-label='Пропущенные поливы'
                   >
-                    <div className='description'>
-                      {mainPhoto ? (
-                        <PlantPhoto src={mainPhoto} alt={item.name} />
-                      ) : (
-                        <div className='no-photo' />
-                      )}
-                      <div className='plant-info'>
-                        <p className='plant-name'>{item.name}</p>
-                        <div className='plant-details'>
-                          <span>{item.species}</span>
-                          <span className='separator'>·</span>
-                          <span>{wateringEveryLabel(fullInfo?.watering_interval_days)}</span>
-                        </div>
-                        <div className='watering-badge'>
-                          <img src={droplets} alt='' />
-                          Полить сегодня
-                        </div>
-                      </div>
-                    </div>
-                    <button
-                      type='button'
-                      className={`check-button ${
-                        isWatering ? 'is-watering' : ''
-                      }`}
-                      onClick={() => waterPlant(item.id)}
-                      disabled={!!wateringId}
-                      aria-label={`Отметить, что «${item.name}» полит`}
-                    >
-                      <img src={check} alt='' />
-                      <span>Полить</span>
-                    </button>
+                    {missedPlants.map(({ plant: item, daysLate }) =>
+                      renderWateringCard(item, { overdue: true, daysLate })
+                    )}
                   </div>
-                )
-              })
+                ) : (
+                  <p className='plant-empty'>Просроченных поливов нет 💚</p>
+                )}
+              </div>
             )}
           </div>
         </section>

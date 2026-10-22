@@ -1,9 +1,10 @@
-import { lazy, Suspense, useSyncExternalStore } from 'react'
+import { lazy, Suspense, useEffect, useSyncExternalStore } from 'react'
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Navigate,
+  useLocation,
   useParams
 } from 'react-router-dom'
 import LandingPage from './component/landingPage/landingPage.jsx'
@@ -14,6 +15,8 @@ import CareDetailPage from './component/CareGuide/CareDetailPage.jsx'
 import SeoMetadata from './component/SeoMetadata/SeoMetadata.jsx'
 import RouteFallback from './component/RouteFallback/RouteFallback.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
+import { clearAppBadge } from './utils/appBadge.js'
+import { startAppBadgeSync } from './utils/appBadgeSync.js'
 import './styles/dark-theme.css'
 import './styles/skip-link.css'
 
@@ -52,6 +55,20 @@ function CareDetailRoute () {
   return <CareDetailPage slug={slug} />
 }
 
+const PRIVATE_APP_ROUTES = new Set([
+  '/home',
+  '/notifications',
+  '/add-plant',
+  '/edit-profile',
+  '/my-plants'
+])
+
+function isPrivateAppRoute (pathname) {
+  if (typeof pathname !== 'string' || !pathname) return false
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+  return PRIVATE_APP_ROUTES.has(normalized)
+}
+
 const subscribeToNothing = () => () => {}
 
 function useIsHydrated () {
@@ -75,6 +92,18 @@ function DeferredCookieConsent () {
 }
 
 function AppContent () {
+  const location = useLocation()
+  const privateRoute = isPrivateAppRoute(location.pathname)
+
+  useEffect(() => {
+    if (!privateRoute) {
+      clearAppBadge()
+      return undefined
+    }
+
+    return startAppBadgeSync()
+  }, [privateRoute])
+
   return (
     <ThemeProvider>
 

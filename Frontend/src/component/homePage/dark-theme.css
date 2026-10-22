@@ -11,6 +11,19 @@ html[data-theme='dark'] .godOfplantSoffSchedule {
     border-color: var(--theme-border);
 }
 
+html[data-theme='dark'] .wateringTabs {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .wateringTabsIndicator {
+    background: #303239;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .wateringTabBadge--empty {
+    background: rgba(255, 255, 255, 0.08);
+}
+
 html[data-theme='dark'] .checkPlantSoffScheduleoverlay {
     background: rgba(0, 0, 0, 0.6);
 }

@@ -4,6 +4,8 @@ import NotificationIcon from '../../assets/NotifBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
+import { setAppBadgeCount } from '../../utils/appBadge.js'
 import './notificationsBell.css'
 
 function badgeValue (count) {
@@ -29,7 +31,10 @@ function NotificationsBell ({ className = '' }) {
             )
             if (!response.ok) return
             const data = await response.json().catch(() => ({}))
-            if (Number.isInteger(data?.unreadCount)) setUnreadCount(data.unreadCount)
+            if (Number.isInteger(data?.unreadCount)) {
+                setUnreadCount(data.unreadCount)
+                setAppBadgeCount(data.unreadCount)
+            }
         } catch {
             return
         }
@@ -49,6 +54,14 @@ function NotificationsBell ({ className = '' }) {
             document.removeEventListener('visibilitychange', refresh)
         }
     }, [loadUnreadCount])
+
+    useEffect(
+        () =>
+            subscribeToNotificationChanges(() => {
+                void loadUnreadCount()
+            }),
+        [loadUnreadCount]
+    )
 
     const badge = badgeValue(unreadCount)
 
