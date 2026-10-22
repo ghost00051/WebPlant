@@ -13,6 +13,7 @@ import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { trackEvent } from '../../utils/productEvents.js'
 import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
 import { setAppBadgeCount } from '../../utils/appBadge.js'
 import { DEFAULT_TIME_ZONE } from '../../utils/timeZone.js'
@@ -449,7 +450,7 @@ function HomePage ({ user, onTabChange }) {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [offScheduleTarget])
 
-  const waterPlant = async plantId => {
+  const waterPlant = async (plantId, { onTime = true } = {}) => {
     if (!plantId || wateringId) return
     setWateringId(plantId)
 
@@ -471,6 +472,9 @@ function HomePage ({ user, onTabChange }) {
             `Не удалось отметить полив: HTTP ${response.status}`
         )
       }
+
+      // Без названий растений: только факт отметки и соблюдение графика.
+      trackEvent('watering_marked', { onTime })
 
       setRemovingId(plantId)
 
@@ -544,6 +548,8 @@ function HomePage ({ user, onTabChange }) {
           data.message || `Не удалось отметить полив: HTTP ${response.status}`
         )
       }
+
+      trackEvent('watering_marked', { onTime: false })
 
       await loadHomeData()
       return { ok: true, convertedSkip: Boolean(data.converted_skip) }
@@ -775,7 +781,7 @@ function HomePage ({ user, onTabChange }) {
         <button
           type='button'
           className={`check-button ${isWatering ? 'is-watering' : ''}`}
-          onClick={() => waterPlant(item.id)}
+          onClick={() => waterPlant(item.id, { onTime: !overdue })}
           disabled={!!wateringId}
           aria-label={`Отметить, что «${item.name}» полит`}
         >

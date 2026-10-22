@@ -214,7 +214,50 @@ const breakdownPayload = {
         { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString() },
         { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null }
     ],
-    averages: { plantsPerUser: 2.83, wateringsPerUser: 17.5, messagesPerUser: 26.67, photosPerPlant: 1.18 }
+    averages: { plantsPerUser: 2.83, wateringsPerUser: 17.5, messagesPerUser: 26.67, photosPerPlant: 1.18 },
+    utmSources: [
+        { source: 'yandex', medium: 'cpc', campaign: 'plants-autumn', visitors: 120 },
+        { source: 'telegram', medium: 'social', campaign: 'care-guide', visitors: 60 },
+        { source: 'vk', medium: 'social', campaign: null, visitors: 25 }
+    ]
+}
+
+const productPayload = {
+    generatedAt: new Date().toISOString(),
+    timezone: 'Europe/Moscow',
+    days: 30,
+    eventsTracked: true,
+    usersCreatedAtTracked: true,
+    activity: {
+        dau: 12,
+        wau: 45,
+        mau: 120,
+        activeUsers: 90,
+        newUsers: 22,
+        eventsToday: 140,
+        eventsInRange: 3200
+    },
+    funnel: {
+        registered: 200,
+        plantCreated: 150,
+        wateringMarked: 110,
+        pushSubscribed: 40,
+        rates: { plantCreated: 75, wateringMarked: 55, pushSubscribed: 20 }
+    },
+    retention: [
+        { cohort: day(35), cohortLabel: '01.09', size: 40, d1: 20, d7: 12, d30: 6, d1Rate: 50, d7Rate: 30, d30Rate: 15 },
+        { cohort: day(28), cohortLabel: '08.09', size: 30, d1: 15, d7: 9, d30: 3, d1Rate: 50, d7Rate: 30, d30Rate: 10 },
+        { cohort: day(21), cohortLabel: '15.09', size: 25, d1: 10, d7: 5, d30: 2, d1Rate: 40, d7Rate: 20, d30Rate: 8 }
+    ],
+    events: [
+        { event: 'landing_view', count: 1200, users: 300 },
+        { event: 'register', count: 200, users: 200 },
+        { event: 'plant_created', count: 180, users: 150 },
+        { event: 'watering_marked', count: 900, users: 110 },
+        { event: 'chat_message', count: 500, users: 60 },
+        { event: 'push_subscribed', count: 40, users: 40 }
+    ],
+    push: { notifications: 120, clicks: 30, ctr: 25, clickedToday: 4 }
 }
 
 const visitsPayload = {
@@ -334,11 +377,53 @@ const healthPayload = {
 
 const dockerPayload = {
     timestamp: new Date().toISOString(),
+    summary: {
+        available: true,
+        ok: false,
+        total: 4,
+        running: 2,
+        stopped: 1,
+        unhealthy: 0,
+        restarting: 1,
+        healthy: 2,
+        problems: 2
+    },
     containers: [{
-        id: 'abc', name: 'ctp_backend', state: 'running', status: 'Up', image: 'backend:latest',
+        id: 'a'.repeat(64), name: 'ctp_backend', state: 'running', status: 'Up 2 days (healthy)',
+        image: 'backend:latest', service: 'backend', healthStatus: 'healthy', restartCount: 0,
+        startedAt: new Date(now - 2 * 86400000).toISOString(), uptimeSeconds: 172800,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
         statsAvailable: true, cpu: 1.2, memory: { usage: 104857600, limit: 536870912, percent: 19.5 },
         network: { rx: 1048576, tx: 524288 }, block: { read: 0, write: 0 }, pids: 12
+    }, {
+        id: 'b'.repeat(64), name: 'ctp_worker', state: 'restarting', status: 'Restarting (1) 3 seconds ago',
+        image: 'backend:latest', service: 'worker', healthStatus: 'none', restartCount: 3,
+        startedAt: null, uptimeSeconds: null, exitCode: null, oomKilled: false, error: null,
+        problem: 'Перезапускается (3 перезапусков)', problemLevel: 'warn',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'c'.repeat(64), name: 'ctp_redis', state: 'exited', status: 'Exited (1) 5 minutes ago',
+        image: 'redis:7', service: 'redis', healthStatus: 'none', restartCount: 5,
+        startedAt: null, uptimeSeconds: null, exitCode: 1, oomKilled: false, error: null,
+        problem: 'Остановлен: код выхода 1', problemLevel: 'error',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'd'.repeat(64), name: 'ctp_proxy', state: 'running', status: 'Up 2 days (healthy)',
+        image: 'docker-socket-proxy:latest', service: 'docker-socket-proxy', healthStatus: 'healthy',
+        restartCount: 0, startedAt: new Date(now - 2 * 86400000).toISOString(), uptimeSeconds: 172800,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+        statsAvailable: true, cpu: 0.3, memory: { usage: 20971520, limit: 536870912, percent: 3.9 },
+        network: { rx: 1048576, tx: 1048576 }, block: { read: 0, write: 0 }, pids: 6
     }]
+}
+
+const dockerLogsPayload = {
+    id: 'a'.repeat(64),
+    name: 'ctp_backend',
+    tail: 100,
+    logs: 'server started\nGET /health 200\nGET /api/plants 200'
 }
 
 
@@ -369,12 +454,36 @@ function emptyList(limit = 25) {
     return { items: [], total: 0, page: 1, limit, pages: 1 }
 }
 
+function emptyProductPayload() {
+    return {
+        generatedAt: new Date().toISOString(),
+        timezone: 'Europe/Moscow',
+        days: 30,
+        eventsTracked: false,
+        usersCreatedAtTracked: false,
+        activity: { dau: 0, wau: 0, mau: 0, activeUsers: 0, newUsers: 0, eventsToday: 0, eventsInRange: 0 },
+        funnel: {
+            registered: 0,
+            plantCreated: 0,
+            wateringMarked: 0,
+            pushSubscribed: 0,
+            rates: { plantCreated: 0, wateringMarked: 0, pushSubscribed: 0 }
+        },
+        retention: [],
+        events: [],
+        push: { notifications: 0, clicks: 0, ctr: 0, clickedToday: 0 }
+    }
+}
+
 function route(url) {
     const path = new URL(url).pathname
     const empty = mode === 'empty'
 
     if (path.endsWith('/users/me')) return { status: 200, data: { id: 1, email: 'admin@example.com', name: 'Админ', role: 'ADMIN' } }
     if (path.includes('/admin/analytics/overview')) return { status: 200, data: empty ? zeroOverview() : overviewPayload }
+    if (path.includes('/admin/product/analytics')) {
+        return { status: 200, data: empty ? emptyProductPayload() : productPayload }
+    }
     if (path.includes('/admin/analytics/timeseries')) {
         return {
             status: 200,
@@ -436,8 +545,30 @@ function route(url) {
                 : mailPayload
         }
     }
+    if (path.includes('/system/docker-stats/') && path.endsWith('/logs')) {
+        if (empty) {
+            return {
+                status: 503,
+                data: {
+                    available: false,
+                    reason: 'disabled',
+                    message: 'Docker stats выключены: DOCKER_STATS_ENABLED=false (обычно так в Kubernetes)'
+                }
+            }
+        }
+        return { status: 200, data: dockerLogsPayload }
+    }
     if (path.includes('/system/docker-stats')) {
-        if (empty) return { status: 503, data: { error: 'Docker недоступен' } }
+        if (empty) {
+            return {
+                status: 503,
+                data: {
+                    available: false,
+                    reason: 'disabled',
+                    message: 'Docker stats выключены: DOCKER_STATS_ENABLED=false (обычно так в Kubernetes)'
+                }
+            }
+        }
         return { status: 200, data: dockerPayload }
     }
     if (path.endsWith('/health')) {
@@ -493,6 +624,7 @@ check('donutChart с нулями не падает', donutChart({ items: [{ lab
 
 console.log('\n== Разделы панели')
 const views = await import(new URL('../admin/js/views/overview.js', import.meta.url).href)
+const product = await import(new URL('../admin/js/views/product.js', import.meta.url).href)
 const visitors = await import(new URL('../admin/js/views/visitors.js', import.meta.url).href)
 const users = await import(new URL('../admin/js/views/users.js', import.meta.url).href)
 const resources = await import(new URL('../admin/js/views/resources.js', import.meta.url).href)
@@ -501,6 +633,7 @@ const system = await import(new URL('../admin/js/views/system.js', import.meta.u
 
 const allViews = [
     views.overviewView,
+    product.productView,
     visitors.visitorsView,
     users.usersView,
     resources.plantsView,
@@ -511,7 +644,7 @@ const allViews = [
     system.systemView
 ]
 
-check('девять разделов объявлены', allViews.length === 9)
+check('десять разделов объявлены', allViews.length === 10)
 check('у всех разделов есть id, заголовок и render', allViews.every(view =>
     typeof view.id === 'string' && typeof view.title === 'string' && typeof view.render === 'function'))
 check('идентификаторы уникальны', new Set(allViews.map(view => view.id)).size === allViews.length)
@@ -584,7 +717,84 @@ function findNode(root, predicate) {
     return found
 }
 
+function collectText(node, parts = []) {
+    if (!node) return parts
+    if (node.nodeType === 3) {
+        parts.push(String(node.text ?? ''))
+        return parts
+    }
+    if (node.textContent) parts.push(String(node.textContent))
+    for (const child of node.children || []) collectText(child, parts)
+    return parts
+}
+
+function hasText(root, needle) {
+    return collectText(root).join('\n').includes(needle)
+}
+
 const tick = () => new Promise(resolve => setTimeout(resolve, 30))
+
+console.log('\n== Продукт: DAU/WAU/MAU, воронка и retention')
+mode = 'full'
+const productRoot = makeEl('div')
+try {
+    await product.productView.render(productRoot, makeCtx())
+    check('продукт: запрос /admin/product/analytics ушёл',
+        requests.some(entry => entry.includes('/admin/product/analytics?days=30')))
+    check('продукт: карточки DAU/WAU/MAU',
+        ['DAU', 'WAU', 'MAU'].every(label =>
+            Boolean(findNode(productRoot, node => node.textContent === label))))
+    check('продукт: воронка активации со всеми этапами',
+        hasText(productRoot, 'Зарегистрировались') &&
+        hasText(productRoot, 'Добавили растение') &&
+        hasText(productRoot, 'Отметили полив') &&
+        hasText(productRoot, 'Подписались на push'))
+    check('продукт: retention-таблица с когортами',
+        hasText(productRoot, 'Удержание по когортам') &&
+        hasText(productRoot, '01.09') &&
+        hasText(productRoot, '08.09'))
+    check('продукт: топ событий с названиями',
+        hasText(productRoot, 'landing_view') &&
+        hasText(productRoot, 'watering_marked'))
+    check('продукт: push CTR отрисован', Boolean(findNode(productRoot, node => node.textContent === 'Push CTR')))
+} catch (error) {
+    check('продукт: раздел отрисован', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'empty'
+const emptyProductRoot = makeEl('div')
+try {
+    await product.productView.render(emptyProductRoot, makeCtx())
+    check('продукт: пустые данные не ломают рендер', emptyProductRoot.children.length >= 1)
+    check('продукт: предупреждение о сборе событий',
+        Boolean(findNode(emptyProductRoot, node =>
+            node.textContent?.includes('События начнут собираться после обновления сайта'))))
+} catch (error) {
+    check('продукт: пустые данные не ломают рендер', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'full'
+
+console.log('\n== Посетители: UTM-источники')
+const utmRoot = makeEl('div')
+try {
+    await visitors.visitorsView.render(utmRoot, makeCtx())
+    check('посетители: карточка UTM-источников из breakdown',
+        hasText(utmRoot, 'UTM-источники') &&
+        hasText(utmRoot, 'plants-autumn') &&
+        hasText(utmRoot, 'yandex'))
+} catch (error) {
+    check('посетители: карточка UTM-источников из breakdown', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'empty'
+const emptyUtmRoot = makeEl('div')
+try {
+    await visitors.visitorsView.render(emptyUtmRoot, makeCtx())
+    check('посетители: без UTM карточка не показывается',
+        !findNode(emptyUtmRoot, node => node.textContent === 'UTM-источники'))
+} catch (error) {
+    check('посетители: без UTM карточка не показывается', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'full'
 
 console.log('\n== Интерактив: карточка пользователя')
 mode = 'full'
@@ -654,6 +864,43 @@ if (deleteButton) {
     check('диалог подтверждения требует слово УДАЛИТЬ', false, 'кнопка не найдена')
     check('кнопка подтверждения отрисована', false, 'кнопка не найдена')
 }
+
+console.log('\n== Интерактив: контейнеры и логи')
+mode = 'full'
+const systemRoot = makeEl('div')
+await system.systemView.render(systemRoot, makeCtx())
+check('раздел сервера показывает карточки контейнеров',
+    Boolean(findNode(systemRoot, node => node.textContent === 'Всего контейнеров')) &&
+    Boolean(findNode(systemRoot, node => node.textContent === 'Проблемы')))
+check('notice перечисляет проблемные контейнеры с причиной',
+    Boolean(findNode(systemRoot, node => node.textContent?.includes('ctp_redis — Остановлен: код выхода 1'))))
+
+const logsButton = findButton(systemRoot, 'Логи')
+check('кнопка «Логи» отрисована', Boolean(logsButton))
+if (logsButton) {
+    const before = requests.length
+    logsButton.click()
+    await tick()
+    await tick()
+    check('кнопка «Логи» запросила /system/docker-stats/:id/logs',
+        requests.slice(before).some(entry => entry.includes('/system/docker-stats/') && entry.includes('/logs')))
+    check('диалог показал содержимое логов',
+        Boolean(findNode(document.body, node => node.textContent?.includes('server started'))))
+    const closeButton = findButton(document.body, 'Закрыть')
+    check('в диалоге логов есть кнопка «Закрыть»', Boolean(closeButton))
+    if (closeButton) closeButton.click()
+} else {
+    check('кнопка «Логи» запросила /system/docker-stats/:id/logs', false, 'кнопка не найдена')
+    check('диалог показал содержимое логов', false, 'кнопка не найдена')
+    check('в диалоге логов есть кнопка «Закрыть»', false, 'кнопка не найдена')
+}
+
+mode = 'empty'
+const emptySystemRoot = makeEl('div')
+await system.systemView.render(emptySystemRoot, makeCtx())
+check('при недоступном Docker показывается объяснение причины',
+    Boolean(findNode(emptySystemRoot, node => node.textContent?.includes('DOCKER_STATS_ENABLED=false'))))
+mode = 'full'
 
 console.log('\n== Оболочка приложения')
 const appRoot = document.getElementById('app')

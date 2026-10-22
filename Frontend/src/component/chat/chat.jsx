@@ -9,6 +9,7 @@ import HistoryBtn from '../../assets/HistoryBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import Paperclip from '../../assets/paperclip.svg'
 import { API_URL } from '../../utils/api.js'
+import { trackEvent } from '../../utils/productEvents.js'
 
 const CHAT_TIMEOUT_MS = 30000
 const PHOTO_TIMEOUT_MS = 150000
@@ -246,7 +247,7 @@ function DiagnosisCard ({ diagnosis }) {
   )
 }
 
-function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
+function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged, isGuest = false }) {
   const [messages, setMessages] = useState([createGreeting()])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
@@ -511,6 +512,8 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
 
       const data = await res.json()
 
+      trackEvent('chat_message', { hasPhoto: false, isGuest: Boolean(isGuest) })
+
       if (sessionRef.current === requestSession) {
         setMessages(prev => [
           ...prev,
@@ -618,6 +621,9 @@ function Chat ({ sessionId, onOpenHistory, onNewChat, onSessionsChanged }) {
 
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.message || `HTTP ${res.status}`)
+
+      trackEvent('chat_message', { hasPhoto: true, isGuest: Boolean(isGuest) })
+      trackEvent('photo_added')
 
       const uploadedPhotoUrls = Array.isArray(data.photoUrls) && data.photoUrls.length
         ? data.photoUrls

@@ -5,6 +5,7 @@ import PlantPhoto from './PlantPhoto.js'
 import ChatLog from './ChatLog.js'
 import AiAdviceLog from './AiAdviceLog.js'
 import AdminAuditLog from './AdminAuditLog.js'
+import ProductEvent from './ProductEvent.js'
 import './Passkey.js'
 import './PasskeyChallenge.js'
 
@@ -51,4 +52,11 @@ AdminAuditLog.belongsTo(User, {
     as: 'admin'
 })
 
-export { User, Plant, PlantPhoto, AdminAuditLog }
+User.hasMany(ProductEvent, {
+    foreignKey: 'user_id',
+    as: 'productEvents',
+    onDelete: 'SET NULL'
+})
+ProductEvent.belongsTo(User, { foreignKey: 'user_id' })
+
+export { User, Plant, PlantPhoto, AdminAuditLog, ProductEvent }

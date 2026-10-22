@@ -35,6 +35,7 @@ import "./models/WateringLog.js"
 import "./models/ChatLog.js"
 import "./models/AiAdviceLog.js"
 import "./models/SiteVisit.js"
+import "./models/ProductEvent.js"
 
 
 import "./models/associations.js"
@@ -44,6 +45,7 @@ import adminPushRouter from './routes/adminPushRoutes.js'
 import adminMailRouter from './routes/adminMailRoutes.js'
 import adminRouter from './routes/adminRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
+import eventRouter from './routes/eventRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
 import { startMailBroadcastJob } from './jobs/mailBroadcastJob.js'
@@ -92,11 +94,18 @@ const MIGRATION_FILES_BY_TABLE = {
     chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',
+    'users.created_at': 'Backend/migrations/20261027_add_users_created_at.sql',
     'users.marketing_email_opt_in': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_in_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_in_source': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_out_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
     admin_audit_logs: 'Backend/migrations/20261025_create_admin_audit_logs.sql',
+    product_events: 'Backend/migrations/20261027_create_product_events.sql',
+    'notifications.clicked_at': 'Backend/migrations/20261027_add_notification_clicks.sql',
+    'notifications.click_count': 'Backend/migrations/20261027_add_notification_clicks.sql',
+    'site_visit_days.utm_source': 'Backend/migrations/20261027_add_visits_utm.sql',
+    'site_visit_days.utm_medium': 'Backend/migrations/20261027_add_visits_utm.sql',
+    'site_visit_days.utm_campaign': 'Backend/migrations/20261027_add_visits_utm.sql',
     site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
 }
 
@@ -242,6 +251,7 @@ app.use("/api/admin/push", adminPushRouter)
 app.use("/api/admin/mail", adminMailRouter)
 app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
+app.use("/api/events", eventRouter)
 app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)

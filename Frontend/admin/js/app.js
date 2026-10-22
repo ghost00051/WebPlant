@@ -11,6 +11,13 @@ const VIEWS = [
         load: () => import('./views/overview.js').then(module => module.overviewView)
     },
     {
+        id: 'product',
+        title: 'Продукт',
+        subtitle: 'DAU/WAU/MAU, активация, воронка и удержание',
+        needsRange: true,
+        load: () => import('./views/product.js').then(module => module.productView)
+    },
+    {
         id: 'visitors',
         title: 'Посетители',
         subtitle: 'Уникальные визиты, просмотры, источники и устройства',

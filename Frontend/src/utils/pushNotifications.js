@@ -1,5 +1,6 @@
 import { API_URL } from './api.js'
 import { fetchWithTimeout } from './fetchWithTimeout.js'
+import { trackEventOnce } from './productEvents.js'
 
 const PUSH_REQUEST_TIMEOUT_MS = 10000
 const SERVICE_WORKER_READY_TIMEOUT_MS = 8000
@@ -450,6 +451,8 @@ export async function subscribeToPush() {
             await readServerMessage(response, 'Ошибка сохранения подписки на сервере')
         )
     }
+
+    trackEventOnce('push_subscribed')
 
     writeLocalStorage(PUSH_SYNC_KEY, String(Date.now()))
     return subscription

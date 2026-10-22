@@ -71,6 +71,12 @@ const User = sequelize.define("user", {
         type: DataTypes.DATE,
         allowNull: true,
         comment: 'Когда согласие отозвано (one-click отписка или настройки)'
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Момент регистрации (F03): backfill — MIN(user_legal_consents.accepted_at) для source=registration'
     }
 }, {
     tableName: 'users',

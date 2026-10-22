@@ -1,9 +1,11 @@
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import LogoMark from '../../assets/LogoMark.svg'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import SiteFooter from '../SiteFooter/SiteFooter.jsx'
 import { ARTICLE_NAV, PLANT_NAV } from '../../data/seoMeta.js'
 import { CARE_PATH, PLANTS_PATH, articlePath, plantPath } from '../../data/siteMap.js'
+import { trackEvent } from '../../utils/productEvents.js'
 import './landingPage.css'
 import './dark-theme.css'
 
@@ -44,6 +46,10 @@ const GUIDE_PLANTS = PLANT_NAV.slice(0, 5)
 const GUIDE_ARTICLES = ARTICLE_NAV.slice(0, 3)
 
 function LandingPage() {
+    useEffect(() => {
+        trackEvent('landing_view')
+    }, [])
+
     return (
         <div className='landingPage'>
             <header className='landingHeader'>

@@ -63,6 +63,17 @@ const Notification = sequelize.define('notification', {
     read_at: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    clicked_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Первый клик по push-уведомлению (F03)'
+    },
+    click_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'Суммарное число кликов по уведомлению (F03)'
     }
 }, {
     tableName: 'notifications',

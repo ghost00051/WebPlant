@@ -38,5 +38,6 @@ router.get('/unread-count', notificationReadLimiter, notificationController.unre
 router.get('/', notificationReadLimiter, notificationController.list)
 router.patch('/read-all', notificationMutationLimiter, notificationController.markAllRead)
 router.patch('/:id/read', notificationMutationLimiter, notificationController.markRead)
+router.post('/:id/click', notificationMutationLimiter, notificationController.markClicked)
 
 export default router

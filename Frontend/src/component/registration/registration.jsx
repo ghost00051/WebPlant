@@ -20,6 +20,7 @@ import shieldcheck from '../../assets/shield-check.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
+import { trackEvent } from '../../utils/productEvents.js'
 import { detectTimeZone } from '../../utils/timeZone.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
@@ -276,6 +277,8 @@ function Registration ({ initialMode = 'login' }) {
           await getResponseMessage(response, 'Не удалось зарегистрироваться.')
         )
       }
+
+      trackEvent('register', { method: 'password' })
 
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })

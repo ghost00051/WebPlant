@@ -273,6 +273,24 @@ async function markNotificationRead(notificationId) {
     }
 }
 
+async function trackNotificationClick(notificationId) {
+    if (!Number.isInteger(notificationId) || notificationId < 1) return
+
+    try {
+        const response = await fetch(`${API_BASE}/notifications/${notificationId}/click`, {
+            method: 'POST',
+            credentials: 'include',
+            keepalive: true
+        })
+        if (!response.ok && response.status !== 401) {
+            console.warn('⚠️ SW: не удалось учесть клик по уведомлению:', response.status)
+        }
+    } catch (error) {
+
+        console.warn('⚠️ SW: notification click tracking failed:', error)
+    }
+}
+
 function resolveBadgeApi() {
     const registration = self.registration
     if (registration &&
@@ -342,6 +360,7 @@ self.addEventListener('notificationclick', (event) => {
     event.waitUntil((async () => {
         if (notificationId) {
             await markNotificationRead(notificationId)
+            await trackNotificationClick(notificationId)
             await notifyClients({
                 type: 'notifications-changed',
                 notificationId

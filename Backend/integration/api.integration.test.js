@@ -131,7 +131,8 @@ test('миграции применяются идемпотентно (двук
         'password_reset_tokens',
         'ai_advice_logs',
         'plant_care_plans',
-        'site_visit_days'
+        'site_visit_days',
+        'product_events'
     ]
     for (const table of expectedTables) {
         assert.ok(tables.has(table), `после миграций нет таблицы ${table}`)
@@ -153,6 +154,50 @@ test('миграции применяются идемпотентно (двук
     const pushColumnNames = new Set(pushColumns.map(row => row.column_name))
     for (const column of ['last_success_at', 'last_error', 'failed_attempts', 'invalidated_at', 'invalid_reason']) {
         assert.ok(pushColumnNames.has(column), `миграция не добавила push_subscriptions.${column}`)
+    }
+
+    const [f03Columns] = await sequelize.query(
+        `select table_name, column_name from information_schema.columns
+         where table_schema = 'public'
+           and (
+               (table_name = 'users' and column_name = 'created_at')
+               or (table_name = 'site_visit_days' and column_name in ('utm_source', 'utm_medium', 'utm_campaign'))
+               or (table_name = 'notifications' and column_name in ('clicked_at', 'click_count'))
+               or (table_name = 'product_events')
+           )`
+    )
+    const f03ColumnKeys = new Set(f03Columns.map(row => `${row.table_name}.${row.column_name}`))
+    for (const column of [
+        'users.created_at',
+        'site_visit_days.utm_source',
+        'site_visit_days.utm_medium',
+        'site_visit_days.utm_campaign',
+        'notifications.clicked_at',
+        'notifications.click_count',
+        'product_events.id',
+        'product_events.user_id',
+        'product_events.visitor_id',
+        'product_events.event',
+        'product_events.properties',
+        'product_events.path',
+        'product_events.referrer_host',
+        'product_events.created_at'
+    ]) {
+        assert.ok(f03ColumnKeys.has(column), `миграции F01–F03 не создали колонку ${column}`)
+    }
+
+    const [productEventIndexes] = await sequelize.query(
+        `select indexname from pg_indexes
+         where schemaname = 'public' and tablename = 'product_events'`
+    )
+    const productEventIndexNames = new Set(productEventIndexes.map(row => row.indexname))
+    for (const index of [
+        'idx_product_events_created_at',
+        'idx_product_events_user_created',
+        'idx_product_events_event_created',
+        'idx_product_events_visitor_created'
+    ]) {
+        assert.ok(productEventIndexNames.has(index), `миграция product_events не создала индекс ${index}`)
     }
 })
 

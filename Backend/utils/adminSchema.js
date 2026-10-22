@@ -29,6 +29,20 @@ export async function hasSiteVisitDays() {
     return Boolean(columns && columns.day)
 }
 
+export async function hasSiteVisitUtm() {
+    return hasColumn('site_visit_days', 'utm_source')
+}
+
+export async function hasProductEvents() {
+    const columns = await describe('product_events')
+    return Boolean(columns && columns.event && columns.created_at)
+}
+
+export async function hasNotificationClicks() {
+    const columns = await describe('notifications')
+    return Boolean(columns && columns.click_count && columns.clicked_at)
+}
+
 export function resetAdminSchemaCache() {
     cache.clear()
 }

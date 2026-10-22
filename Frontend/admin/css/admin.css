@@ -325,6 +325,10 @@ a:hover {
     border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
 }
 
+.stat-warning {
+    border-color: color-mix(in srgb, var(--warning) 45%, var(--border));
+}
+
 .stat-label {
     margin: 0;
     color: var(--text-dim);
@@ -396,6 +400,20 @@ a:hover {
 .notice-warn {
     border-left-color: var(--warning);
     background: var(--warning-soft);
+}
+
+.notice-danger {
+    border-left-color: var(--danger);
+    background: var(--danger-soft);
+}
+
+.notice-list {
+    margin: 6px 0 0;
+    padding-left: 18px;
+}
+
+.notice-list li {
+    margin: 2px 0;
 }
 
 
@@ -1013,6 +1031,13 @@ a:hover {
     border: 1px solid var(--border);
     font-size: 12px;
     white-space: pre-wrap;
+}
+
+.logs-details {
+    max-height: 55vh;
+    overflow: auto;
+    white-space: pre;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 .modal-hint {

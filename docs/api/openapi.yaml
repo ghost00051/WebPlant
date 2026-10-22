@@ -91,6 +91,8 @@ tags:
     description: cookie- и юридические согласия
   - name: admin
     description: админ-API (только role=ADMIN)
+  - name: events
+    description: продуктовая аналитика F01 — приём пользовательских событий
 
 security:
   - cookieAuth: []
@@ -2013,6 +2015,39 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/notifications/{id}/click:
+    post:
+      tags: [notifications]
+      operationId: markNotificationClicked
+      summary: Клик по push-уведомлению (F03)
+      description: |
+        Идемпотентная отметка клика: `clicked_at` ставится только при первом клике
+        (`COALESCE(clicked_at, now())`), `read_at` проставляется, если уведомление
+        ещё не прочитано, `click_count` инкрементируется при каждом вызове.
+        Доступно только владельцу уведомления; чужое или несуществующее — `404`.
+        Лимит изменений уведомлений — 120 запросов в минуту на пользователя.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: клик отмечен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationClickResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/push/vapid-public-key:
     get:
       tags: [push]
@@ -2429,6 +2464,11 @@ paths:
         Вызывается фронтом один раз на загрузку страницы и только при согласии на аналитику.
         Одна строка на посетителя в сутки, `views` инкрементируется; IP не сохраняется.
         Лимит — 180 запросов в час с IP.
+
+        Необязательный `utm` (F03) сохраняется в `site_visit_days.utm_source/medium/campaign`:
+        значения чистятся (≤ 120 символов, без control-символов и HTML), обновление идёт
+        через `COALESCE(EXCLUDED.utm_*, site_visit_days.utm_*)` — первый непустой набор
+        меток сохраняется. Старый формат тела без `utm` продолжает работать.
       security:
         - cookieAuth: []
         - refreshCookie: []
@@ -2450,6 +2490,19 @@ paths:
                   type: string
                   maxLength: 300
                   pattern: '^/'
+                utm:
+                  type: object
+                  description: 'UTM-метки захода (F03); любое поле может отсутствовать'
+                  properties:
+                    source:
+                      type: string
+                      maxLength: 120
+                    medium:
+                      type: string
+                      maxLength: 120
+                    campaign:
+                      type: string
+                      maxLength: 120
       responses:
         '200':
           description: посещение учтено
@@ -2486,6 +2539,62 @@ paths:
                   counted:
                     type: boolean
                     const: false
+
+  /api/events:
+    post:
+      tags: [events]
+      operationId: trackProductEvents
+      summary: Приём продуктовых событий (F01)
+      description: |
+        Публичный батч-эндпоинт событийной аналитики. Принимает до 20 событий за
+        запрос; `created_at` ставит сервер (`now()`), `user_id` берётся из сессии
+        при наличии авторизации, `referrer_host` — из заголовка `Referer`.
+        `visitorId` — анонимный идентификатор с фронтенда (тот же формат, что и
+        в `POST /api/system/visit`).
+
+        Allowlist: `landing_view`, `register`, `plant_created`, `watering_marked`,
+        `push_subscribed`, `chat_message`, `photo_added`, `plant_id_started`,
+        `plant_id_success`, `share_clicked`.
+
+        `props` — плоский объект примитивов (string/number/boolean/null), JSON не
+        больше 2048 байт, без ключей `email`/`phone`/`name`/`password`/`token` (и их
+        вариаций). `path` начинается с `/` и не длиннее 300 символов. Если хотя бы
+        одно событие в батче некорректно, отклоняется весь запрос (400).
+
+        Лимит: 60 запросов в минуту в разрезе IP+`visitorId` (без visitorId — по IP).
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductEventsRequest'
+      responses:
+        '202':
+          description: 'батч принят (в том числе пустой — accepted: 0)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEventsAccepted'
+        '400':
+          description: некорректный батч событий
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
   /api/system/metrics:
     get:
@@ -2537,7 +2646,10 @@ paths:
       summary: Телеметрия контейнеров (админ)
       description: |
         Требует `DOCKER_HOST` и `DOCKER_STATS_ENABLED != false`; данные кэшируются на 3 секунды.
-        В Kubernetes (`DOCKER_STATS_ENABLED=false`) отвечает `503`.
+        В Kubernetes (`DOCKER_STATS_ENABLED=false`) отвечает `503` с `reason=disabled`.
+        Для контейнеров не в состоянии `running` `stats()` не запрашивается: `statsAvailable=false`,
+        а `cpu`/`memory`/`network`/`block`/`pids` равны `null`.
+        `problem` — человекочитаемая причина проблемы на русском, `problemLevel` — её уровень.
       responses:
         '200':
           description: статистика контейнеров
@@ -2545,11 +2657,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [timestamp, containers]
+                required: [timestamp, summary, containers]
                 properties:
                   timestamp:
                     type: string
                     format: date-time
+                  summary:
+                    $ref: '#/components/schemas/DockerStatsSummary'
                   containers:
                     type: array
                     items:
@@ -2559,15 +2673,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '503':
-          description: Docker недоступен
+          description: Docker недоступен или статистика выключена
           content:
             application/json:
               schema:
-                type: object
-                required: [error]
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/DockerUnavailableResponse'
         '500':
           description: ошибка получения статистики
           content:
@@ -2575,8 +2685,73 @@ paths:
               schema:
                 type: object
                 properties:
-                  error:
+                  message:
                     type: string
+
+  /api/system/docker-stats/{id}/logs:
+    get:
+      tags: [admin]
+      operationId: getDockerContainerLogs
+      summary: Логи контейнера (админ)
+      description: |
+        Возвращает stdout+stderr контейнера (`docker logs`) без timestamps.
+        Идентификатор — 12–64 hex-символа; `tail` — 1..200 (по умолчанию 100).
+        Multiplex-поток демультиплексируется, ANSI-escape удаляются, ответ обрезается до 20 000 символов.
+        При недоступном Docker отвечает `503` со структурной причиной, при отсутствии контейнера — `404`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор контейнера (12–64 hex-символа)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{12,64}$'
+        - name: tail
+          in: query
+          required: false
+          description: Количество последних строк (1..200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        '200':
+          description: логи контейнера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DockerLogsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: контейнер не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '500':
+          description: ошибка чтения логов (в том числе таймаут 5 с)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '503':
+          description: Docker недоступен или статистика выключена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DockerUnavailableResponse'
 
   /api/admin/analytics/overview:
     get:
@@ -2640,11 +2815,67 @@ paths:
         - $ref: '#/components/parameters/Days'
       responses:
         '200':
-          description: 'объект с `topSpecies`, `topUsersByPlants`, `topUsersByWaterings`, `topUsersByChat`, `wateringsByWeekday`, `wateringsByHour`, `plantsByInterval` и др.'
+          description: |
+            Объект с `topSpecies`, `topUsersByPlants`, `topUsersByWaterings`,
+            `topUsersByChat`, `wateringsByWeekday`, `wateringsByHour`,
+            `plantsByInterval`, `consentTypes`, `registrationsByWeekday`,
+            `recentUsers`, `averages`, `visitsTracked`, `userCreatedAtTracked`,
+            `utmTracked` и `utmSources`.
+
+            `utmSources` (F03) — топ-10 `site_visit_days` за период по `visitors`
+            (число строк-визитов) для непустых `utm_source`:
+            `[{source, medium, campaign, visitors}]`. Если колонок UTM нет или
+            посещения не трекаются — пустой массив.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/product/analytics:
+    get:
+      tags: [admin]
+      operationId: adminProductAnalytics
+      summary: Продуктовая аналитика F01–F03
+      description: |
+        Агрегаты событийной аналитики за `days` дней (МСК, текущий день включён).
+
+        * `activity` — DAU/WAU/MAU (distinct `user_id` в `product_events` за 1/7/30
+          дней), `activeUsers` за период, `newUsers` (`users.created_at` в периоде),
+          `eventsToday`/`eventsInRange` — количество событий;
+        * `funnel` — по таблицам: `users.created_at`, `plants.created_at`,
+          `watering_logs` (`action='watered'`), `push_subscriptions.created_at`;
+          `rates` — проценты от `registered` с одним знаком;
+        * `retention` — до 8 последних недельных когорт (неделя с понедельника,
+          МСК) по `users.created_at` (role ≠ ADMIN): `d1`/`d7`/`d30` — число
+          пользователей когорты с событием в окне `reg_day+1..reg_day+N`, `*Rate` —
+          проценты с одним знаком; строки отсортированы от новых к старым, когорты
+          с `size = 0` не выводятся, ещё не наступившие окна дают 0;
+        * `events` — топ-10 событий за период (`count`, distinct `users`);
+        * `push` — уведомления за период, `clicks = SUM(click_count)`,
+          `ctr = clicks/notifications*100` (1 знак), `clickedToday` — клики за сегодня (МСК).
+
+        Если таблицы `product_events` ещё нет, ответ `200` с `eventsTracked: false`:
+        `activity`/`retention`/`events` нулевые или пустые, `funnel` и `push` работают.
+        Если нет колонок `clicked_at`/`click_count` — `push.clicks = 0`, `ctr = 0`.
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200':
+          description: продуктовая аналитика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductAnalyticsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -3829,6 +4060,226 @@ components:
         message:
           type: string
 
+    ProductEventInput:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum:
+            - landing_view
+            - register
+            - plant_created
+            - watering_marked
+            - push_subscribed
+            - chat_message
+            - photo_added
+            - plant_id_started
+            - plant_id_success
+            - share_clicked
+        props:
+          type: object
+          additionalProperties:
+            type: [string, number, boolean, 'null']
+          description: |
+            Плоский объект примитивов. JSON не больше 2048 байт. Запрещены ключи
+            `email`, `phone`, `name`, `password`, `token` и их вариации
+            (`user_email`, `userEmail`, `auth_token` и т.п.).
+        path:
+          type: string
+          maxLength: 300
+          pattern: '^/'
+
+    ProductEventsRequest:
+      type: object
+      required: [events]
+      properties:
+        visitorId:
+          type: string
+          minLength: 8
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._:-]{8,64}$'
+        events:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ProductEventInput'
+
+    ProductEventsAccepted:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+          maximum: 20
+
+    NotificationClickResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+
+    UtmSource:
+      type: object
+      required: [source, medium, campaign, visitors]
+      properties:
+        source:
+          type: string
+        medium:
+          type: [string, 'null']
+        campaign:
+          type: [string, 'null']
+        visitors:
+          type: integer
+          minimum: 0
+          description: 'Число строк site_visit_days с этой комбинацией UTM за период'
+
+    ProductAnalyticsResponse:
+      type: object
+      required: [generatedAt, timezone, days, eventsTracked, usersCreatedAtTracked, activity, funnel, retention, events, push]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          description: 'IANA-пояс расчёта (Europe/Moscow)'
+        days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        eventsTracked:
+          type: boolean
+          description: 'false, если таблицы product_events нет: activity/retention/events нулевые или пустые'
+        usersCreatedAtTracked:
+          type: boolean
+        activity:
+          type: object
+          required: [dau, wau, mau, activeUsers, newUsers, eventsToday, eventsInRange]
+          properties:
+            dau:
+              type: integer
+              minimum: 0
+            wau:
+              type: integer
+              minimum: 0
+            mau:
+              type: integer
+              minimum: 0
+            activeUsers:
+              type: integer
+              minimum: 0
+            newUsers:
+              type: integer
+              minimum: 0
+            eventsToday:
+              type: integer
+              minimum: 0
+            eventsInRange:
+              type: integer
+              minimum: 0
+        funnel:
+          type: object
+          required: [registered, plantCreated, wateringMarked, pushSubscribed, rates]
+          properties:
+            registered:
+              type: integer
+              minimum: 0
+              description: 'users.created_at в периоде, role ≠ ADMIN'
+            plantCreated:
+              type: integer
+              minimum: 0
+              description: 'distinct plants.user_id за plants.created_at в периоде'
+            wateringMarked:
+              type: integer
+              minimum: 0
+              description: 'distinct watering_logs.user_id (action=watered) в периоде'
+            pushSubscribed:
+              type: integer
+              minimum: 0
+              description: 'distinct push_subscriptions.user_id за created_at в периоде'
+            rates:
+              type: object
+              required: [plantCreated, wateringMarked, pushSubscribed]
+              properties:
+                plantCreated:
+                  type: number
+                  description: 'процент от registered, 1 знак'
+                wateringMarked:
+                  type: number
+                pushSubscribed:
+                  type: number
+        retention:
+          type: array
+          description: 'До 8 последних недельных когорт, от новых к старым; когорты с size=0 отброшены'
+          items:
+            type: object
+            required: [cohort, cohortLabel, size, d1, d7, d30, d1Rate, d7Rate, d30Rate]
+            properties:
+              cohort:
+                type: string
+                format: date
+                description: 'Начало недели когорты (понедельник, МСК)'
+              cohortLabel:
+                type: string
+                pattern: '^[0-9]{2}\.[0-9]{2}$'
+                description: 'DD.MM начала недели'
+              size:
+                type: integer
+                minimum: 0
+              d1:
+                type: integer
+                minimum: 0
+              d7:
+                type: integer
+                minimum: 0
+              d30:
+                type: integer
+                minimum: 0
+              d1Rate:
+                type: number
+              d7Rate:
+                type: number
+              d30Rate:
+                type: number
+        events:
+          type: array
+          description: 'Топ-10 событий за период; пустой массив, если product_events нет'
+          items:
+            type: object
+            required: [event, count, users]
+            properties:
+              event:
+                type: string
+              count:
+                type: integer
+                minimum: 0
+              users:
+                type: integer
+                minimum: 0
+                description: 'distinct user_id'
+        push:
+          type: object
+          required: [notifications, clicks, ctr, clickedToday]
+          properties:
+            notifications:
+              type: integer
+              minimum: 0
+            clicks:
+              type: integer
+              minimum: 0
+              description: 'SUM(click_count) по уведомлениям за период'
+            ctr:
+              type: number
+              description: 'clicks / notifications * 100, 1 знак'
+            clickedToday:
+              type: integer
+              minimum: 0
+              description: 'count(clicked_at за сегодня, МСК)'
+
     Health:
       type: object
       required: [status, timestamp]
@@ -4789,6 +5240,14 @@ components:
         read_at:
           type: [string, 'null']
           format: date-time
+        clicked_at:
+          type: [string, 'null']
+          format: date-time
+          description: 'Первый клик по push-уведомлению (F03)'
+        click_count:
+          type: integer
+          minimum: 0
+          description: 'Суммарное число кликов по уведомлению (F03)'
         created_at:
           type: string
           format: date-time
@@ -4909,6 +5368,7 @@ components:
 
     DockerContainerStats:
       type: object
+      required: [id, name, state, problemLevel]
       properties:
         id:
           type: string
@@ -4916,10 +5376,41 @@ components:
           type: string
         state:
           type: string
+          description: Состояние из списка контейнеров (running, exited, restarting, paused, dead, created, ...)
         status:
           type: string
         image:
           type: string
+        service:
+          type: [string, 'null']
+          description: Имя сервиса docker compose (`com.docker.compose.service`), если есть
+        healthStatus:
+          type: string
+          enum: [healthy, unhealthy, starting, none]
+          description: Статус healthcheck из `inspect().State.Health.Status`; `none` — healthcheck не задан
+        restartCount:
+          type: integer
+          minimum: 0
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        uptimeSeconds:
+          type: [integer, 'null']
+          description: Время работы для `state=running`; для остальных — `null`
+        exitCode:
+          type: [integer, 'null']
+          description: Код выхода для `exited`/`dead`; для остальных — `null`
+        oomKilled:
+          type: boolean
+        error:
+          type: [string, 'null']
+          description: Текст `State.Error` из inspect, если был
+        problem:
+          type: [string, 'null']
+          description: Человекочитаемая причина проблемы на русском; `null`, если проблем нет
+        problemLevel:
+          type: string
+          enum: [ok, warn, error]
         statsAvailable:
           type: boolean
         cpu:
@@ -4949,6 +5440,70 @@ components:
               type: [integer, 'null']
         pids:
           type: [integer, 'null']
+
+    DockerStatsSummary:
+      type: object
+      required: [available, ok, total, running, stopped, unhealthy, restarting, healthy, problems]
+      properties:
+        available:
+          type: boolean
+        ok:
+          type: boolean
+          description: true, если у контейнеров нет проблем (`problems=0`)
+        total:
+          type: integer
+          minimum: 0
+        running:
+          type: integer
+          minimum: 0
+        stopped:
+          type: integer
+          minimum: 0
+          description: exited/dead/created/removing
+        unhealthy:
+          type: integer
+          minimum: 0
+        restarting:
+          type: integer
+          minimum: 0
+        healthy:
+          type: integer
+          minimum: 0
+          description: running без проблем
+        problems:
+          type: integer
+          minimum: 0
+
+    DockerUnavailableResponse:
+      type: object
+      required: [available, reason, message]
+      properties:
+        available:
+          type: boolean
+          enum: [false]
+        reason:
+          type: string
+          enum: [not_configured, disabled, unreachable]
+          description: |
+            `not_configured` — не задан `DOCKER_HOST`; `disabled` — `DOCKER_STATS_ENABLED=false`
+            (типично для Kubernetes); `unreachable` — Docker-демон не отвечает.
+        message:
+          type: string
+          description: Готовое для показа сообщение (совместимо с прежним полем `message`)
+
+    DockerLogsResponse:
+      type: object
+      required: [id, name, tail, logs]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tail:
+          type: integer
+        logs:
+          type: string
+          description: Очищенный вывод stdout+stderr (ANSI удалены, не более ~20 000 символов)
 
     PushBroadcastRequest:
       type: object

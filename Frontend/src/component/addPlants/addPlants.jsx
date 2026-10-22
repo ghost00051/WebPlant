@@ -9,6 +9,7 @@ import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
+import { trackEvent } from '../../utils/productEvents.js'
 import {
     reminderWeekdaysForInterval,
     upcomingWateringDays,
@@ -657,6 +658,14 @@ function AddPlants() {
             const responseData = await response.json().catch(() => ({}))
 
             if (response.ok) {
+                const hasPhoto = uploadedUrls.length > 0
+                trackEvent('plant_created', {
+                    hasPhoto,
+                    hasSpecies: Boolean(species.trim()),
+                    intervalDays: Number(days) || 0
+                })
+                if (hasPhoto) trackEvent('photo_added')
+
                 setSaveCompleted(true)
                 clearDraft()
                 urlsRef.current.forEach(url => URL.revokeObjectURL(url))

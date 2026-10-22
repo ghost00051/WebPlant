@@ -45,6 +45,7 @@ router.use((req, res, next) => (
 router.get('/analytics/overview', adminAnalyticsController.getOverview)
 router.get('/analytics/timeseries', adminAnalyticsController.getTimeseries)
 router.get('/analytics/breakdown', adminAnalyticsController.getBreakdown)
+router.get('/product/analytics', adminAnalyticsController.getProductAnalytics)
 router.get('/visits', adminAnalyticsController.getVisits)
 router.get('/audit', adminManageController.listAudit)
 

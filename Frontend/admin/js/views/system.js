@@ -1,6 +1,6 @@
 import { api } from '../api.js'
 import { SITE_BASE } from '../config.js'
-import { badge, card, grid, h, loadInto, statCard, table } from '../ui.js'
+import { badge, card, grid, h, loadInto, openDialog, sectionTitle, statCard, table } from '../ui.js'
 import { formatDateTime, formatNumber } from '../format.js'
 
 const STATUS_LABELS = {
@@ -9,6 +9,173 @@ const STATUS_LABELS = {
     sent: 'Отправлена',
     failed: 'Ошибка',
     canceled: 'Отменена'
+}
+
+const CONTAINER_STATE_LABELS = {
+    running: 'работает',
+    restarting: 'перезапускается',
+    paused: 'пауза',
+    exited: 'остановлен',
+    dead: 'dead',
+    created: 'создан',
+    removing: 'удаляется'
+}
+
+const LOGS_TAIL = 100
+
+function formatUptime(seconds) {
+    const value = Number(seconds)
+    if (!Number.isFinite(value) || value < 0) return '—'
+    if (value < 60) return `${Math.floor(value)} с`
+    const minutes = Math.floor(value / 60)
+    if (minutes < 60) return `${minutes} мин`
+    const hours = Math.floor(minutes / 60)
+    if (hours < 24) return `${hours} ч ${minutes % 60} мин`
+    const days = Math.floor(hours / 24)
+    return `${days} дн ${hours % 24} ч`
+}
+
+function containerStatusBadge(row) {
+    const state = String(row.state || '').toLowerCase()
+    const label = CONTAINER_STATE_LABELS[state] || state || 'неизвестно'
+    let tone = 'neutral'
+    if (state === 'running') tone = row.healthStatus === 'unhealthy' ? 'warning' : 'success'
+    else if (state === 'restarting' || state === 'paused' || state === 'created' || state === 'removing') tone = 'warning'
+    else if (state === 'exited' || state === 'dead') tone = 'danger'
+    return badge(label, tone)
+}
+
+function containerHealthBadge(row) {
+    if (row.healthStatus === 'healthy') return badge('healthy', 'success')
+    if (row.healthStatus === 'unhealthy') return badge('unhealthy', 'danger')
+    if (row.healthStatus === 'starting') return badge('starting', 'warning')
+    return h('span', { class: 'muted', text: '—' })
+}
+
+function problemsNotice(containers) {
+    const problems = containers.filter(container =>
+        container.problemLevel === 'error' || container.problemLevel === 'warn')
+    if (!problems.length) return null
+
+    const hasError = problems.some(container => container.problemLevel === 'error')
+    return h('div', { class: `notice ${hasError ? 'notice-danger' : 'notice-warn'}` }, [
+        h('p', { text: `Проблемы контейнеров: ${problems.length}` }),
+        h('ul', { class: 'notice-list' }, problems.map(container => h('li', {
+            text: `${container.name || container.id} — ${container.problem || 'причина не определена'}`
+        })))
+    ])
+}
+
+function dockerUnavailableNotice(error) {
+    const payload = error?.payload && typeof error.payload === 'object' ? error.payload : null
+    const reason = payload?.reason || null
+    const serverMessage = typeof payload?.message === 'string' ? payload.message : ''
+
+    const paragraphs = []
+    if (reason === 'disabled') {
+        paragraphs.push('Сбор статистики Docker выключен: DOCKER_STATS_ENABLED=false. ' +
+            'В Kubernetes это ожидаемо — контейнеры живут в оркестраторе, а не в Docker-демоне, доступном backend.')
+        paragraphs.push('Что проверить: если статистика нужна, включите DOCKER_STATS_ENABLED и задайте DOCKER_HOST до docker-socket-proxy.')
+    } else if (reason === 'not_configured') {
+        paragraphs.push('DOCKER_HOST не задан, поэтому backend не знает, к какому Docker-демону подключаться.')
+        paragraphs.push('Что проверить: DOCKER_HOST=tcp://docker-socket-proxy:2375 и сервис docker-socket-proxy с CONTAINERS=1.')
+    } else if (reason === 'unreachable') {
+        paragraphs.push('Docker-демон не отвечает по DOCKER_HOST: соединение с docker-socket-proxy не установлено.')
+        paragraphs.push('Что проверить: запущен ли docker-socket-proxy и его порт 2375, ' +
+            'не блокирует ли соединение сеть/firewall, доступен ли DOCKER_HOST из контейнера backend.')
+    } else {
+        paragraphs.push('Docker недоступен в этом окружении — статистика и логи контейнеров не собраны.')
+        paragraphs.push('Что проверить: DOCKER_STATS_ENABLED, DOCKER_HOST и доступность Docker-демона (docker ps).')
+    }
+
+    return h('div', { class: 'notice notice-warn' }, [
+        h('p', { text: 'Состояние контейнеров: данные недоступны' }),
+        ...paragraphs.map(text => h('p', { text })),
+        serverMessage || error?.message
+            ? h('p', { class: 'muted', text: `Ответ сервера: ${serverMessage || error?.message}` })
+            : null
+    ])
+}
+
+function showLogsDialog(container) {
+    const logsNode = h('pre', { class: 'modal-details logs-details' })
+    const statusNode = h('p', { class: 'muted', text: 'Загружаем последние логи…' })
+    let dialog = null
+
+    const closeButton = h('button', {
+        class: 'btn btn-ghost',
+        type: 'button',
+        text: 'Закрыть',
+        onClick: () => dialog?.close('close-button')
+    })
+
+    dialog = openDialog({
+        title: `Логи контейнера ${container.name || container.id}`,
+        description: `stdout + stderr, последние ${LOGS_TAIL} строк, без timestamps`,
+        wide: true,
+        children: [statusNode, logsNode],
+        actions: [closeButton],
+        initialFocus: closeButton
+    })
+
+    api.dockerLogs(container.id, LOGS_TAIL)
+        .then(result => {
+            const logs = String(result?.logs || '').trim()
+            if (!logs) {
+                statusNode.textContent = 'Лог пуст: контейнер ещё ничего не выводил.'
+                return
+            }
+            statusNode.textContent = `Символов: ${logs.length}`
+            logsNode.textContent = logs
+        })
+        .catch(error => {
+            statusNode.textContent = `Не удалось загрузить логи: ${error?.message || 'неизвестная ошибка'}`
+        })
+}
+
+function containersTable(containers) {
+    return table({
+        columns: [
+            { key: 'name', label: 'Контейнер' },
+            { key: 'service', label: 'Сервис', render: row => row.service || '—' },
+            { key: 'state', label: 'Статус', render: containerStatusBadge },
+            { key: 'healthStatus', label: 'Здоровье', render: containerHealthBadge },
+            { key: 'restartCount', label: 'Перезапуски', align: 'right', render: row => row.restartCount || 0 },
+            {
+                key: 'uptimeSeconds',
+                label: 'Uptime',
+                align: 'right',
+                render: row => row.state === 'running' ? formatUptime(row.uptimeSeconds) : '—'
+            },
+            {
+                key: 'cpu',
+                label: 'CPU, %',
+                align: 'right',
+                render: row => row.statsAvailable ? `${row.cpu}` : '—'
+            },
+            {
+                key: 'memory',
+                label: 'Память',
+                align: 'right',
+                render: row => row.statsAvailable
+                    ? `${(row.memory.usage / 1024 / 1024).toFixed(1)} МБ (${row.memory.percent}%)`
+                    : '—'
+            },
+            { key: 'problem', label: 'Причина', render: row => row.problem || '—' },
+            {
+                key: 'logs',
+                label: 'Логи',
+                render: row => h('button', {
+                    class: 'btn btn-ghost btn-small',
+                    type: 'button',
+                    text: 'Логи',
+                    onClick: () => showLogsDialog(row)
+                })
+            }
+        ],
+        rows: containers,
+        emptyText: 'Контейнеры не найдены'
+    })
 }
 
 function pushSection(overview) {
@@ -66,10 +233,72 @@ function pushSection(overview) {
     ])
 }
 
-function serverSection(health, docker) {
+function serverSection(health, docker, dockerError, onRefresh) {
     const containers = docker?.containers || []
+    const summary = docker?.summary || null
+    const dockerAvailable = Boolean(docker)
+
+    const stoppedStates = new Set(['exited', 'dead', 'created', 'removing'])
+    const total = summary?.total ?? containers.length
+    const running = summary?.running ?? containers.filter(container => container.state === 'running').length
+    const stopped = summary?.stopped ?? containers.filter(container => stoppedStates.has(container.state)).length
+    const problems = summary?.problems ?? containers.filter(container =>
+        container.problemLevel === 'error' || container.problemLevel === 'warn').length
+    const healthy = summary?.healthy ?? containers.filter(container =>
+        container.state === 'running' && container.problemLevel === 'ok').length
+    const restarting = summary?.restarting ?? containers.filter(container => container.state === 'restarting').length
+
+    const refreshButton = h('button', {
+        class: 'btn btn-secondary btn-small',
+        type: 'button',
+        text: 'Обновить',
+        onClick: () => {
+            if (typeof onRefresh === 'function') onRefresh()
+        }
+    })
+
+    const containersBody = dockerAvailable
+        ? containersTable(containers)
+        : h('p', { class: 'muted', text: 'Список контейнеров недоступен — смотрите пояснение выше.' })
 
     return h('div', { class: 'stack' }, [
+        sectionTitle(
+            'Состояние сервисов',
+            dockerAvailable
+                ? 'Docker: контейнеры, healthcheck и причины остановки'
+                : 'Docker недоступен в этом окружении — статистика и логи не собраны'
+        ),
+        grid(4, [
+            statCard({
+                label: 'Всего контейнеров',
+                value: dockerAvailable ? total : '—',
+                hint: 'Включая остановленные',
+                tone: 'accent'
+            }),
+            statCard({
+                label: 'Работают',
+                value: dockerAvailable ? running : '—',
+                hint: dockerAvailable ? `healthy: ${healthy}` : 'Docker недоступен',
+                tone: 'accent'
+            }),
+            statCard({
+                label: 'Остановлены',
+                value: dockerAvailable ? stopped : '—',
+                hint: dockerAvailable ? `restarting: ${restarting}` : 'Docker недоступен',
+                tone: stopped > 0 ? 'warning' : undefined
+            }),
+            statCard({
+                label: 'Проблемы',
+                value: dockerAvailable ? problems : '—',
+                hint: 'healthcheck, OOM, код выхода',
+                tone: problems > 0 ? 'danger' : undefined
+            })
+        ]),
+
+        dockerError
+            ? dockerUnavailableNotice(dockerError)
+            : problemsNotice(containers),
+
         grid(4, [
             statCard({
                 label: 'API',
@@ -101,43 +330,25 @@ function serverSection(health, docker) {
             }))
             : null,
 
-        card('Контейнеры', docker === null
-            ? 'Docker недоступен в этом окружении'
-            : 'Нагрузка на сервисы (docker stats)',
-        docker === null
-            ? h('p', { class: 'muted', text: 'DOCKER_HOST не задан или Docker недоступен — раздел пропущен.' })
-            : table({
-                columns: [
-                    { key: 'name', label: 'Контейнер' },
-                    { key: 'state', label: 'Состояние' },
-                    { key: 'image', label: 'Образ' },
-                    {
-                        key: 'cpu',
-                        label: 'CPU, %',
-                        align: 'right',
-                        render: row => row.statsAvailable ? `${row.cpu}` : '—'
-                    },
-                    {
-                        key: 'memory',
-                        label: 'Память',
-                        align: 'right',
-                        render: row => row.statsAvailable
-                            ? `${(row.memory.usage / 1024 / 1024).toFixed(1)} МБ (${row.memory.percent}%)`
-                            : '—'
-                    },
-                    {
-                        key: 'network',
-                        label: 'Сеть RX/TX',
-                        align: 'right',
-                        render: row => row.statsAvailable
-                            ? `${(row.network.rx / 1024 / 1024).toFixed(1)} / ${(row.network.tx / 1024 / 1024).toFixed(1)} МБ`
-                            : '—'
-                    }
-                ],
-                rows: containers,
-                emptyText: 'Контейнеры не найдены'
-            }))
+        card(
+            'Контейнеры',
+            dockerAvailable ? 'Docker: состояние сервисов и нагрузка' : 'Docker недоступен в этом окружении',
+            containersBody,
+            refreshButton
+        )
     ])
+}
+
+async function loadServerState() {
+    const [push, health] = await Promise.all([api.pushOverview(), api.health()])
+    let docker = null
+    let dockerError = null
+    try {
+        docker = await api.dockerStats()
+    } catch (error) {
+        dockerError = error
+    }
+    return { push, health, docker, dockerError }
 }
 
 export const systemView = {
@@ -145,18 +356,12 @@ export const systemView = {
     title: 'Рассылки и сервер',
     subtitle: 'Push-уведомления, состояние API, Redis и Docker',
     async render(root) {
-        await loadInto(root, async () => {
-            const [push, health] = await Promise.all([api.pushOverview(), api.health()])
-            let docker
-            try {
-                docker = await api.dockerStats()
-            } catch {
-                docker = null
-            }
-            return { push, health, docker }
-        }, ({ push, health, docker }) => h('div', { class: 'stack' }, [
-            pushSection(push),
-            serverSection(health, docker)
-        ]), 'Загружаем состояние сервера…')
+        const loader = () => loadServerState()
+        const builder = data => h('div', { class: 'stack' }, [
+            pushSection(data.push),
+            serverSection(data.health, data.docker, data.dockerError,
+                () => loadInto(root, loader, builder, 'Обновляем состояние сервера…'))
+        ])
+        await loadInto(root, loader, builder, 'Загружаем состояние сервера…')
     }
 }

@@ -1,5 +1,7 @@
-import { Op } from 'sequelize'
+import { Op, QueryTypes } from 'sequelize'
+import sequelize from '../db.js'
 import Notification from '../models/Notification.js'
+import { hasNotificationClicks } from '../utils/adminSchema.js'
 
 const LIST_ATTRIBUTES = [
     'id',
@@ -12,6 +14,22 @@ const LIST_ATTRIBUTES = [
     'read_at',
     'created_at'
 ]
+
+const CLICK_UPDATE_SQL = `
+    UPDATE notifications
+    SET clicked_at = COALESCE(clicked_at, now()),
+        read_at = COALESCE(read_at, now()),
+        click_count = click_count + 1
+    WHERE id = $1 AND user_id = $2
+    RETURNING id
+`
+
+const LEGACY_CLICK_UPDATE_SQL = `
+    UPDATE notifications
+    SET read_at = COALESCE(read_at, now())
+    WHERE id = $1 AND user_id = $2
+    RETURNING id
+`
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
 const MAX_OFFSET = 1_000_000
@@ -151,6 +169,33 @@ class NotificationController {
         } catch (error) {
             console.error('❌ Ошибка отметки уведомления:', error)
             return res.status(500).json({ message: 'Не удалось обновить уведомление' })
+        }
+    }
+
+    async markClicked(req, res) {
+        try {
+            const id = parseNotificationId(req.params.id)
+            if (!id) {
+                return res.status(400).json({ message: 'Некорректный идентификатор уведомления' })
+            }
+
+            const clicksTracked = await hasNotificationClicks()
+            const rows = await sequelize.query(
+                clicksTracked ? CLICK_UPDATE_SQL : LEGACY_CLICK_UPDATE_SQL,
+                {
+                    bind: [id, req.user.id],
+                    type: QueryTypes.SELECT
+                }
+            )
+
+            if (!rows?.length) {
+                return res.status(404).json({ message: 'Уведомление не найдено' })
+            }
+
+            return res.json({ ok: true })
+        } catch (error) {
+            console.error('❌ Ошибка отметки клика по уведомлению:', error)
+            return res.status(500).json({ message: 'Не удалось отметить клик по уведомлению' })
         }
     }
 

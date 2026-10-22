@@ -4,10 +4,11 @@ import { API_BASE, SERVER_BASE } from './config.js'
 export const REQUEST_TIMEOUT_MS = 15000
 
 export class ApiError extends Error {
-    constructor(message, status) {
+    constructor(message, status, payload = null) {
         super(message)
         this.name = 'ApiError'
         this.status = status
+        this.payload = payload
     }
 }
 
@@ -134,7 +135,7 @@ async function requestWithGuards(path, url, options = {}, { allowUnauthorized = 
         }
 
         if (!response.ok) {
-            throw new ApiError(data?.message || `Ошибка запроса (${response.status})`, response.status)
+            throw new ApiError(data?.message || `Ошибка запроса (${response.status})`, response.status, data)
         }
 
         resetUnauthorized()
@@ -189,6 +190,7 @@ export const api = {
     overview: days => request(`/admin/analytics/overview${query({ days })}`),
     timeseries: days => request(`/admin/analytics/timeseries${query({ days })}`),
     breakdown: days => request(`/admin/analytics/breakdown${query({ days })}`),
+    productAnalytics: days => request(`/admin/product/analytics${query({ days })}`),
     visits: params => request(`/admin/visits${query(params)}`),
 
     users: params => request(`/admin/users${query(params)}`),
@@ -215,5 +217,6 @@ export const api = {
     aiLogs: params => request(`/admin/ai/logs${query(params)}`),
 
     health: () => requestServer('/health'),
-    dockerStats: () => request('/system/docker-stats')
+    dockerStats: () => request('/system/docker-stats'),
+    dockerLogs: (id, tail = 100) => request(`/system/docker-stats/${encodeURIComponent(id)}/logs${query({ tail })}`)
 }
