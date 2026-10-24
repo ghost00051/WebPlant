@@ -43,6 +43,53 @@ export async function hasNotificationClicks() {
     return Boolean(columns && columns.click_count && columns.clicked_at)
 }
 
+export async function hasNotifications() {
+    const columns = await describe('notifications')
+    return Boolean(columns && columns.created_at && columns.user_id)
+}
+
+export async function hasChatLogs() {
+    const columns = await describe('chat_logs')
+    return Boolean(columns && columns.user_id && columns.role && columns.created_at)
+}
+
+export async function hasAiAdviceLogs() {
+    const columns = await describe('ai_advice_logs')
+    return Boolean(columns && columns.user_id && columns.created_at)
+}
+
+export async function hasUsersPrivilegeLevel() {
+    return hasColumn('users', 'privilege_level')
+}
+
+export async function hasUserLegalConsents() {
+    const columns = await describe('user_legal_consents')
+    return Boolean(columns && columns.user_id && columns.accepted_at && columns.source)
+}
+
+export async function hasGardenShares() {
+    const columns = await describe('garden_shares')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.user_id &&
+        columns.token &&
+        columns.view_count &&
+        columns.revoked_at
+    )
+}
+
+export async function hasGardenShareSignups() {
+    const columns = await describe('garden_share_signups')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.share_id &&
+        columns.user_id &&
+        columns.created_at
+    )
+}
+
 export function resetAdminSchemaCache() {
     cache.clear()
 }

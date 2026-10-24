@@ -190,7 +190,14 @@ test('buildAccountExport не содержит секретов и собира�
         plants: [{ id: 11, name: 'Монстера', user_id: 1, is_active: true, reminder_weekdays: [1] }],
         photos: [{ plant_id: 11, url: PHOTO_URL, thumb_url: PHOTO_URL + '.thumb.jpg', is_main: true }],
         carePlans: [{ plant_id: 11, plan: { watering: 7 } }],
-        wateringLogs: [{ id: 1, plant_id: 11, action: 'watered', watered_at: '2026-10-01' }],
+        wateringLogs: [{
+            id: 1,
+            plant_id: 11,
+            action: 'watered',
+            action_at: '2026-10-01T09:00:00.000Z',
+            hours_late: 26,
+            note: 'Полил позже'
+        }],
         chatMessages: [{ id: 5, session_id: 's1', role: 'user', text: 'Привет' }],
         notifications: [{ id: 9, type: 'watering', title: 'Пора полить', body: 'Монстера' }],
         notificationPreferences: { morning_summary_enabled: true, care_advice_enabled: false },
@@ -207,6 +214,10 @@ test('buildAccountExport не содержит секретов и собира�
     assert.equal(payload.plants[0].photos.length, 1)
     assert.equal(payload.plants[0].carePlan.watering, 7)
     assert.equal(payload.sessions.authSessions, 2)
+    assert.equal(payload.wateringLogs[0].wateredAt, '2026-10-01T09:00:00.000Z')
+    assert.equal(payload.wateringLogs[0].hoursLate, 26)
+    assert.equal(payload.wateringLogs[0].daysLate, 1)
+    assert.equal(payload.wateringLogs[0].comment, 'Полил позже')
     for (const secret of ['HASH', 'p256dh', 'TOKEN', 'AUTH', 'credential', '"public"', 'password']) {
         assert.ok(!serialized.includes(secret), `в экспорте не должно быть «${secret}»`)
     }
@@ -440,6 +451,26 @@ test('exportData: отдаёт JSON-файл со всеми данными и �
     assert.ok(!serialized.includes('HASH'))
     assert.ok(!serialized.includes('TOKEN'))
     assert.ok(!serialized.includes('"pub"'))
+})
+
+test('exportData: сохраняет this, когда роут передаёт метод как обработчик (регресс 500)', async () => {
+    const user = {
+        id: 1,
+        email: 'leaf@example.com',
+        password: 'HASH',
+        role: 'USER'
+    }
+    const { controller } = createHarness({
+        user: id => (id === 1 ? user : null)
+    })
+    const res = createResponse()
+    const detachedExportData = controller.exportData
+    await detachedExportData({ user: { id: 1 } }, res)
+
+    assert.equal(res.statusCode, 200, 'обработчик не должен терять this')
+    assert.equal(res.body.format, 'webplant-account-export')
+    assert.equal(res.body.account.email, 'leaf@example.com')
+    assert.equal(res.headers.get('Cache-Control'), 'no-store')
 })
 
 test('маршруты LIVE-02 подключены с requireAuth и rate-limit', async () => {

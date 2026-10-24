@@ -21,6 +21,11 @@ import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
 import { trackEvent } from '../../utils/productEvents.js'
+import {
+  clearShareToken,
+  readShareToken,
+  readUtmShareToken
+} from '../../utils/gardenShare.js'
 import { detectTimeZone } from '../../utils/timeZone.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
@@ -247,6 +252,8 @@ function Registration ({ initialMode = 'login' }) {
     }
 
     const normalizedName = name.trim()
+    const shareToken =
+      readShareToken() || readUtmShareToken(window.location.search) || null
     setIsSubmitting(true)
     setFormError('')
     setRegisterErrorField('')
@@ -262,7 +269,8 @@ function Registration ({ initialMode = 'login' }) {
           marketingConsent,
           name: normalizedName,
           rememberMe,
-          timezone: detectTimeZone()
+          timezone: detectTimeZone(),
+          ...(shareToken ? { shareToken } : {})
         }),
         credentials: 'include'
       })
@@ -279,6 +287,7 @@ function Registration ({ initialMode = 'login' }) {
       }
 
       trackEvent('register', { method: 'password' })
+      clearShareToken()
 
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })

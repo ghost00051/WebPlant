@@ -69,7 +69,8 @@ const PRIVATE_PAGES = [
   'edit-profile.html',
   'my-plants.html',
   'reset-password.html',
-  'notifications.html'
+  'notifications.html',
+  'garden.html'
 ]
 
 console.log('Проверка dist\n')
@@ -214,7 +215,8 @@ const PRIVATE_TITLES = {
   'add-plant.html': 'Добавление растения — Лейка',
   'edit-profile.html': 'Настройки профиля — Лейка',
   'login.html': 'Вход — Лейка',
-  'register.html': 'Регистрация — Лейка'
+  'register.html': 'Регистрация — Лейка',
+  'garden.html': 'Сад в «Лейке» — коллекция растений'
 }
 
 for (const file of PRIVATE_PAGES) {
@@ -252,6 +254,33 @@ for (const file of PRIVATE_PAGES) {
     'SeoMetadata: неизвестный путь → noindex, а не HOME_META',
     /return UNKNOWN_META/.test(seoSource)
   )
+  ok(
+    'SeoMetadata: публичный сад /garden/<token> → noindex',
+    /GARDEN_PATH_PATTERN = \/\^\\\/garden/.test(seoSource) &&
+    /return GARDEN_META/.test(seoSource) &&
+    /GARDEN_META[\s\S]*?indexable: false/.test(seoSource)
+  )
+}
+
+{
+  const html = await readPage('garden.html')
+  ok('garden.html: присутствует', Boolean(html))
+  if (html) {
+    const robots = metaContent(html, 'name', 'robots')
+    const ogImage = metaContent(html, 'property', 'og:image')
+    const twitterImage = metaContent(html, 'name', 'twitter:image')
+    ok('garden.html: noindex', Boolean(robots && robots.includes('noindex')))
+    ok(
+      'garden.html: generic OG-обложка для сада',
+      ogImage === `${siteUrl}/og-garden.png` &&
+      twitterImage === `${siteUrl}/og-garden.png`
+    )
+    ok(
+      'garden.html: нет персонализированных данных (generic-карточка)',
+      !html.includes('data-prerendered="true"') &&
+      html.includes('data-skeleton="true"')
+    )
+  }
 }
 
 {
@@ -281,6 +310,7 @@ for (const file of PRIVATE_PAGES) {
   const robots = await readFile(join(dist, 'robots.txt'), 'utf8')
   ok('robots.txt: указывает на sitemap', robots.includes(`${siteUrl}/sitemap.xml`))
   ok('robots.txt: не закрывает весь сайт', !/^Disallow:\s*\/\s*$/m.test(robots))
+  ok('robots.txt: страницы публичных садов закрыты от индексации', /^Disallow:\s*\/garden\/\s*$/m.test(robots))
 }
 
 {
@@ -293,6 +323,10 @@ for (const file of PRIVATE_PAGES) {
     '.htaccess: есть правила для справочника и статей',
     /\^plants\/\?/.test(htaccess) && /\^care\/\?/.test(htaccess) &&
     /\^plants\/\(\[a-z0-9-\]\+\)/.test(htaccess)
+  )
+  ok(
+    '.htaccess: ссылка на сад отдаёт отдельную generic-страницу',
+    /\^garden\/\[A-Za-z0-9_-\]\{16,64\}\/\?\$/.test(htaccess)
   )
   ok('.htaccess: настроено кеширование', /max-age=31536000/.test(htaccess))
   ok('.htaccess: настроено сжатие', /mod_deflate/.test(htaccess))

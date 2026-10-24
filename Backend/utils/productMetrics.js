@@ -89,3 +89,96 @@ export function buildPushMetrics(raw = {}) {
         clickedToday: toCount(raw.clickedToday)
     }
 }
+
+export const METRIC_STATUSES = Object.freeze(['measured', 'partial', 'unavailable'])
+export const METRIC_UNITS = Object.freeze(['seconds', 'percent', 'rub'])
+export const MISSING_METRIC_DISPLAY = '—'
+
+export function formatMetricSeconds(value) {
+    const numeric = Number(value)
+    if (value === null || value === undefined || !Number.isFinite(numeric)) return MISSING_METRIC_DISPLAY
+    return `${Math.round(numeric)} с`
+}
+
+export function formatMetricPercent(value) {
+    const numeric = Number(value)
+    if (value === null || value === undefined || !Number.isFinite(numeric)) return MISSING_METRIC_DISPLAY
+    const text = numeric.toFixed(1).replace(/\.0$/, '').replace('.', ',')
+    return `${text}%`
+}
+
+export function formatMetricRub(value) {
+    const numeric = Number(value)
+    if (value === null || value === undefined || !Number.isFinite(numeric)) return MISSING_METRIC_DISPLAY
+    const text = numeric.toFixed(2).replace(/0+$/, '').replace(/\.$/, '').replace('.', ',')
+    return `${text} ₽`
+}
+
+export function formatMetricValue(value, unit) {
+    if (value === null || value === undefined || !Number.isFinite(Number(value))) {
+        return MISSING_METRIC_DISPLAY
+    }
+    if (unit === 'seconds') return formatMetricSeconds(value)
+    if (unit === 'percent') return formatMetricPercent(value)
+    if (unit === 'rub') return formatMetricRub(value)
+    return String(Number(value))
+}
+
+export function normalizeMetricStatus(value) {
+    return METRIC_STATUSES.includes(value) ? value : 'unavailable'
+}
+
+export function targetAtLeast(value, target) {
+    if (value === null || value === undefined) return null
+    const actual = Number(value)
+    const threshold = Number(target)
+    if (!Number.isFinite(actual) || !Number.isFinite(threshold)) return null
+    return actual >= threshold
+}
+
+export function targetAtMost(value, target) {
+    if (value === null || value === undefined) return null
+    const actual = Number(value)
+    const threshold = Number(target)
+    if (!Number.isFinite(actual) || !Number.isFinite(threshold)) return null
+    return actual <= threshold
+}
+
+export function buildMetricItem(definition = {}, result = {}) {
+    const unit = METRIC_UNITS.includes(result.unit)
+        ? result.unit
+        : (METRIC_UNITS.includes(definition.unit) ? definition.unit : 'percent')
+    const status = normalizeMetricStatus(result.status)
+    const numeric = Number(result.value)
+    const hasValue = status !== 'unavailable' &&
+        result.value !== null &&
+        result.value !== undefined &&
+        Number.isFinite(numeric)
+    const value = hasValue ? numeric : null
+    let targetMet = null
+    if (hasValue && typeof result.targetMet === 'boolean') targetMet = result.targetMet
+
+    return {
+        id: definition.id || '',
+        label: definition.label || definition.id || '',
+        priority: definition.priority || 'P2',
+        horizon: definition.horizon || '',
+        target: definition.target || '',
+        status,
+        value,
+        unit,
+        display: hasValue ? formatMetricValue(value, unit) : MISSING_METRIC_DISPLAY,
+        detail: typeof result.detail === 'string' ? result.detail : '',
+        source: definition.source || '',
+        targetMet
+    }
+}
+
+export function buildMetricsSummary(items) {
+    const list = Array.isArray(items) ? items : []
+    const summary = { total: list.length, measured: 0, partial: 0, unavailable: 0 }
+    for (const item of list) {
+        summary[normalizeMetricStatus(item?.status)] += 1
+    }
+    return summary
+}

@@ -36,6 +36,8 @@ import "./models/ChatLog.js"
 import "./models/AiAdviceLog.js"
 import "./models/SiteVisit.js"
 import "./models/ProductEvent.js"
+import "./models/GardenShare.js"
+import "./models/GardenShareSignup.js"
 
 
 import "./models/associations.js"
@@ -56,6 +58,7 @@ import systemRouter from "./routes/systemRoutes.js"
 import uploadRouter from "./routes/uploadRoutes.js"
 import reminderService from './jobs/reminderService.js'
 import chatRouter from './routes/chatRoutes.js'
+import gardenShareRouter from './routes/gardenShareRoutes.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
@@ -106,7 +109,9 @@ const MIGRATION_FILES_BY_TABLE = {
     'site_visit_days.utm_source': 'Backend/migrations/20261027_add_visits_utm.sql',
     'site_visit_days.utm_medium': 'Backend/migrations/20261027_add_visits_utm.sql',
     'site_visit_days.utm_campaign': 'Backend/migrations/20261027_add_visits_utm.sql',
-    site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql'
+    site_visit_days: 'Backend/migrations/20261012_create_admin_analytics.sql',
+    garden_shares: 'Backend/migrations/20261028_create_garden_shares.sql',
+    garden_share_signups: 'Backend/migrations/20261028_create_garden_shares.sql'
 }
 
 function formatSchemaMigrationHint(missing) {
@@ -256,6 +261,7 @@ app.use("/api/plants", plantRouter)
 app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
 app.use('/api/chat', getGuestToken, chatRouter)
+app.use('/api/garden', gardenShareRouter)
 
 app.get('/livez', (req, res) => {
     return res.json({ status: 'ok', timestamp: new Date().toISOString() })

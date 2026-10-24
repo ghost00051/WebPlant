@@ -1,5 +1,5 @@
 import { api } from '../api.js'
-import { barMeter, card, grid, h, loadInto, statCard, table } from '../ui.js'
+import { badge, barMeter, card, emptyState, grid, h, loadInto, statCard, table } from '../ui.js'
 import { donutChart, PALETTE } from '../charts.js'
 import { formatDateTime, formatNumber, formatPercent, formatShortDay } from '../format.js'
 
@@ -234,11 +234,81 @@ function pushCard(data) {
         ]))
 }
 
+function metricDisplay(item) {
+    if (typeof item.display === 'string' && item.display.trim()) return item.display.trim()
+    if (item.value === null || item.value === undefined) return '—'
+
+    const value = Number(item.value)
+    if (!Number.isFinite(value)) return '—'
+    if (item.unit === 'seconds') return `${formatNumber(value)} с`
+    if (item.unit === 'percent') return `${formatNumber(value)}%`
+    if (item.unit === 'rub') return `${formatNumber(value)} ₽`
+    return formatNumber(value)
+}
+
+function metricStatusBadge(item) {
+    if (item.status === 'measured') {
+        if (item.targetMet === true) return badge('в цели', 'success')
+        if (item.targetMet === false) return badge('ниже цели', 'warning')
+        return badge('измеряется')
+    }
+    if (item.status === 'partial') return badge('частично')
+    return badge('нет данных')
+}
+
+function metricLabel(item) {
+    const label = item.label || item.id || '—'
+    const detail = typeof item.detail === 'string' ? item.detail.trim() : ''
+
+    return h('div', {}, [
+        h('div', { text: label }),
+        detail ? h('div', { class: 'muted small', text: detail }) : null
+    ])
+}
+
+function metricsCard(data) {
+    const metrics = data.metrics || {}
+    const summary = metrics.summary || {}
+    const items = Array.isArray(metrics.items) ? metrics.items : []
+    const total = Number.isFinite(Number(summary.total)) ? Number(summary.total) : items.length
+    const measured = Number.isFinite(Number(summary.measured))
+        ? Number(summary.measured)
+        : items.filter(item => item.status === 'measured').length
+
+    const body = items.length
+        ? table({
+            columns: [
+                { key: 'label', label: 'Метрика', render: metricLabel },
+                {
+                    key: 'display',
+                    label: 'Сейчас',
+                    align: 'right',
+                    render: metricDisplay
+                },
+                { key: 'target', label: 'Цель', align: 'right', render: row => row.target || '—' },
+                { key: 'horizon', label: 'Горизонт', render: row => row.horizon || '—' },
+                { key: 'status', label: 'Статус', render: metricStatusBadge }
+            ],
+            rows: items,
+            emptyText: 'Метрики появятся после накопления событий',
+            label: 'Метрики продукта'
+        })
+        : emptyState('Метрики появятся после накопления событий')
+
+    const subtitle = items.length
+        ? `${formatNumber(total)} метрик: текущее значение, цель и статус измерения · ` +
+            `измеряется ${formatNumber(measured)} из ${formatNumber(total)}`
+        : 'Текущее значение, цель и статус измерения'
+
+    return card('Метрики продукта', subtitle, body)
+}
+
 function buildProductView(data) {
     return h('div', { class: 'stack' }, [
         warnings(data),
         activityCards(data),
         grid(2, [funnelCard(data), pushCard(data)]),
+        metricsCard(data),
         retentionCard(data),
         eventsCard(data),
         h('p', {
@@ -252,7 +322,7 @@ function buildProductView(data) {
 export const productView = {
     id: 'product',
     title: 'Продукт',
-    subtitle: 'DAU/WAU/MAU, активация, воронка и удержание',
+    subtitle: 'DAU/WAU/MAU, активация, воронка, удержание и 12 метрик',
     needsRange: true,
     async render(root, ctx) {
         await loadInto(

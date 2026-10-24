@@ -222,6 +222,105 @@ const breakdownPayload = {
     ]
 }
 
+const productMetricsItems = [
+    {
+        id: 'ttfv', label: 'TTFV — время до первой ценности', priority: 'P0',
+        horizon: '1 месяц', target: '≤ 60 с', status: 'measured', value: 48, unit: 'seconds',
+        display: '48 с', detail: 'Медиана от регистрации до первой ценности',
+        source: 'события', targetMet: true
+    },
+    {
+        id: 'activation', label: 'Активация', priority: 'P0',
+        horizon: '1 месяц', target: '≥ 60%', status: 'measured', value: 62.5, unit: 'percent',
+        display: '62,5%', detail: 'Регистрация с растением в первый день',
+        source: 'события', targetMet: true
+    },
+    {
+        id: 'plants2', label: 'Второе растение', priority: 'P0',
+        horizon: '3 месяца', target: '≥ 40%', status: 'measured', value: 34.2, unit: 'percent',
+        display: '34,2%', detail: 'Пользователи со вторым растением за 7 дней',
+        source: 'события', targetMet: false
+    },
+    {
+        id: 'd1', label: 'D1 retention', priority: 'P1',
+        horizon: '1 месяц', target: '≥ 35%', status: 'measured', value: 41, unit: 'percent',
+        display: '41%', detail: 'Возврат на следующий день после регистрации',
+        source: 'когорты', targetMet: true
+    },
+    {
+        id: 'd7', label: 'D7 retention', priority: 'P1',
+        horizon: '3 месяца', target: '≥ 20%', status: 'measured', value: 18, unit: 'percent',
+        display: '18%', detail: 'Возврат на 7-й день после регистрации',
+        source: 'когорты', targetMet: false
+    },
+    {
+        id: 'd30', label: 'D30 retention', priority: 'P1',
+        horizon: '6 месяцев', target: '≥ 12%', status: 'partial', value: 9.4, unit: 'percent',
+        display: '9,4%', detail: 'Когорты с полным окном 30 дней',
+        source: 'когорты', targetMet: null
+    },
+    {
+        id: 'push_ctr', label: 'Push CTR', priority: 'P1',
+        horizon: '1 месяц', target: '≥ 10%', status: 'partial', value: 8.1, unit: 'percent',
+        display: '8,1%', detail: 'Переходы из push-уведомлений',
+        source: 'события', targetMet: null
+    },
+    {
+        id: 'returns_no_push', label: 'Возвраты без push', priority: 'P2',
+        horizon: '3 месяца', target: '≥ 25%', status: 'unavailable', value: null, unit: 'percent',
+        display: '—', detail: 'Возвраты пользователей без push-подписки',
+        source: 'события', targetMet: null
+    },
+    {
+        id: 'ai_usage', label: 'Использование AI-чата', priority: 'P1',
+        horizon: '3 месяца', target: '≥ 30%', status: 'measured', value: 27, unit: 'percent',
+        display: '27%', detail: 'Доля активных пользователей AI-чата',
+        source: 'события', targetMet: false
+    },
+    {
+        id: 'ai_cost', label: 'Стоимость AI', priority: 'P1',
+        horizon: '6 месяцев', target: '≤ 15 ₽', status: 'measured', value: 12.4, unit: 'rub',
+        display: '12,4 ₽', detail: 'Средняя стоимость AI на активного пользователя',
+        source: 'биллинг', targetMet: true
+    },
+    {
+        id: 'premium', label: 'Конверсия в Premium', priority: 'P0',
+        horizon: '6 месяцев', target: '≥ 5%', status: 'measured', value: 3.2, unit: 'percent',
+        display: '3,2%', detail: 'Доля пользователей с Premium',
+        source: 'users', targetMet: false
+    },
+    {
+        id: 'share_organic', label: 'Доля органического трафика', priority: 'P2',
+        horizon: '6 месяцев', target: '≥ 50%', status: 'partial', value: 46, unit: 'percent',
+        display: '46%', detail: 'Визиты без платного трафика',
+        source: 'визиты', targetMet: null
+    }
+]
+
+const emptyMetricStatuses = [
+    'unavailable', 'unavailable', 'unavailable', 'partial', 'unavailable',
+    'unavailable', 'unavailable', 'unavailable', 'measured', 'unavailable',
+    'measured', 'partial'
+]
+
+function emptyProductMetrics() {
+    return {
+        items: productMetricsItems.map((item, index) => ({
+            ...item,
+            status: emptyMetricStatuses[index],
+            value: null,
+            display: '—',
+            targetMet: null
+        })),
+        summary: {
+            total: productMetricsItems.length,
+            measured: emptyMetricStatuses.filter(status => status === 'measured').length,
+            partial: emptyMetricStatuses.filter(status => status === 'partial').length,
+            unavailable: emptyMetricStatuses.filter(status => status === 'unavailable').length
+        }
+    }
+}
+
 const productPayload = {
     generatedAt: new Date().toISOString(),
     timezone: 'Europe/Moscow',
@@ -257,7 +356,11 @@ const productPayload = {
         { event: 'chat_message', count: 500, users: 60 },
         { event: 'push_subscribed', count: 40, users: 40 }
     ],
-    push: { notifications: 120, clicks: 30, ctr: 25, clickedToday: 4 }
+    push: { notifications: 120, clicks: 30, ctr: 25, clickedToday: 4 },
+    metrics: {
+        items: productMetricsItems,
+        summary: { total: 12, measured: 8, partial: 3, unavailable: 1 }
+    }
 }
 
 const visitsPayload = {
@@ -471,8 +574,15 @@ function emptyProductPayload() {
         },
         retention: [],
         events: [],
-        push: { notifications: 0, clicks: 0, ctr: 0, clickedToday: 0 }
+        push: { notifications: 0, clicks: 0, ctr: 0, clickedToday: 0 },
+        metrics: emptyProductMetrics()
     }
+}
+
+function noMetricsProductPayload() {
+    const payload = emptyProductPayload()
+    delete payload.metrics
+    return payload
 }
 
 function route(url) {
@@ -482,6 +592,7 @@ function route(url) {
     if (path.endsWith('/users/me')) return { status: 200, data: { id: 1, email: 'admin@example.com', name: 'Админ', role: 'ADMIN' } }
     if (path.includes('/admin/analytics/overview')) return { status: 200, data: empty ? zeroOverview() : overviewPayload }
     if (path.includes('/admin/product/analytics')) {
+        if (mode === 'nometrics') return { status: 200, data: noMetricsProductPayload() }
         return { status: 200, data: empty ? emptyProductPayload() : productPayload }
     }
     if (path.includes('/admin/analytics/timeseries')) {
@@ -757,6 +868,25 @@ try {
         hasText(productRoot, 'landing_view') &&
         hasText(productRoot, 'watering_marked'))
     check('продукт: push CTR отрисован', Boolean(findNode(productRoot, node => node.textContent === 'Push CTR')))
+    const metricsTable = findNode(productRoot, node =>
+        node.getAttribute?.('aria-label') === 'Метрики продукта')
+    const metricsBody = metricsTable ? findNode(metricsTable, node => node.tagName === 'TBODY') : null
+    check('продукт: карточка «Метрики продукта» с таблицей',
+        hasText(productRoot, 'Метрики продукта') && Boolean(metricsTable))
+    check('продукт: 12 строк метрик',
+        Boolean(metricsBody) && metricsBody.children.length === 12,
+        metricsBody ? `строк: ${metricsBody.children.length}` : 'таблица не найдена')
+    check('продукт: ключевые метрики TTFV, Push CTR, Конверсия в Premium',
+        Boolean(metricsTable) &&
+        hasText(metricsTable, 'TTFV — время до первой ценности') &&
+        hasText(metricsTable, 'Push CTR') &&
+        hasText(metricsTable, 'Конверсия в Premium'))
+    check('продукт: статусы «в цели» и «ниже цели»',
+        Boolean(metricsTable) &&
+        hasText(metricsTable, 'в цели') &&
+        hasText(metricsTable, 'ниже цели'))
+    check('продукт: подпись «измеряется 8 из 12»',
+        hasText(productRoot, 'измеряется 8 из 12'))
 } catch (error) {
     check('продукт: раздел отрисован', false, `${error?.name}: ${error?.message}`)
 }
@@ -769,8 +899,23 @@ try {
     check('продукт: предупреждение о сборе событий',
         Boolean(findNode(emptyProductRoot, node =>
             node.textContent?.includes('События начнут собираться после обновления сайта'))))
+    check('продукт: карточка метрик в пустом режиме',
+        hasText(emptyProductRoot, 'Метрики продукта') &&
+        hasText(emptyProductRoot, 'нет данных'))
 } catch (error) {
     check('продукт: пустые данные не ломают рендер', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'nometrics'
+const noMetricsRoot = makeEl('div')
+try {
+    await product.productView.render(noMetricsRoot, makeCtx())
+    check('продукт: без поля metrics карточка показывает пустое состояние',
+        hasText(noMetricsRoot, 'Метрики продукта') &&
+        hasText(noMetricsRoot, 'Метрики появятся после накопления событий'))
+} catch (error) {
+    check('продукт: без поля metrics карточка показывает пустое состояние', false,
+        `${error?.name}: ${error?.message}`)
 }
 mode = 'full'
 

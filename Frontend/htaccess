@@ -115,6 +115,7 @@ DirectoryIndex index.html
     RewriteRule ^care/?$ care.html [L]
     RewriteRule ^plants/([a-z0-9-]+)/?$ plants-$1.html [L]
     RewriteRule ^care/([a-z0-9-]+)/?$ care-$1.html [L]
+    RewriteRule ^garden/[A-Za-z0-9_-]{16,64}/?$ garden.html [L]
 
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d

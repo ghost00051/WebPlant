@@ -22,6 +22,8 @@ import {
     computeFunnel,
     computeRetention
 } from '../utils/productMetrics.js'
+import { readAiMetricsRange } from '../utils/aiMetrics.js'
+import { buildProductMetricsBoard } from '../services/productMetricsService.js'
 
 const MSK = `'${TIMEZONE}'`
 
@@ -660,13 +662,15 @@ class AdminAnalyticsController {
         }
 
         try {
-            const [hasCreatedAt, eventsTracked, clicksTracked] = await Promise.all([
+            const [hasCreatedAt, eventsTracked, clicksTracked, visitsTracked] = await Promise.all([
                 hasUsersCreatedAt(),
                 hasProductEvents(),
-                hasNotificationClicks()
+                hasNotificationClicks(),
+                hasSiteVisitDays()
             ])
             const createdExpr = userCreatedAtSql(hasCreatedAt)
             const eventsSource = PRODUCT_EVENTS_SOURCE(eventsTracked)
+            const retentionTracked = eventsTracked || visitsTracked
 
             const pushClicksSql = clicksTracked
                 ? `(SELECT COALESCE(sum(click_count), 0)::int
@@ -713,6 +717,23 @@ class AdminAnalyticsController {
                 FROM users u
             `
 
+            const retentionEvSources = []
+            if (eventsTracked) {
+                retentionEvSources.push(`SELECT DISTINCT s.user_id, s.reg_day,
+                           ${dayOf('pe.created_at')} AS ev_day
+                    FROM selected s
+                    JOIN product_events pe ON pe.user_id = s.user_id
+                    WHERE ${dayOf('pe.created_at')} BETWEEN s.reg_day + 1 AND s.reg_day + ${RETENTION_MAX_DAYS}`)
+            }
+            if (visitsTracked) {
+                retentionEvSources.push(`SELECT DISTINCT s.user_id, s.reg_day,
+                           sv.day AS ev_day
+                    FROM selected s
+                    JOIN site_visit_days sv ON sv.user_id = s.user_id
+                    WHERE sv.day BETWEEN s.reg_day + 1 AND s.reg_day + ${RETENTION_MAX_DAYS}`)
+            }
+            const retentionEvSql = retentionEvSources.join('\n                    UNION\n                    ')
+
             const retentionSql = `
                 ${BOUNDS_CTE},
                 week_starts AS (
@@ -738,11 +759,7 @@ class AdminAnalyticsController {
                     JOIN week_starts w ON w.cohort = r.cohort
                 ),
                 ev AS (
-                    SELECT DISTINCT s.user_id, s.reg_day,
-                           ${dayOf('pe.created_at')} AS ev_day
-                    FROM selected s
-                    JOIN product_events pe ON pe.user_id = s.user_id
-                    WHERE ${dayOf('pe.created_at')} BETWEEN s.reg_day + 1 AND s.reg_day + ${RETENTION_MAX_DAYS}
+                    ${retentionEvSql}
                 ),
                 flags AS (
                     SELECT s.cohort, s.user_id,
@@ -781,7 +798,7 @@ class AdminAnalyticsController {
                     select(activitySql, [days]),
                     select(newUsersSql, [days]),
                     select(funnelSql, [days]),
-                    eventsTracked ? select(retentionSql, [days]) : [],
+                    retentionTracked ? select(retentionSql, [days]) : [],
                     eventsTracked ? select(eventsSql, [days]) : [],
                     select(pushSql, [days])
                 ])
@@ -799,6 +816,20 @@ class AdminAnalyticsController {
             const funnelRow = firstRow(funnelRows)
             const pushRow = firstRow(pushRows)
 
+            let aiCost = null
+            let aiRequests = null
+            try {
+                const aiMetrics = await readAiMetricsRange({ days })
+                const cost = Number(aiMetrics?.summary?.cost?.total)
+                aiCost = Number.isFinite(cost) ? cost : null
+                const requests = Number(aiMetrics?.summary?.totals?.requests)
+                aiRequests = Number.isFinite(requests) ? requests : null
+            } catch (error) {
+                console.warn('⚠️ Стоимость ИИ для метрик продукта недоступна:', error?.message || error)
+            }
+
+            const metrics = await buildProductMetricsBoard({ days, aiCost, aiRequests })
+
             return res.json({
                 generatedAt: new Date().toISOString(),
                 timezone: TIMEZONE,
@@ -812,7 +843,7 @@ class AdminAnalyticsController {
                     wateringMarked: funnelRow.watering_marked,
                     pushSubscribed: funnelRow.push_subscribed
                 }),
-                retention: eventsTracked ? computeRetention(rowsOf(retentionRows)) : [],
+                retention: retentionTracked ? computeRetention(rowsOf(retentionRows)) : [],
                 events: rowsOf(eventRows).map(row => ({
                     event: row.event,
                     count: toInteger(row.count),
@@ -822,7 +853,8 @@ class AdminAnalyticsController {
                     notifications: pushRow.notifications,
                     clicks: pushRow.clicks,
                     clickedToday: pushRow.clicked_today
-                })
+                }),
+                metrics
             })
         } catch (error) {
             return fail(res, error, 'product')

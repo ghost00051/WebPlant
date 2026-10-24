@@ -6,6 +6,8 @@ import ChatLog from './ChatLog.js'
 import AiAdviceLog from './AiAdviceLog.js'
 import AdminAuditLog from './AdminAuditLog.js'
 import ProductEvent from './ProductEvent.js'
+import GardenShare from './GardenShare.js'
+import GardenShareSignup from './GardenShareSignup.js'
 import './Passkey.js'
 import './PasskeyChallenge.js'
 
@@ -59,4 +61,42 @@ User.hasMany(ProductEvent, {
 })
 ProductEvent.belongsTo(User, { foreignKey: 'user_id' })
 
-export { User, Plant, PlantPhoto, AdminAuditLog, ProductEvent }
+User.hasMany(GardenShare, {
+    foreignKey: 'user_id',
+    as: 'gardenShares',
+    onDelete: 'CASCADE'
+})
+GardenShare.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+})
+
+GardenShare.hasMany(GardenShareSignup, {
+    foreignKey: 'share_id',
+    as: 'signups',
+    onDelete: 'CASCADE'
+})
+GardenShareSignup.belongsTo(GardenShare, {
+    foreignKey: 'share_id',
+    as: 'share'
+})
+
+User.hasMany(GardenShareSignup, {
+    foreignKey: 'user_id',
+    as: 'gardenShareSignups',
+    onDelete: 'CASCADE'
+})
+GardenShareSignup.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+})
+
+export {
+    User,
+    Plant,
+    PlantPhoto,
+    AdminAuditLog,
+    ProductEvent,
+    GardenShare,
+    GardenShareSignup
+}

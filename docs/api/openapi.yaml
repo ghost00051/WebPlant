@@ -9,7 +9,6 @@ info:
     `Backend/models/*.js`. Спека фиксирует фактические методы, пути, коды ответов и
     структуры, которые сервис возвращает сейчас.
 
-    ## Базовый URL
 
     * боевой: `https://server.checktheplants.ru/api` (плюс `/health` и `/livez` вне `/api`);
     * локально: `http://localhost:5000/api` (порт из `PORT`).
@@ -17,7 +16,6 @@ info:
     Фронтенд обращается к API с другого origin (`https://checktheplants.ru`,
     `https://admin.checktheplants.ru`), поэтому CORS включён с `credentials: true`.
 
-    ## Аутентификация
 
     Сессия хранится в httpOnly-cookie, токенов в `localStorage` нет:
 
@@ -31,7 +29,6 @@ info:
     браузерные клиенты должны отправлять запросы с `credentials: 'include'`.
     Отзыв сессий — `auth_sessions.revoked_at`; при отзыве все запросы получают `401`.
 
-    ## CSRF и Origin
 
     Отдельного CSRF-токена нет. Для `POST`/`PUT`/`PATCH`/`DELETE` сервер проверяет
     `Origin` и `Sec-Fetch-Site`: запрос с недопустимого origin, кросс-сайтовый запрос без
@@ -40,7 +37,6 @@ info:
     Разрешённые origin'ы: `FRONTEND_URL`, `ADMIN_PANEL_ORIGIN`, а вне production —
     `LOCAL_DEV_ORIGINS`.
 
-    ## Ограничения запросов
 
     * тело JSON/urlencoded — не больше 100 kb (`413` при превышении);
     * для запросов с телом обязателен `Content-Type`: `application/json`,
@@ -50,14 +46,12 @@ info:
     * на большинство групп эндпоинтов действует rate-limit (`429`); лимиты перечислены в
       `ARCHITECTURE.md` §7 и в описании операций.
 
-    ## Формат ошибок
 
     Все ошибки — объект `{"message": "<текст>"}`. Обобщённые ответы обработчика:
     `400 {"message":"Некорректный запрос"}`, `413 {"message":"Размер запроса превышает
     допустимый лимит"}`, `500 {"message":"Internal server error"}`; доменные ошибки
     возвращают собственный текст (см. схемы).
 
-    ## Прочие коды
 
     * `503` — недоступная зависимость (БД при `/health`, SMTP при сбросе пароля,
       ИИ-сервис, push не настроен) или исчерпан суточный бюджет ИИ для гостя;
@@ -79,6 +73,8 @@ tags:
     description: WebAuthn-ключи (passkeys)
   - name: plants
     description: растения, расписание, поливы, фото, советы ИИ
+  - name: garden
+    description: шаринг сада F13 — публичная ссылка на сад и атрибуция регистраций
   - name: chat
     description: чат с ИИ-помощником и анализ фото
   - name: notifications
@@ -157,6 +153,7 @@ paths:
       description: |
         Создаёт пользователя, согласия (`privacy_policy`, `terms_of_service`, версия 2.0),
         настройки уведомлений; привязывает гостевые согласия и сообщения чата к аккаунту.
+        Необязательный `shareToken` (F13) атрибутирует регистрацию к ссылке шаринга.
         Выдаёт cookie сессии. Лимит: 5 запросов в час с IP.
       security: []
       requestBody:
@@ -2596,6 +2593,158 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/garden/share:
+    get:
+      tags: [garden]
+      operationId: getGardenShare
+      summary: Текущая ссылка на сад со статистикой
+      description: |
+        Возвращает активную (не отозванную) ссылку шаринга текущего пользователя или
+        `share: null`, если ссылки нет. `viewCount` — просмотры публичной страницы,
+        `signupCount` — регистрации, атрибутированные этой ссылке. Ответ не кешируется
+        (`Cache-Control: no-store`). Лимит чтения: 60 запросов в минуту на пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: 'статус ссылки (`share: null`, если активной ссылки нет)'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [garden]
+      operationId: createGardenShare
+      summary: Создать ссылку на сад (идемпотентно)
+      description: |
+        Создаёт новую активную ссылку на сад, если у пользователя её нет; повторный
+        вызов возвращает текущую ссылку — токен не меняется. Активная ссылка у
+        пользователя всегда одна: в БД это гарантирует частичный
+        `UNIQUE(user_id) WHERE revoked_at IS NULL`, поэтому конкурентные запросы
+        получают `200` с одной и той же ссылкой (не `409`). Токен — 16 случайных
+        байт в base64url (формат `^[A-Za-z0-9_-]{16,64}$`). Ответ не кешируется
+        (`Cache-Control: no-store`). Лимит: 30 запросов в минуту на пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: активная ссылка на сад
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [garden]
+      operationId: revokeGardenShare
+      summary: Отозвать ссылку на сад
+      description: |
+        Помечает активные ссылки пользователя отозванными (`revoked_at`); публичная
+        страница после этого отвечает `404`. Операция идемпотентна: повторный вызов
+        возвращает тот же `200`, а не ошибку. Лимит: 30 запросов в минуту на
+        пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: ссылка отозвана (или уже была отозвана)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareRevoked'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/garden/{token}:
+    get:
+      tags: [garden]
+      operationId: getPublicGarden
+      summary: Публичный сад по ссылке шаринга
+      description: |
+        Публичный просмотр сада по токену из ссылки `/garden/<token>` — без
+        аутентификации. Отдаются только безопасные данные: имя владельца, количество
+        активных растений и до 100 активных растений (`is_active`, порядок
+        `created_at` ASC). Email, `user_id`, телефон и фотографии не возвращаются.
+        `ownerName` — первый токен `users.name`, иначе `username`, иначе «Садовод».
+        Каждый успешный вызов увеличивает `view_count` и `last_viewed_at`.
+
+        Токен неверного формата, неизвестный или отозванный токен дают одинаковый
+        `404`, чтобы не подсказывать формат ссылки. Ответы не кешируются
+        (`Cache-Control: no-store`). Лимит: 120 запросов в минуту с IP.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 64
+            pattern: '^[A-Za-z0-9_-]{16,64}$'
+      responses:
+        '200':
+          description: публичный сад
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicGarden'
+        '404':
+          description: 'токен невалиден, неизвестен или ссылка отозвана'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Message'
+                  - type: object
+                    example:
+                      message: 'Сад не найден или ссылка отозвана'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/system/metrics:
     get:
       tags: [admin, system]
@@ -2857,15 +3006,42 @@ paths:
           `rates` — проценты от `registered` с одним знаком;
         * `retention` — до 8 последних недельных когорт (неделя с понедельника,
           МСК) по `users.created_at` (role ≠ ADMIN): `d1`/`d7`/`d30` — число
-          пользователей когорты с событием в окне `reg_day+1..reg_day+N`, `*Rate` —
-          проценты с одним знаком; строки отсортированы от новых к старым, когорты
-          с `size = 0` не выводятся, ещё не наступившие окна дают 0;
+          пользователей когорты с событием `product_events` ИЛИ визитом
+          `site_visit_days` в окне `reg_day+1..reg_day+N`, `*Rate` — проценты с одним
+          знаком; строки отсортированы от новых к старым, когорты с `size = 0` не
+          выводятся, ещё не наступившие окна дают 0;
         * `events` — топ-10 событий за период (`count`, distinct `users`);
         * `push` — уведомления за период, `clicks = SUM(click_count)`,
-          `ctr = clicks/notifications*100` (1 знак), `clickedToday` — клики за сегодня (МСК).
+          `ctr = clicks/notifications*100` (1 знак), `clickedToday` — клики за сегодня (МСК);
+        * `metrics` — 12 продуктовых метрик листа «Метрики» (TTFV, Activation rate,
+          доля аккаунтов с ≥2 растениями, D1/D7/D30 retention, Push CTR, возвраты без
+          push, использование ИИ, стоимость ИИ на активного, конверсия в Premium,
+          органика из шаринга): `items` в фиксированном порядке и `summary` со
+          счётчиками статусов. У каждой метрики `status`: `measured` — посчитана по
+          данным, `partial` — считается частично (нет тарифа/телеметрии/биллинга/
+          миграции или неподходящих данных), `unavailable` — нет источника. `value` —
+          число в `unit` (`seconds`/`percent`/`rub`), `display` — готовое к показу
+          значение с запятой и суффиксом (`142 с`, `38,9%`, `2,1 ₽`, `—`), `targetMet` —
+          достигнута ли цель (`null`, если значения нет). `premium` всегда `partial`
+          (биллинг F15 не внедрён). `share_organic` — `measured`, если есть таблицы
+          `garden_shares`/`garden_share_signups` и за период были регистрации:
+          `value` — доля регистраций (role ≠ ADMIN) с записью в
+          `garden_share_signups`; `detail` содержит «регистрации из шаринга X из Y;
+          просмотров сада Z; кликов «Поделиться» N» (клики — события
+          `product_events.event = 'share_clicked'` за период, только если
+          `product_events` есть). Без таблиц шаринга (миграция F13 не применена) или
+          без регистраций за период метрика остаётся `partial`. `ai_cost` —
+          `partial`, если тариф `AI_PRICE_*` не задан или за период нет телеметрии ИИ.
+          `ai_cost` — средний расход ИИ за день на DAU (₽/DAU в день: суммарный расход
+          периода ÷ активные user-дни), `ai_usage` — средняя по дням доля DAU,
+          использовавших чат/диагностику.
 
-        Если таблицы `product_events` ещё нет, ответ `200` с `eventsTracked: false`:
-        `activity`/`retention`/`events` нулевые или пустые, `funnel` и `push` работают.
+        Если таблицы `product_events` нет, ответ `200` с `eventsTracked: false`:
+        `activity` и `events` нулевые или пустые, `retention` считается по
+        `site_visit_days` (если они есть) и пуст, если нет ни одного источника; `funnel`
+        и `push` работают. Отсутствующие таблицы/колонки для `metrics` не дают `500`:
+        соответствующие метрики получают `status: unavailable` или `partial` и
+        `display: —`, остальные считаются по доступным данным.
         Если нет колонок `clicked_at`/`click_count` — `push.clicks = 0`, `ctr = 0`.
       parameters:
         - $ref: '#/components/parameters/Days'
@@ -4139,7 +4315,7 @@ components:
 
     ProductAnalyticsResponse:
       type: object
-      required: [generatedAt, timezone, days, eventsTracked, usersCreatedAtTracked, activity, funnel, retention, events, push]
+      required: [generatedAt, timezone, days, eventsTracked, usersCreatedAtTracked, activity, funnel, retention, events, push, metrics]
       properties:
         generatedAt:
           type: string
@@ -4279,6 +4455,179 @@ components:
               type: integer
               minimum: 0
               description: 'count(clicked_at за сегодня, МСК)'
+        metrics:
+          $ref: '#/components/schemas/ProductMetrics'
+
+    ProductMetrics:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          minItems: 12
+          maxItems: 12
+          description: '12 метрик в фиксированном порядке: ttfv, activation, plants2, d1, d7, d30, push_ctr, returns_no_push, ai_usage, ai_cost, premium, share_organic'
+          items:
+            $ref: '#/components/schemas/ProductMetricItem'
+        summary:
+          $ref: '#/components/schemas/ProductMetricsSummary'
+
+    ProductMetricsSummary:
+      type: object
+      required: [total, measured, partial, unavailable]
+      properties:
+        total:
+          type: integer
+          const: 12
+        measured:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом measured'
+        partial:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом partial'
+        unavailable:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом unavailable'
+
+    ProductMetricItem:
+      type: object
+      required: [id, label, priority, horizon, target, status, value, unit, display, detail, source, targetMet]
+      properties:
+        id:
+          type: string
+          enum: [ttfv, activation, plants2, d1, d7, d30, push_ctr, returns_no_push, ai_usage, ai_cost, premium, share_organic]
+          description: 'Идентификатор метрики из листа «Метрики»'
+        label:
+          type: string
+          description: 'Название строго из листа «Метрики»'
+        priority:
+          type: string
+          enum: [P0, P1, P2]
+        horizon:
+          type: string
+          description: 'Горизонт достижения цели'
+        target:
+          type: string
+          description: 'Целевое значение в человекочитаемом виде'
+        status:
+          type: string
+          enum: [measured, partial, unavailable]
+          description: 'measured — считается по данным; partial — считается частично (нет тарифа/телеметрии/биллинга/миграции шаринга или данных); unavailable — нет источника'
+        value:
+          type: [number, 'null']
+          description: 'Значение в единицах unit; null, если метрика недоступна или нет данных'
+        unit:
+          type: string
+          enum: [seconds, percent, rub]
+        display:
+          type: string
+          description: 'Готовое к показу значение: «142 с», «38,9%», «2,1 ₽»; «—» при отсутствии данных'
+        detail:
+          type: string
+          description: 'Короткая методика/ограничение, например «медиана; n=42; 41% ≤ 60 с»'
+        source:
+          type: string
+          description: 'Источник данных из листа «Метрики»'
+        targetMet:
+          type: [boolean, 'null']
+          description: 'Достигнута ли цель; null, если значение неизвестно'
+
+    GardenShare:
+      type: object
+      required: [token, path, createdAt, viewCount, signupCount]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+          description: 'Случайный токен ссылки (16 random bytes в base64url)'
+        path:
+          type: string
+          description: 'Путь публичной страницы на фронтенде: `/garden/<token>`'
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+          description: 'Когда ссылка создана'
+        viewCount:
+          type: integer
+          minimum: 0
+          description: 'Просмотры публичной страницы сада'
+        signupCount:
+          type: integer
+          minimum: 0
+          description: 'Регистрации, атрибутированные этой ссылке'
+
+    GardenShareStatus:
+      type: object
+      required: [share]
+      properties:
+        share:
+          oneOf:
+            - $ref: '#/components/schemas/GardenShare'
+            - type: 'null'
+          description: 'Активная (не отозванная) ссылка; null, если ссылки нет'
+
+    GardenShareRevoked:
+      type: object
+      required: [share, revoked]
+      properties:
+        share:
+          type: 'null'
+          description: 'После отзыва активной ссылки нет'
+        revoked:
+          type: boolean
+          const: true
+
+    PublicGardenPlant:
+      type: object
+      required: [id, name, species, intervalDays]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        species:
+          type: [string, 'null']
+        intervalDays:
+          type: [integer, 'null']
+          description: 'Интервал полива в днях (`watering_interval_days`)'
+
+    PublicGarden:
+      type: object
+      required: [garden]
+      properties:
+        garden:
+          type: object
+          required: [token, ownerName, plantCount, plants, sharedAt, viewCount]
+          properties:
+            token:
+              type: string
+              pattern: '^[A-Za-z0-9_-]{16,64}$'
+            ownerName:
+              type: string
+              description: 'Первый токен users.name, иначе username, иначе «Садовод»'
+            plantCount:
+              type: integer
+              minimum: 0
+              description: 'Всего активных растений; в plants — не больше 100'
+            plants:
+              type: array
+              maxItems: 100
+              description: 'Активные растения (is_active), порядок created_at ASC'
+              items:
+                $ref: '#/components/schemas/PublicGardenPlant'
+            sharedAt:
+              type: [string, 'null']
+              format: date-time
+              description: 'Когда ссылка создана'
+            viewCount:
+              type: integer
+              minimum: 0
+              description: 'Просмотры после инкремента текущего вызова'
 
     Health:
       type: object
@@ -4377,6 +4726,16 @@ components:
         marketingConsent:
           type: boolean
           description: отдельное (необязательное) согласие на маркетинговые письма
+        shareToken:
+          type: string
+          minLength: 16
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+          description: |
+            Необязательный токен публичной ссылки на сад (F13, из `/garden/<token>`):
+            регистрация атрибутируется к шарингу (`garden_share_signups`). Неверный
+            формат — `400`; неизвестный или отозванный токен молча игнорируется и не
+            мешает регистрации.
 
     RegistrationResponse:
       type: object
@@ -4479,6 +4838,30 @@ components:
           items:
             type: object
             additionalProperties: true
+            required: [id, plantId, action, wateredAt, scheduledFor, hoursLate, daysLate, comment, metadata]
+            description: 'отметки полива: `wateredAt` = `watering_logs.action_at`, `hoursLate` = `hours_late`, `daysLate` = floor(hoursLate / 24), `comment` = `note`'
+            properties:
+              id:
+                type: integer
+              plantId:
+                type: [integer, 'null']
+              action:
+                type: [string, 'null']
+              wateredAt:
+                type: [string, 'null']
+                format: date-time
+              scheduledFor:
+                type: [string, 'null']
+                format: date-time
+              hoursLate:
+                type: [integer, 'null']
+              daysLate:
+                type: [integer, 'null']
+              comment:
+                type: [string, 'null']
+              metadata:
+                type: object
+                additionalProperties: true
         chatMessages:
           type: array
           items:

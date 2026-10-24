@@ -68,6 +68,15 @@ const UNKNOWN_META = {
     indexable: false,
 }
 
+const GARDEN_PATH_PATTERN = /^\/garden\/[A-Za-z0-9_-]{16,64}$/
+
+const GARDEN_META = {
+    title: 'Сад в «Лейке» — коллекция растений',
+    description:
+        'Публичная коллекция комнатных растений: какие растения растут в саду и как часто их поливают. Только просмотр.',
+    indexable: false,
+}
+
 const PLANTS_INDEX_META = {
     title: 'Комнатные растения: справочник по поливу и уходу — Лейка',
     description:
@@ -87,6 +96,7 @@ function resolveMeta(pathname) {
 
     if (path === '/') return HOME_META
     if (PRIVATE_META[path]) return PRIVATE_META[path]
+    if (GARDEN_PATH_PATTERN.test(path)) return GARDEN_META
     if (path === PLANTS_PATH) return PLANTS_INDEX_META
     if (path === CARE_PATH) return CARE_INDEX_META
 

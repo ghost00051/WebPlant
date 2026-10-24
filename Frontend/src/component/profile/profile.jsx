@@ -25,6 +25,7 @@ import { openCookieConsentSettings } from '../../utils/cookieConsentSettings.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
+import GardenShareCard from '../gardenShare/GardenShareCard.jsx'
 import './dark-theme.css'
 
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
@@ -850,6 +851,7 @@ function Profile () {
             : `Тема задана вручную: ${theme === 'dark' ? 'тёмная' : 'светлая'}`}
         </p>
       </div>
+      <GardenShareCard />
       <section className='accountData' aria-labelledby='cookieSettingsTitle'>
         <h2 id='cookieSettingsTitle'>Cookie и аналитика</h2>
         <p className='accountDataText'>

@@ -2,6 +2,7 @@ const CACHE_VERSION = 'v9'
 const CACHE_NAME = `ctp-${CACHE_VERSION}`
 const DEFAULT_API_BASE = '/api'
 const VALID_API_PROTOCOLS = ['http:', 'https:']
+const GARDEN_PATH_PATTERN = /^\/garden\/[A-Za-z0-9_-]{16,64}\/?$/
 
 const PRECACHE_URLS = [
     '/',
@@ -146,11 +147,25 @@ function staleWhileRevalidate(event, request) {
 }
 
 async function navigationFallback(request) {
+    if (isGardenNavigation(request)) return null
+
     return (await caches.match(request)) ||
         (await caches.match(request, { ignoreSearch: true })) ||
         (await caches.match('/home')) ||
         (await caches.match('/')) ||
         (await caches.match('/404.html'))
+}
+
+function isGardenNavigation(request) {
+    if (!request || request.mode !== 'navigate') return false
+
+    try {
+        const url = new URL(request.url)
+        return url.origin === self.location.origin &&
+            GARDEN_PATH_PATTERN.test(url.pathname)
+    } catch {
+        return false
+    }
 }
 
 self.addEventListener('fetch', (event) => {
@@ -170,6 +185,20 @@ self.addEventListener('fetch', (event) => {
 
     if (isCacheableAsset(req)) {
         event.respondWith(staleWhileRevalidate(event, req))
+        return
+    }
+
+    if (isGardenNavigation(req)) {
+        event.respondWith((async () => {
+            try {
+                return await fetch(req)
+            } catch {
+                return new Response('Нет подключения к сети', {
+                    status: 503,
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+                })
+            }
+        })())
         return
     }
 

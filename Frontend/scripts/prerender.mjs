@@ -20,7 +20,8 @@ const PRIVATE_SKELETON_KIND = {
   register: 'form',
   'reset-password': 'form',
   'add-plant': 'form',
-  'edit-profile': 'form'
+  'edit-profile': 'form',
+  garden: 'list'
 }
 
 const privateRoutes = {
@@ -55,6 +56,12 @@ const privateRoutes = {
   notifications: {
     title: 'Уведомления — Лейка',
     description: 'Центр уведомлений «Лейки»: напоминания о поливе, советы по уходу и системные сообщения.'
+  },
+  garden: {
+    title: 'Сад в «Лейке» — коллекция растений',
+    description: 'Публичная коллекция комнатных растений: какие растения растут в саду и как часто их поливают. Только просмотр.',
+    ogImage: `${siteUrl}/og-garden.png`,
+    ogImageAlt: 'Сад, которым поделились — коллекция растений в «Лейке»'
   }
 }
 
@@ -94,7 +101,7 @@ function buildWebApplication(html) {
   return JSON.parse(block[1])
 }
 
-function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false }) {
+function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false, ogImage, ogImageAlt }) {
   let page = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
   page = replaceMeta(page, 'name', 'description', description)
   page = replaceMeta(
@@ -110,6 +117,14 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
   page = replaceMeta(page, 'property', 'og:url', canonical)
   page = replaceMeta(page, 'name', 'twitter:title', title)
   page = replaceMeta(page, 'name', 'twitter:description', description)
+  if (ogImage) {
+    page = replaceMeta(page, 'property', 'og:image', ogImage)
+    page = replaceMeta(page, 'name', 'twitter:image', ogImage)
+    if (ogImageAlt) {
+      page = replaceMeta(page, 'property', 'og:image:alt', ogImageAlt)
+      page = replaceMeta(page, 'name', 'twitter:image:alt', ogImageAlt)
+    }
+  }
   page = replaceCanonical(page, canonical)
 
   const templateStructuredData = keepTemplateStructuredData ? buildWebApplication(html) : null
@@ -526,7 +541,9 @@ try {
         title: meta.title,
         description: meta.description,
         canonical: `${siteUrl}/${route}`,
-        indexable: false
+        indexable: false,
+        ogImage: meta.ogImage,
+        ogImageAlt: meta.ogImageAlt
       })
     )
     await writeFile(resolve(outputDirectory, `${route}.html`), page)

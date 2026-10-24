@@ -1,0 +1,75 @@
+.sharedGardenStatus {
+    margin: 16px 0 0;
+    color: var(--theme-accent-text, #2f6b47);
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: 600;
+    line-height: 1.5;
+}
+
+.sharedGardenEmpty {
+    max-width: 760px;
+    margin: 0;
+    padding: 22px;
+    border: 1px solid var(--theme-border, #e5e5df);
+    border-radius: 16px;
+    background: var(--theme-surface, #ffffff);
+    color: var(--theme-muted, #686c66);
+    line-height: 1.6;
+}
+
+.sharedGardenReadonly {
+    max-width: 760px;
+    margin: 24px 0 0;
+    color: var(--theme-muted, #686c66);
+    font-size: var(--font-size-sm, 0.875rem);
+    line-height: 1.5;
+}
+
+.sharedGardenCta {
+    align-items: center;
+}
+
+.sharedGardenCtaActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.sharedGardenButton {
+    min-height: 44px;
+    padding: 12px 22px;
+    border: 0;
+    border-radius: 12px;
+    background: var(--theme-cta-strong, #1f6e73);
+    color: #ffffff;
+    font-family: inherit;
+    font-size: var(--font-size-md, 0.875rem);
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 180ms ease;
+}
+
+.sharedGardenButton:hover {
+    text-decoration: underline;
+}
+
+.sharedGardenButton:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.sharedGardenButton:focus-visible {
+    outline: 3px solid var(--theme-focus-ring, #52705c);
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .sharedGardenCtaActions {
+        width: 100%;
+    }
+
+    .sharedGardenButton {
+        width: 100%;
+    }
+}

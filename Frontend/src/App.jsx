@@ -40,6 +40,9 @@ const ResetPassword = lazy(() =>
 const CookieConsentManager = lazy(() =>
   import('./component/CookieConsentManager/CookieConsentManager.jsx')
 )
+const SharedGardenPage = lazy(() =>
+  import('./component/sharedGarden/SharedGardenPage.jsx')
+)
 
 function SuspenseRoute ({ children }) {
   return <Suspense fallback={<RouteFallback />}>{children}</Suspense>
@@ -197,6 +200,14 @@ function AppContent () {
             element={
               <SuspenseRoute>
                 <CareDetailRoute />
+              </SuspenseRoute>
+            }
+          />
+          <Route
+            path='/garden/:token'
+            element={
+              <SuspenseRoute>
+                <SharedGardenPage />
               </SuspenseRoute>
             }
           />

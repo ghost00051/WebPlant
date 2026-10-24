@@ -24,6 +24,8 @@ import {
 } from '../utils/authTokens.js'
 import { linkGuestDataToUser } from '../utils/linkGuestData.js'
 import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
+import { attributeShareSignup } from '../services/gardenShareService.js'
+import { parseShareToken } from '../utils/shareTokens.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
@@ -196,7 +198,8 @@ class UserController {
                 termsAccepted,
                 marketingConsent,
                 rememberMe,
-                timezone
+                timezone,
+                shareToken
             } = req.body || {}
 
             const normalizedEmail = typeof email === 'string' ? normalizeEmail(email) : ''
@@ -227,6 +230,13 @@ class UserController {
             if (timezone !== undefined && timezone !== null && !isValidTimeZone(timezone)) {
                 return res.status(400).json({
                     message: "Некорректный часовой пояс"
+                })
+            }
+
+            const parsedShareToken = parseShareToken(shareToken)
+            if (!parsedShareToken.ok) {
+                return res.status(400).json({
+                    message: "Некорректная ссылка шаринга"
                 })
             }
 
@@ -347,6 +357,14 @@ class UserController {
                 console.log(
                     `Связано гостевых согласий: ${linked.consentCount}, сообщений: ${linked.chatMessageCount}`
                 )
+            }
+
+            if (parsedShareToken.token) {
+                try {
+                    await attributeShareSignup(user.id, parsedShareToken.token, { transaction })
+                } catch (error) {
+                    console.error('⚠️ Не удалось атрибутировать регистрацию из шаринга:', error)
+                }
             }
 
             await transaction.commit()
@@ -594,9 +612,6 @@ class UserController {
                             : 7
                         let next = zonedDayHourAfter(plant.next_watering_at, 0, hour, nextTimeZone)
                         if (!next || !Number.isFinite(next.getTime())) continue
-
-
-
 
                         if (next.getTime() <= Date.now()) {
                             next = advanceZonedWatering(next, interval, hour, nextTimeZone, new Date())

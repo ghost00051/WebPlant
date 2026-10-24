@@ -1,0 +1,59 @@
+.gardenShareCard {
+    gap: 12px;
+}
+
+.gardenShareLinkRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.gardenShareLinkInput {
+    flex: 1 1 280px;
+    min-width: 0;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 9px 12px;
+    border: 1px solid var(--theme-border, #e5e5df);
+    border-radius: 12px;
+    background: var(--theme-raised, #f5f3ef);
+    color: var(--theme-text, #2d2d2d);
+    font-family: inherit;
+    font-size: var(--font-size-sm, 0.875rem);
+}
+
+.gardenShareLinkInput:focus-visible {
+    outline: 3px solid var(--theme-focus-ring, #52705c);
+    outline-offset: 2px;
+}
+
+.gardenShareStats {
+    margin: 0;
+    color: var(--theme-muted, #686c66);
+    font-family: inherit;
+    font-size: var(--font-size-xs, 0.75rem);
+    line-height: 1.45;
+}
+
+.gardenShareConfirm {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid var(--theme-border, #e5e5df);
+    border-radius: 14px;
+    background: var(--theme-raised, #f5f3ef);
+}
+
+.gardenShareConfirm p {
+    margin: 0;
+    color: var(--theme-text, #2d2d2d);
+    font-family: inherit;
+    font-size: var(--font-size-sm, 0.875rem);
+    line-height: 1.5;
+}
+
+.gardenShareCard .gardenShareLinkInput::selection {
+    background: var(--theme-accent, #7fd1a0);
+    color: var(--theme-on-accent, #10301f);
+}
