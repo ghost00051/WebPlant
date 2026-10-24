@@ -135,10 +135,23 @@ export async function getRedisClient() {
     }
 
     if (!connecting) {
-        connecting = client
+        const currentClient = client
+        connecting = currentClient
             .connect()
             .catch(error => {
                 noteFailure(error?.code || error?.message || String(error))
+                // node-redis не переподключается после неудачного первого connect():
+                // клиент остаётся закрытым, и повторный connect() на нём всегда падает
+                // (ERR_CLIENT_CLOSED). Без сброса под живёт с «redis: unavailable» до
+                // перезапуска, даже если Redis уже поднялся (наблюдалось 2026-10-22).
+                try {
+                    currentClient.destroy()
+                } catch {
+                }
+                if (client === currentClient) {
+                    client = null
+                    clientUrl = null
+                }
                 return null
             })
             .finally(() => {

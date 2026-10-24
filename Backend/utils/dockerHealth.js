@@ -201,6 +201,7 @@ export function summarizeContainers (containers = []) {
     total: 0,
     running: 0,
     stopped: 0,
+    completed: 0,
     unhealthy: 0,
     restarting: 0,
     healthy: 0,
@@ -213,6 +214,7 @@ export function summarizeContainers (containers = []) {
 
     summary.total += 1
     if (state === 'running') summary.running += 1
+    else if (state === 'completed') summary.completed += 1
     else if (STOPPED_STATES.has(state)) summary.stopped += 1
     if (state === 'restarting') summary.restarting += 1
     if (container?.healthStatus === 'unhealthy') summary.unhealthy += 1
@@ -223,6 +225,54 @@ export function summarizeContainers (containers = []) {
   summary.ok = summary.problems === 0
   return summary
 }
+
+/**
+ * Оставляет контейнеры своего compose-проекта и контейнеры без метки проекта
+ * (их запускает не compose — например, ctp_k8s_gateway). Чужие проекты на том же
+ * Docker-хосте в панель не попадают: иначе они висят там вечными «проблемами».
+ */
+export function filterByComposeProject (containers = [], project = '') {
+  const expected = asString(project).toLowerCase()
+  if (!expected) return Array.isArray(containers) ? containers : []
+
+  return (Array.isArray(containers) ? containers : []).filter(container => {
+    const value = asString(container?.Labels?.['com.docker.compose.project']).toLowerCase()
+    return !value || value === expected
+  })
+}
+
+/**
+ * Список контейнеров, которые остановлены намеренно (например, compose-бэкенд после
+ * переезда в Kubernetes). Иначе панель вечно показывает их как проблему.
+ */
+export function parseExpectedStopped (value) {
+  return new Set(
+    String(value ?? '')
+      .split(',')
+      .map(item => item.trim().toLowerCase())
+      .filter(Boolean)
+  )
+}
+
+export function markExpectedStopped (containers = [], expected = new Set()) {
+  if (!expected || expected.size === 0) return containers
+
+  return (Array.isArray(containers) ? containers : []).map(container => {
+    if (!EXIT_STATES.has(asState(container?.state))) return container
+
+    const names = [container?.name, container?.service]
+      .map(value => asString(value).toLowerCase())
+      .filter(Boolean)
+    if (!names.some(name => expected.has(name))) return container
+
+    return {
+      ...container,
+      problem: 'Остановлен намеренно (см. DOCKER_EXPECTED_STOPPED)',
+      problemLevel: 'ok'
+    }
+  })
+}
+
 
 export function dockerConfigProblem ({ dockerHost, statsEnabled } = {}) {
   if (
@@ -256,6 +306,17 @@ export function parseLogsQuery ({ id, tail } = {}) {
     return { ok: false, error: 'Некорректный идентификатор контейнера' }
   }
 
+  const parsedTail = parseLogsTail(tail)
+  if (!parsedTail.ok) return parsedTail
+
+  return { ok: true, id: containerId, tail: parsedTail.tail }
+}
+
+/**
+ * Валидация параметра tail без привязки к идентификатору контейнера:
+ * используется и для docker-контейнеров, и для подов Kubernetes.
+ */
+export function parseLogsTail (tail) {
   let parsedTail = DEFAULT_LOGS_TAIL
   if (tail !== undefined && tail !== null && String(tail).trim() !== '') {
     parsedTail = Number(tail)
@@ -272,7 +333,7 @@ export function parseLogsQuery ({ id, tail } = {}) {
     }
   }
 
-  return { ok: true, id: containerId, tail: parsedTail }
+  return { ok: true, tail: parsedTail }
 }
 
 export function stripAnsi (text) {

@@ -25,6 +25,9 @@ $GatewayName = 'ctp_k8s_gateway'
 $GatewayPort = 8090
 $ComposeProjectNetwork = 'backend_ctp_network'
 $NodePort = 30080
+$KindNetworkName = 'kind'
+$DockerProxyName = 'ctp_docker_socket_proxy'
+$DockerProxyKindIp = '172.20.0.250'
 
 $BuildIgnoreDirs = @(
     'node_modules', 'uploads', 'backups', 'logs',
@@ -159,6 +162,52 @@ function ConvertFrom-Base64([string]$Value) {
 function Test-DockerContainer([string]$Name) {
     $found = Get-NativeLines -AllowFailure { docker ps -a --filter "name=$Name" --format '{{.Names}}' }
     return [bool]($found | Where-Object { $_ -eq $Name })
+}
+
+function Get-NetworkIpOf([string]$Container, [string]$Network) {
+    $networks = Get-NativeText -AllowFailure {
+        docker inspect $Container --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}={{$v.IPAddress}} {{end}}'
+    }
+    if ($networks -match "(?:^|\s)$([regex]::Escape($Network))=([0-9.]+)") { return $Matches[1] }
+    return ''
+}
+
+function Connect-DockerProxyToKind {
+    $kindNetworks = Get-NativeLines -AllowFailure { docker network ls --filter "name=^${KindNetworkName}$" --format '{{.Name}}' }
+    if (-not ($kindNetworks | Where-Object { $_ -eq $KindNetworkName })) {
+        Write-WarnStep "Сеть $KindNetworkName не найдена (Kubernetes выключен?) — Docker-статистика в админке будет недоступна"
+        return
+    }
+    if (-not (Test-DockerContainer $DockerProxyName)) {
+        Write-WarnStep "Контейнер $DockerProxyName не запущен — Docker-статистика в админке будет недоступна"
+        return
+    }
+
+    $current = Get-NetworkIpOf $DockerProxyName $KindNetworkName
+    if ($current -eq $DockerProxyKindIp) {
+        Write-Ok "docker-socket-proxy уже в сети $KindNetworkName ($DockerProxyKindIp)"
+        return
+    }
+    if ($current) {
+        # Адрес мог сместиться после перезапуска Docker Desktop: перевешиваем на статический.
+        Invoke-Native -Action { docker network disconnect $KindNetworkName $DockerProxyName } | Out-Null
+    }
+
+    $connect = Invoke-Native -Action {
+        docker network connect --ip $DockerProxyKindIp $KindNetworkName $DockerProxyName
+    } -Capture
+    if ($connect.ExitCode -eq 0) {
+        Write-Ok "docker-socket-proxy подключён к сети $KindNetworkName ($DockerProxyKindIp)"
+        return
+    }
+
+    $text = ($connect.Output | Out-String).Trim()
+    if ($text -match 'already exists') {
+        Write-Ok "docker-socket-proxy уже подключён к сети $KindNetworkName"
+        return
+    }
+    Write-WarnStep "Не удалось подключить docker-socket-proxy к $KindNetworkName`: $text"
+    Write-WarnStep "Docker-статистика в админке покажет 'Docker недоступен' до исправления связки"
 }
 
 
@@ -322,6 +371,12 @@ if ($namespaceCreated.ExitCode -ne 0) {
     throw 'Не удалось создать namespace webplant'
 }
 
+# Запоминаем env до правок: если переменные изменились, поды нужно перезапустить —
+# контейнер читает окружение только при старте (иначе «включил, а не работает»).
+$envHashBefore = Get-NativeText -AllowFailure { kubectl get configmap webplant-env -n $Namespace -o jsonpath='{.data}' }
+$secretHashBefore = Get-NativeText -AllowFailure { kubectl get secret webplant-secrets -n $Namespace -o jsonpath='{.data}' }
+$configHashBefore = Get-NativeText -AllowFailure { kubectl get configmap webplant-config -n $Namespace -o jsonpath='{.data}' }
+
 $redisPasswordBase64 = Get-NativeText -AllowFailure {
     kubectl get secret webplant-secrets -n $Namespace -o jsonpath='{.data.REDIS_PASSWORD}'
 }
@@ -369,6 +424,9 @@ $currentJobsValue = Get-NativeText -AllowFailure {
     kubectl get configmap webplant-config -n $Namespace -o jsonpath='{.data.BACKGROUND_JOBS_ENABLED}'
 }
 
+Write-Step 'Подключаю docker-socket-proxy к сети kind'
+Connect-DockerProxyToKind
+
 Invoke-Checked 'Не удалось применить webplant-config' { kubectl apply -f (Join-Path $K8sDir '10-configmap.yaml') } | Out-Null
 if ($EnableBackgroundJobs) {
     $jobsValue = 'true'
@@ -390,6 +448,22 @@ Invoke-Checked 'Не удалось выставить BACKGROUND_JOBS_ENABLED' 
     kubectl patch configmap webplant-config -n $Namespace --type merge --patch-file $jobsPatchFile
 } | Out-Null
 Write-Ok "Фоновые задачи в кластере: $jobsNote"
+
+$envHashAfter = Get-NativeText -AllowFailure { kubectl get configmap webplant-env -n $Namespace -o jsonpath='{.data}' }
+$secretHashAfter = Get-NativeText -AllowFailure { kubectl get secret webplant-secrets -n $Namespace -o jsonpath='{.data}' }
+$configHashAfter = Get-NativeText -AllowFailure { kubectl get configmap webplant-config -n $Namespace -o jsonpath='{.data}' }
+
+if ($envHashBefore -ne $envHashAfter -or $secretHashBefore -ne $secretHashAfter -or $configHashBefore -ne $configHashAfter) {
+    $backendExists = Invoke-Native -Action { kubectl get deployment backend -n $Namespace --no-headers } -Capture
+    if ($backendExists.ExitCode -eq 0) {
+        Invoke-Checked 'Не удалось перезапустить backend после изменения конфигурации' {
+            kubectl rollout restart deployment/backend -n $Namespace
+        } | Out-Null
+        Write-Ok 'Конфигурация изменилась — backend перезапущен, чтобы подхватить env'
+    } else {
+        Write-Ok 'Конфигурация изменилась — backend ещё не создан, применится при раскатке'
+    }
+}
 
 
 Write-Step 'Разворачиваю хранилища, PostgreSQL и Redis'

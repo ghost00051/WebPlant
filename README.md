@@ -263,7 +263,7 @@ npm run verify:admin
 | `DEPLOY_TARGET` | метка окружения в `/health` (`compose` / `kubernetes`) |
 | `DB_POOL_MAX`, `DB_POOL_MIN`, `DB_POOL_ACQUIRE_MS`, `DB_POOL_IDLE_MS`, `DB_POOL_EVICT_MS` | пул соединений Sequelize |
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_QUERY_TIMEOUT_MS`, `DB_RETRY_MAX` | таймауты и ретраи запросов |
-| `DOCKER_HOST`, `DOCKER_STATS_ENABLED` | телеметрия контейнеров в админке (`DOCKER_STATS_ENABLED=false` отключает) |
+| `DOCKER_HOST`, `DOCKER_STATS_ENABLED`, `DOCKER_EXPECTED_STOPPED`, `DOCKER_COMPOSE_PROJECT` | телеметрия контейнеров в админке (`DOCKER_STATS_ENABLED=false` отключает); в кластере — `DOCKER_HOST` до `docker-socket-proxy`, список намеренно остановленных в `DOCKER_EXPECTED_STOPPED`, фильтр по compose-проекту в `DOCKER_COMPOSE_PROJECT` |
 | `DEPLOY_PROTOCOL`, `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_PASSWORD`, `DEPLOY_REMOTE_ROOT`, `DEPLOY_SITE_URL`, `DEPLOY_CONFIG_PATH` | параметры FTP-деплоя фронта (`deploy.config.example.json`, `.env.example`) |
 
 ### Frontend

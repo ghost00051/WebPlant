@@ -8,8 +8,12 @@ import {
     describeContainerProblem,
     dockerConfigProblem,
     dockerUnavailable,
+    filterByComposeProject,
+    markExpectedStopped,
     normalizeDockerLogs,
+    parseExpectedStopped,
     parseLogsQuery,
+    parseLogsTail,
     summarizeContainers
 } from './dockerHealth.js'
 
@@ -167,6 +171,7 @@ test('summarizeContainers: считает total/running/stopped/restarting/healt
         total: 5,
         running: 2,
         stopped: 1,
+        completed: 0,
         unhealthy: 1,
         restarting: 1,
         healthy: 1,
@@ -248,4 +253,73 @@ test('normalizeDockerLogs: убирает ANSI-escape и обрезает до �
 test('normalizeDockerLogs: пустой поток — пустая строка', () => {
     assert.equal(normalizeDockerLogs(Buffer.alloc(0)), '')
     assert.equal(normalizeDockerLogs(''), '')
+})
+
+test('parseLogsTail: ограничивает tail без привязки к id', () => {
+    assert.deepEqual(parseLogsTail(undefined), { ok: true, tail: 100 })
+    assert.deepEqual(parseLogsTail('50'), { ok: true, tail: 50 })
+    assert.equal(parseLogsTail('0').ok, false)
+    assert.equal(parseLogsTail('201').ok, false)
+})
+
+test('summarizeContainers: завершённый Job считается completed, а не stopped', () => {
+    const summary = summarizeContainers([
+        { state: 'running', healthStatus: 'healthy', problemLevel: 'ok' },
+        { state: 'completed', healthStatus: 'none', problemLevel: 'ok' },
+        { state: 'exited', healthStatus: 'none', problemLevel: 'error' }
+    ])
+    assert.equal(summary.total, 3)
+    assert.equal(summary.running, 1)
+    assert.equal(summary.completed, 1)
+    assert.equal(summary.stopped, 1)
+    assert.equal(summary.problems, 1)
+    assert.equal(summary.ok, false)
+})
+
+test('parseExpectedStopped: разбирает список по запятым', () => {
+    const expected = parseExpectedStopped(' ctp_backend, ctp_migrate ,, ')
+    assert.equal(expected.has('ctp_backend'), true)
+    assert.equal(expected.has('ctp_migrate'), true)
+    assert.equal(expected.size, 2)
+    assert.equal(parseExpectedStopped(undefined).size, 0)
+})
+
+test('markExpectedStopped: остановленный намеренно контейнер не считается проблемой', () => {
+    const containers = [
+        { name: 'ctp_backend', service: 'backend', state: 'exited', problem: 'Остановлен: код выхода 137', problemLevel: 'error' },
+        { name: 'ctp_nginx', service: 'nginx', state: 'running', problem: null, problemLevel: 'ok' },
+        { name: 'broken', service: 'x', state: 'exited', problem: 'Остановлен: код выхода 1', problemLevel: 'error' }
+    ]
+    const result = markExpectedStopped(containers, parseExpectedStopped('ctp_backend'))
+    assert.equal(result[0].problemLevel, 'ok')
+    assert.match(result[0].problem, /намеренно/)
+    assert.equal(result[1].problemLevel, 'ok')
+    assert.equal(result[2].problemLevel, 'error')
+    assert.equal(summarizeContainers(result).problems, 1)
+    // исходный массив не мутируется
+    assert.equal(containers[0].problemLevel, 'error')
+})
+
+test('markExpectedStopped: пустой список ожидаемых — массив без изменений', () => {
+    const containers = [{ name: 'ctp_backend', state: 'exited', problemLevel: 'error' }]
+    assert.equal(markExpectedStopped(containers, new Set())[0].problemLevel, 'error')
+})
+
+test('filterByComposeProject: чужие проекты отбрасываются, контейнеры без метки остаются', () => {
+    const list = [
+        { Names: ['/ctp_backend'], Labels: { 'com.docker.compose.project': 'backend' } },
+        { Names: ['/school-backend'], Labels: { 'com.docker.compose.project': 'school-recommendation-backend' } },
+        { Names: ['/ctp_k8s_gateway'], Labels: { maintainer: 'nginx' } },
+        { Names: ['/no-labels'] }
+    ]
+
+    assert.deepEqual(
+        filterByComposeProject(list, 'backend').map(container => container.Names[0]),
+        ['/ctp_backend', '/ctp_k8s_gateway', '/no-labels']
+    )
+    assert.deepEqual(
+        filterByComposeProject(list, ' Backend ').map(container => container.Names[0]),
+        ['/ctp_backend', '/ctp_k8s_gateway', '/no-labels']
+    )
+    assert.equal(filterByComposeProject(list, '').length, 4)
 })

@@ -529,6 +529,91 @@ const dockerLogsPayload = {
     logs: 'server started\nGET /health 200\nGET /api/plants 200'
 }
 
+const podLogsPayload = {
+    id: 'pod:backend-d7c54cb55-7b79t',
+    name: 'backend-d7c54cb55-7b79t',
+    tail: 100,
+    logs: 'Server started on port 5000\nGET /health 200'
+}
+
+const kubernetesPayload = {
+    timestamp: new Date().toISOString(),
+    source: 'kubernetes',
+    summary: {
+        available: true,
+        ok: false,
+        total: 3,
+        running: 2,
+        stopped: 0,
+        completed: 1,
+        unhealthy: 0,
+        restarting: 0,
+        healthy: 2,
+        problems: 1
+    },
+    containers: [{
+        id: 'pod:backend-d7c54cb55-7b79t', name: 'backend-d7c54cb55-7b79t',
+        service: 'deployment/backend', state: 'running', status: 'Running 1/1',
+        image: 'webplant-backend:1.2.6', node: 'desktop-worker2',
+        healthStatus: 'healthy', restartCount: 0,
+        startedAt: new Date(now - 3600000).toISOString(), uptimeSeconds: 3600,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'pod:backup-29877060-cc56l', name: 'backup-29877060-cc56l',
+        service: 'job/backup-29877060', state: 'completed', status: 'Succeeded 0/1',
+        image: 'postgres:16-alpine', node: 'desktop-worker4',
+        healthStatus: 'none', restartCount: 0,
+        startedAt: null, uptimeSeconds: null, exitCode: 0, oomKilled: false, error: null,
+        problem: null, problemLevel: 'ok',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'pod:redis-6d9f8b7c4d-zzz', name: 'redis-6d9f8b7c4d-zzz',
+        service: 'deployment/redis', state: 'pending', status: 'Pending 0/1',
+        image: 'redis:7-alpine', node: null,
+        healthStatus: 'starting', restartCount: 4,
+        startedAt: null, uptimeSeconds: null, exitCode: null, oomKilled: false,
+        error: 'Container image is not present with pull policy of Never',
+        problem: 'ErrImageNeverPull (redis): Container image is not present with pull policy of Never',
+        problemLevel: 'error',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }],
+    docker: {
+        available: true,
+        timestamp: new Date().toISOString(),
+        summary: {
+            available: true,
+            ok: true,
+            total: 2,
+            running: 1,
+            stopped: 1,
+            completed: 0,
+            unhealthy: 0,
+            restarting: 0,
+            healthy: 1,
+            problems: 0
+        },
+        containers: [{
+            id: 'f'.repeat(64), name: 'ctp_nginx', state: 'running', status: 'Up 28 hours',
+            image: 'ctp_nginx:local', service: 'nginx', healthStatus: 'healthy', restartCount: 0,
+            startedAt: new Date(now - 86400000).toISOString(), uptimeSeconds: 86400,
+            exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+            statsAvailable: true, cpu: 0.1, memory: { usage: 20971520, limit: 536870912, percent: 3.9 },
+            network: { rx: 1024, tx: 2048 }, block: { read: 0, write: 0 }, pids: 9
+        }, {
+            id: 'e'.repeat(64), name: 'ctp_backend', state: 'exited', status: 'Exited (137) 3 days ago',
+            image: 'backend-backend', service: 'backend', healthStatus: 'none', restartCount: 0,
+            startedAt: null, uptimeSeconds: null, exitCode: 137, oomKilled: false, error: null,
+            problem: 'Остановлен намеренно (см. DOCKER_EXPECTED_STOPPED)', problemLevel: 'ok',
+            statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+            network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+        }]
+    }
+}
+
 
 let mode = 'full'
 
@@ -667,6 +752,7 @@ function route(url) {
                 }
             }
         }
+        if (mode === 'kubernetes') return { status: 200, data: podLogsPayload }
         return { status: 200, data: dockerLogsPayload }
     }
     if (path.includes('/system/docker-stats')) {
@@ -677,6 +763,17 @@ function route(url) {
                     available: false,
                     reason: 'disabled',
                     message: 'Docker stats выключены: DOCKER_STATS_ENABLED=false (обычно так в Kubernetes)'
+                }
+            }
+        }
+        if (mode === 'kubernetes') return { status: 200, data: kubernetesPayload }
+        if (mode === 'kubernetes-error') {
+            return {
+                status: 200,
+                data: {
+                    ...dockerPayload,
+                    source: 'docker',
+                    kubernetes: { reason: 'forbidden', message: 'pods is forbidden: User cannot list resource "pods"' }
                 }
             }
         }
@@ -1039,6 +1136,45 @@ if (logsButton) {
     check('диалог показал содержимое логов', false, 'кнопка не найдена')
     check('в диалоге логов есть кнопка «Закрыть»', false, 'кнопка не найдена')
 }
+
+mode = 'kubernetes'
+const k8sRoot = makeEl('div')
+await system.systemView.render(k8sRoot, makeCtx())
+check('в Kubernetes карточка считает поды',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Всего подов')))
+check('таблица подов названа отдельно',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Поды Kubernetes')))
+check('у подов есть колонка «Узел»',
+    Boolean(findNode(k8sRoot, node => node.dataset?.label === 'Узел')))
+check('notice объясняет, почему под не стартует',
+    Boolean(findNode(k8sRoot, node => node.textContent?.includes('ErrImageNeverPull (redis)'))))
+check('контейнеры compose показаны отдельным блоком',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Контейнеры compose (Docker)')))
+check('завершённый Job не считается проблемой',
+    Boolean(findNode(k8sRoot, node => node.textContent?.includes('завершён'))))
+
+const podLogsButton = findButton(k8sRoot, 'Логи')
+check('у подов есть кнопка «Логи»', Boolean(podLogsButton))
+if (podLogsButton) {
+    const before = requests.length
+    podLogsButton.click()
+    await tick()
+    await tick()
+    check('логи пода запрошены с префиксом pod:',
+        requests.slice(before).some(entry => entry.includes('/system/docker-stats/pod') && entry.includes('/logs')))
+} else {
+    check('логи пода запрошены с префиксом pod:', false, 'кнопка не найдена')
+}
+mode = 'full'
+
+mode = 'kubernetes-error'
+const k8sErrorRoot = makeEl('div')
+await system.systemView.render(k8sErrorRoot, makeCtx())
+check('при ошибке API кластера панель предупреждает о подах',
+    Boolean(findNode(k8sErrorRoot, node => node.textContent?.includes('Поды Kubernetes недоступны'))))
+check('предупреждение подсказывает проверить RBAC',
+    Boolean(findNode(k8sErrorRoot, node => node.textContent?.includes('system:serviceaccount:webplant:webplant-backend'))))
+mode = 'full'
 
 mode = 'empty'
 const emptySystemRoot = makeEl('div')

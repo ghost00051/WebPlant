@@ -12,10 +12,20 @@ import {
     describeContainer,
     dockerConfigProblem,
     dockerUnavailable,
+    filterByComposeProject,
+    markExpectedStopped,
     normalizeDockerLogs,
+    parseExpectedStopped,
     parseLogsQuery,
+    parseLogsTail,
     summarizeContainers
 } from '../utils/dockerHealth.js'
+import {
+    describePods,
+    isPodResourceId,
+    podNameFromResourceId
+} from '../utils/k8sHealth.js'
+import { kubernetesConfig, listPods, podLogs } from '../utils/k8sClient.js'
 
 const router = express.Router()
 
@@ -35,6 +45,8 @@ const dockerConfigReason = dockerConfigProblem({
     dockerHost,
     statsEnabled: process.env.DOCKER_STATS_ENABLED
 })
+const expectedStopped = parseExpectedStopped(process.env.DOCKER_EXPECTED_STOPPED)
+const composeProject = process.env.DOCKER_COMPOSE_PROJECT?.trim() || ''
 
 const docker = dockerConfigReason === null ? new Docker({
   host: dockerHost.replace('tcp://', '').split(':')[0],
@@ -208,6 +220,41 @@ async function readContainerLogs(container, tail) {
   }
 }
 
+async function podLogsHandler(req, res) {
+  const podName = podNameFromResourceId(req.params.id)
+  if (!podName) {
+    return res.status(400).json({ message: 'Некорректное имя пода' })
+  }
+
+  const tail = parseLogsTail(req.query.tail)
+  if (!tail.ok) {
+    return res.status(400).json({ message: tail.error })
+  }
+
+  const config = kubernetesConfig()
+  if (!config) {
+    return res.status(503).json(dockerUnavailable('not_configured', 'Kubernetes недоступен: нет ServiceAccount'))
+  }
+
+  try {
+    const logs = await podLogs(podName, { tail: tail.tail, config })
+    return res.json({
+      id: req.params.id,
+      name: podName,
+      tail: tail.tail,
+      logs: logs.slice(-MAX_LOG_RESPONSE_LENGTH),
+    })
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      return res.status(404).json({ message: 'Под не найден' })
+    }
+    console.warn(`⚠️ Логи пода ${podName} недоступны:`, error?.message || error)
+    return res.status(error?.statusCode === 403 ? 403 : 500).json({
+      message: error?.message || 'Не удалось получить логи пода',
+    })
+  }
+}
+
 async function collectContainer(info) {
   const name = containerNameOf(info)
 
@@ -264,48 +311,134 @@ let cache = {
 
 const CACHE_TTL = 3000
 
+/**
+ * Docker-статистика compose-стека. Возвращает либо готовый payload, либо описание,
+ * почему Docker недоступен — вызывающий код решает, отдавать 200 или 503.
+ */
+async function collectDockerStats() {
+  if (dockerConfigReason) {
+    return dockerUnavailable(dockerConfigReason)
+  }
+
+  if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
+    return cache.data
+  }
+
+  const containers = filterByComposeProject(
+    await docker.listContainers({ all: true }),
+    composeProject
+  )
+  const result = markExpectedStopped(
+    await Promise.all(containers.map(collectContainer)),
+    expectedStopped
+  )
+
+  const payload = {
+    available: true,
+    timestamp: new Date().toISOString(),
+    summary: summarizeContainers(result),
+    containers: result,
+  }
+
+  cache = {
+    data: payload,
+    ts: Date.now(),
+  }
+
+  return payload
+}
+
+/**
+ * Поды namespace через API кластера. Вне Kubernetes (или без RBAC) возвращает
+ * error, но не роняет маршрут: ниже есть fallback на Docker-статистику.
+ */
+async function collectKubernetesStats() {
+  const config = kubernetesConfig()
+  if (!config) {
+    return {
+      containers: null,
+      summary: null,
+      error: {
+        reason: 'not_configured',
+        message: 'Backend запущен не в Kubernetes: нет KUBERNETES_SERVICE_HOST',
+      },
+    }
+  }
+
+  try {
+    const containers = describePods(await listPods(config))
+    return {
+      containers,
+      summary: summarizeContainers(containers),
+      error: null,
+    }
+  } catch (error) {
+    console.warn('⚠️ Kubernetes API недоступен:', error?.reason || error?.message || error)
+    return {
+      containers: null,
+      summary: null,
+      error: {
+        reason: error?.reason || 'unreachable',
+        message: error?.message || 'Не удалось получить поды Kubernetes',
+      },
+    }
+  }
+}
+
 router.get('/metrics', requireAdmin, (req, res) => {
   res.json(getHttpMetrics())
 })
 
 router.get('/docker-stats', requireAdmin, async (req, res) => {
-  if (dockerConfigReason) {
-    return res.status(503).json(dockerUnavailable(dockerConfigReason))
-  }
+  const kubernetes = await collectKubernetesStats()
 
+  let dockerPart
   try {
-    if (cache.data && Date.now() - cache.ts < CACHE_TTL) {
-      return res.json(cache.data)
-    }
-
-    const containers = await docker.listContainers({ all: true })
-
-    const result = await Promise.all(containers.map(collectContainer))
-
-    const payload = {
-      timestamp: new Date().toISOString(),
-      summary: summarizeContainers(result),
-      containers: result,
-    }
-
-    cache = {
-      data: payload,
-      ts: Date.now(),
-    }
-
-    res.json(payload)
+    dockerPart = await collectDockerStats()
   } catch (err) {
     if (isDockerUnavailable(err)) {
       console.warn('⚠️ Docker stats недоступны:', err.code)
-      return res.status(503).json(dockerUnavailable('unreachable'))
+      dockerPart = dockerUnavailable('unreachable')
+    } else {
+      console.error('Docker stats error:', err?.message || err)
+      dockerPart = dockerUnavailable('unreachable', 'Не удалось получить статистику Docker')
     }
-
-    console.error('Docker stats error:', err?.message || err)
-    res.status(500).json({ message: 'Не удалось получить статистику Docker' })
   }
+
+  if (kubernetes.containers) {
+    return res.json({
+      timestamp: new Date().toISOString(),
+      source: 'kubernetes',
+      summary: kubernetes.summary,
+      containers: kubernetes.containers,
+      docker: dockerPart,
+    })
+  }
+
+  if (dockerPart.available) {
+    // В Kubernetes, но без доступа к API: показываем docker-контейнеры и предупреждаем
+    // о проблеме с подами, чтобы она не потерялась в тишине.
+    const kubernetesError = kubernetes.error && kubernetes.error.reason !== 'not_configured'
+      ? kubernetes.error
+      : null
+    return res.json({
+      ...dockerPart,
+      source: 'docker',
+      ...(kubernetesError ? { kubernetes: kubernetesError } : {}),
+    })
+  }
+
+  return res.status(503).json({
+    ...dockerUnavailable(dockerPart.reason, dockerPart.message),
+    kubernetes: kubernetes.error,
+  })
 })
 
 router.get('/docker-stats/:id/logs', requireAdmin, async (req, res) => {
+  if (isPodResourceId(req.params.id)) {
+    return podLogsHandler(req, res)
+  }
+
   if (dockerConfigReason) {
     return res.status(503).json(dockerUnavailable(dockerConfigReason))
   }

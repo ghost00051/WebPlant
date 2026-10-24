@@ -65,15 +65,25 @@ spec:
             allowPrivilegeEscalation: false
             seccompProfile:
               type: RuntimeDefault
+          # exec-проба запускает процесс внутри контейнера: при импорте образа на ноды
+          # (см. deploy.ps1) kubelet не успевал форкнуть sh за 5 с и помечал под NotReady.
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
+            periodSeconds: 5
+            timeoutSeconds: 10
+            failureThreshold: 60
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
                 - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
-            initialDelaySeconds: 5
-            periodSeconds: 5
-            timeoutSeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 10
             failureThreshold: 6
           livenessProbe:
             exec:
@@ -81,10 +91,9 @@ spec:
                 - sh
                 - -c
                 - pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"
-            initialDelaySeconds: 30
             periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 4
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 100m

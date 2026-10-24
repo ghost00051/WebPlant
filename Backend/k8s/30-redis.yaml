@@ -72,24 +72,26 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /data
+          # Таймауты с запасом: при импорте образа на ноды exec-проба не успевала
+          # запустить redis-cli за 3 с, и под выпадал из балансировки (2026-10-22).
           startupProbe:
             exec:
               command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
             periodSeconds: 3
+            timeoutSeconds: 10
             failureThreshold: 20
           readinessProbe:
             exec:
               command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
             periodSeconds: 10
-            timeoutSeconds: 3
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           livenessProbe:
             exec:
               command: ["sh", "-c", "redis-cli ping | grep -q PONG"]
-            initialDelaySeconds: 20
             periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 4
+            timeoutSeconds: 10
+            failureThreshold: 6
           resources:
             requests:
               cpu: 50m

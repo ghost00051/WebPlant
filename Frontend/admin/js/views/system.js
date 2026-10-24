@@ -18,7 +18,10 @@ const CONTAINER_STATE_LABELS = {
     exited: 'остановлен',
     dead: 'dead',
     created: 'создан',
-    removing: 'удаляется'
+    pending: 'ожидает запуска',
+    completed: 'завершён',
+    removing: 'удаляется',
+    unknown: 'неизвестно'
 }
 
 const LOGS_TAIL = 100
@@ -41,6 +44,8 @@ function containerStatusBadge(row) {
     let tone = 'neutral'
     if (state === 'running') tone = row.healthStatus === 'unhealthy' ? 'warning' : 'success'
     else if (state === 'restarting' || state === 'paused' || state === 'created' || state === 'removing') tone = 'warning'
+    else if (state === 'pending') tone = row.problemLevel === 'error' ? 'danger' : 'warning'
+    else if (state === 'completed') tone = 'success'
     else if (state === 'exited' || state === 'dead') tone = 'danger'
     return badge(label, tone)
 }
@@ -133,20 +138,36 @@ function showLogsDialog(container) {
         })
 }
 
-function containersTable(containers) {
-    return table({
-        columns: [
-            { key: 'name', label: 'Контейнер' },
-            { key: 'service', label: 'Сервис', render: row => row.service || '—' },
-            { key: 'state', label: 'Статус', render: containerStatusBadge },
-            { key: 'healthStatus', label: 'Здоровье', render: containerHealthBadge },
-            { key: 'restartCount', label: 'Перезапуски', align: 'right', render: row => row.restartCount || 0 },
-            {
-                key: 'uptimeSeconds',
-                label: 'Uptime',
-                align: 'right',
-                render: row => row.state === 'running' ? formatUptime(row.uptimeSeconds) : '—'
-            },
+function containersTable(containers, { withNode = false } = {}) {
+    const columns = [
+        { key: 'name', label: 'Контейнер' },
+        { key: 'service', label: 'Сервис', render: row => row.service || '—' }
+    ]
+
+    if (withNode) {
+        columns.push({ key: 'node', label: 'Узел', render: row => row.node || '—' })
+    }
+
+    columns.push(
+        { key: 'state', label: 'Статус', render: containerStatusBadge },
+        { key: 'healthStatus', label: 'Здоровье', render: containerHealthBadge },
+        { key: 'restartCount', label: 'Перезапуски', align: 'right', render: row => row.restartCount || 0 },
+        {
+            key: 'uptimeSeconds',
+            label: 'Uptime',
+            align: 'right',
+            render: row => row.state === 'running' ? formatUptime(row.uptimeSeconds) : '—'
+        }
+    )
+
+    if (withNode) {
+        columns.push({
+            key: 'status',
+            label: 'Готовность',
+            render: row => row.status || '—'
+        })
+    } else {
+        columns.push(
             {
                 key: 'cpu',
                 label: 'CPU, %',
@@ -160,19 +181,26 @@ function containersTable(containers) {
                 render: row => row.statsAvailable
                     ? `${(row.memory.usage / 1024 / 1024).toFixed(1)} МБ (${row.memory.percent}%)`
                     : '—'
-            },
-            { key: 'problem', label: 'Причина', render: row => row.problem || '—' },
-            {
-                key: 'logs',
-                label: 'Логи',
-                render: row => h('button', {
-                    class: 'btn btn-ghost btn-small',
-                    type: 'button',
-                    text: 'Логи',
-                    onClick: () => showLogsDialog(row)
-                })
             }
-        ],
+        )
+    }
+
+    columns.push(
+        { key: 'problem', label: 'Причина', render: row => row.problem || '—' },
+        {
+            key: 'logs',
+            label: 'Логи',
+            render: row => h('button', {
+                class: 'btn btn-ghost btn-small',
+                type: 'button',
+                text: 'Логи',
+                onClick: () => showLogsDialog(row)
+            })
+        }
+    )
+
+    return table({
+        columns,
         rows: containers,
         emptyText: 'Контейнеры не найдены'
     })
@@ -233,15 +261,38 @@ function pushSection(overview) {
     ])
 }
 
+function dockerPartNotice(part) {
+    if (!part || part.available) return null
+    return dockerUnavailableNotice({ payload: part, message: part.message })
+}
+
+function kubernetesUnavailableNotice(error) {
+    if (!error) return null
+    return h('div', { class: 'notice notice-warn' }, [
+        h('p', { text: 'Поды Kubernetes недоступны' }),
+        h('p', { text: error.message || 'Не удалось прочитать список подов через API кластера.' }),
+        h('p', {
+            class: 'muted',
+            text: 'Проверьте Role webplant-backend-pods и токен ServiceAccount: ' +
+                'kubectl auth can-i list pods -n webplant ' +
+                '--as=system:serviceaccount:webplant:webplant-backend'
+        })
+    ])
+}
+
 function serverSection(health, docker, dockerError, onRefresh) {
+    const isKubernetes = docker?.source === 'kubernetes'
     const containers = docker?.containers || []
     const summary = docker?.summary || null
+    const compose = isKubernetes ? (docker?.docker || null) : null
+    const kubernetesError = !isKubernetes ? (docker?.kubernetes || null) : null
     const dockerAvailable = Boolean(docker)
 
     const stoppedStates = new Set(['exited', 'dead', 'created', 'removing'])
     const total = summary?.total ?? containers.length
     const running = summary?.running ?? containers.filter(container => container.state === 'running').length
     const stopped = summary?.stopped ?? containers.filter(container => stoppedStates.has(container.state)).length
+    const completed = summary?.completed ?? containers.filter(container => container.state === 'completed').length
     const problems = summary?.problems ?? containers.filter(container =>
         container.problemLevel === 'error' || container.problemLevel === 'warn').length
     const healthy = summary?.healthy ?? containers.filter(container =>
@@ -258,19 +309,31 @@ function serverSection(health, docker, dockerError, onRefresh) {
     })
 
     const containersBody = dockerAvailable
-        ? containersTable(containers)
+        ? containersTable(containers, { withNode: isKubernetes })
         : h('p', { class: 'muted', text: 'Список контейнеров недоступен — смотрите пояснение выше.' })
+
+    const composeCard = isKubernetes && compose
+        ? card(
+            'Контейнеры compose (Docker)',
+            compose.available
+                ? 'Второй контур: nginx, certbot, postgres, redis, backup'
+                : 'Docker недоступен — статистика compose не собрана',
+            compose.available
+                ? containersTable(compose.containers)
+                : (dockerPartNotice(compose) || h('p', { class: 'muted', text: 'Список контейнеров недоступен.' }))
+        )
+        : null
 
     return h('div', { class: 'stack' }, [
         sectionTitle(
             'Состояние сервисов',
-            dockerAvailable
-                ? 'Docker: контейнеры, healthcheck и причины остановки'
-                : 'Docker недоступен в этом окружении — статистика и логи не собраны'
+            isKubernetes
+                ? 'Kubernetes: поды namespace webplant и контейнеры compose'
+                : 'Docker: контейнеры, healthcheck и причины остановки'
         ),
         grid(4, [
             statCard({
-                label: 'Всего контейнеров',
+                label: isKubernetes ? 'Всего подов' : 'Всего контейнеров',
                 value: dockerAvailable ? total : '—',
                 hint: 'Включая остановленные',
                 tone: 'accent'
@@ -278,13 +341,15 @@ function serverSection(health, docker, dockerError, onRefresh) {
             statCard({
                 label: 'Работают',
                 value: dockerAvailable ? running : '—',
-                hint: dockerAvailable ? `healthy: ${healthy}` : 'Docker недоступен',
+                hint: dockerAvailable ? `healthy: ${healthy}` : 'данных нет',
                 tone: 'accent'
             }),
             statCard({
-                label: 'Остановлены',
-                value: dockerAvailable ? stopped : '—',
-                hint: dockerAvailable ? `restarting: ${restarting}` : 'Docker недоступен',
+                label: isKubernetes ? 'Завершены' : 'Остановлены',
+                value: dockerAvailable ? (isKubernetes ? `${completed} / ${stopped}` : stopped) : '—',
+                hint: isKubernetes
+                    ? `завершены / остановлены, restarting: ${restarting}`
+                    : `restarting: ${restarting}`,
                 tone: stopped > 0 ? 'warning' : undefined
             }),
             statCard({
@@ -298,6 +363,8 @@ function serverSection(health, docker, dockerError, onRefresh) {
         dockerError
             ? dockerUnavailableNotice(dockerError)
             : problemsNotice(containers),
+
+        kubernetesUnavailableNotice(kubernetesError),
 
         grid(4, [
             statCard({
@@ -331,11 +398,15 @@ function serverSection(health, docker, dockerError, onRefresh) {
             : null,
 
         card(
-            'Контейнеры',
-            dockerAvailable ? 'Docker: состояние сервисов и нагрузка' : 'Docker недоступен в этом окружении',
+            isKubernetes ? 'Поды Kubernetes' : 'Контейнеры',
+            isKubernetes
+                ? 'Готовность, перезапуски и причины, по которым под не стартует'
+                : 'Docker: состояние сервисов и нагрузка',
             containersBody,
             refreshButton
-        )
+        ),
+
+        composeCard
     ])
 }
 
@@ -354,7 +425,7 @@ async function loadServerState() {
 export const systemView = {
     id: 'system',
     title: 'Рассылки и сервер',
-    subtitle: 'Push-уведомления, состояние API, Redis и Docker',
+    subtitle: 'Push-уведомления, состояние API, Redis, Kubernetes и Docker',
     async render(root) {
         const loader = () => loadServerState()
         const builder = data => h('div', { class: 'stack' }, [
