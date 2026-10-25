@@ -261,6 +261,184 @@ function pushSection(overview) {
     ])
 }
 
+const BACKUP_STATUS_LABELS = {
+    ok: 'в норме',
+    stale: 'пропуск',
+    failing: 'ошибка',
+    never: 'нет данных',
+    unknown: 'нет данных'
+}
+
+const BACKUP_STATUS_TONES = {
+    ok: 'success',
+    stale: 'warning',
+    failing: 'danger',
+    never: 'warning',
+    unknown: 'neutral'
+}
+
+function formatBytes(bytes) {
+    const value = Number(bytes)
+    if (!Number.isFinite(value) || value <= 0) return '—'
+    if (value < 1024) return `${value} Б`
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} КБ`
+    return `${(value / 1024 / 1024).toFixed(2)} МБ`
+}
+
+function formatCountdown(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000))
+    const hours = Math.floor(total / 3600)
+    const minutes = Math.floor((total % 3600) / 60)
+    const seconds = total % 60
+    if (hours > 0) return `${hours} ч ${String(minutes).padStart(2, '0')} мин`
+    if (minutes > 0) return `${minutes} мин ${String(seconds).padStart(2, '0')} с`
+    return `${seconds} с`
+}
+
+// Тикает раз в секунду; сам останавливается, когда узел выпал из DOM
+// (view перерисован), поэтому таймеры не накапливаются при обновлении.
+function countdownValue(nextAt) {
+    const node = h('span', { class: 'backup-countdown' })
+    const target = Date.parse(nextAt)
+
+    if (Number.isNaN(target)) {
+        node.textContent = '—'
+        return node
+    }
+
+    const tick = () => {
+        const left = target - Date.now()
+        node.textContent = left > 0 ? formatCountdown(left) : 'вот-вот'
+    }
+
+    tick()
+    const timer = setInterval(() => {
+        if (!node.isConnected) {
+            clearInterval(timer)
+            return
+        }
+        tick()
+    }, 1000)
+
+    return node
+}
+
+function backupLastValue(entry) {
+    if (!entry || !entry.last) return 'нет запусков'
+    return formatDateTime(entry.last.finishedAt || entry.last.startedAt)
+}
+
+function backupHistoryTable(history) {
+    return table({
+        columns: [
+            {
+                key: 'finishedAt',
+                label: 'Когда',
+                render: row => formatDateTime(row.finishedAt || row.startedAt)
+            },
+            {
+                key: 'source',
+                label: 'Источник',
+                render: row => row.source === 'cluster' ? 'кластер' : row.source === 'host' ? 'хост' : row.source
+            },
+            {
+                key: 'status',
+                label: 'Статус',
+                render: row => badge(row.status === 'ok' ? 'ok' : 'ошибка', row.status === 'ok' ? 'success' : 'danger')
+            },
+            {
+                key: 'databaseBytes',
+                label: 'Дамп БД',
+                align: 'right',
+                render: row => formatBytes(row.databaseBytes)
+            },
+            {
+                key: 'uploadsBytes',
+                label: 'Фото',
+                align: 'right',
+                render: row => formatBytes(row.uploadsBytes)
+            },
+            {
+                key: 'durationSeconds',
+                label: 'Длительность',
+                align: 'right',
+                render: row => row.durationSeconds === null ? '—' : `${row.durationSeconds} с`
+            },
+            { key: 'error', label: 'Ошибка', render: row => row.error || '—' }
+        ],
+        rows: history,
+        emptyText: 'Запусков ещё не было'
+    })
+}
+
+function backupSection(backup) {
+    if (!backup) {
+        return card('Бэкапы базы', 'Журнал backup_runs недоступен',
+            h('p', { class: 'muted', text: 'Не удалось получить статус бэкапов — смотрите журнал backend.' }))
+    }
+
+    const schedule = Array.isArray(backup.times) && backup.times.length
+        ? `${backup.times.join(' и ')} (${backup.timeZone})`
+        : 'расписание не задано'
+
+    if (backup.available === false) {
+        return h('div', { class: 'stack' }, [
+            sectionTitle('Бэкапы базы', `По расписанию: ${schedule}`),
+            h('div', { class: 'notice notice-warn' }, [
+                h('p', { text: 'Журнал бэкапов ещё не создан' }),
+                h('p', { text: backup.message || 'Примените миграции базы.' })
+            ])
+        ])
+    }
+
+    const health = backup.health || { status: 'unknown', message: '' }
+    const tone = BACKUP_STATUS_TONES[health.status] || 'neutral'
+
+    return h('div', { class: 'stack' }, [
+        sectionTitle('Бэкапы базы', `По расписанию: ${schedule}`),
+
+        health.status !== 'ok'
+            ? h('div', { class: `notice ${health.status === 'failing' ? 'notice-danger' : 'notice-warn'}` }, [
+                h('p', { text: health.message || 'Бэкапы требуют внимания' })
+            ])
+            : null,
+
+        grid(4, [
+            statCard({
+                label: 'До следующего бэкапа',
+                value: countdownValue(backup.next?.at),
+                hint: backup.next?.at ? `в ${formatDateTime(backup.next.at)}` : '',
+                tone: 'accent'
+            }),
+            statCard({
+                label: 'Хост (ctp_backup)',
+                value: backupLastValue(backup.bySource?.host),
+                hint: backup.bySource?.host?.lastSuccess
+                    ? `успешный: ${formatDateTime(backup.bySource.host.lastSuccess.finishedAt)}`
+                    : 'успешных запусков нет'
+            }),
+            statCard({
+                label: 'Кластер (CronJob)',
+                value: backupLastValue(backup.bySource?.cluster),
+                hint: backup.bySource?.cluster?.lastSuccess
+                    ? `успешный: ${formatDateTime(backup.bySource.cluster.lastSuccess.finishedAt)}`
+                    : 'успешных запусков нет'
+            }),
+            statCard({
+                label: 'Состояние',
+                value: BACKUP_STATUS_LABELS[health.status] || health.status,
+                hint: backup.lastSuccess
+                    ? `дамп: ${formatBytes(backup.lastSuccess.databaseBytes)} · фото: ${formatBytes(backup.lastSuccess.uploadsBytes)}`
+                    : 'журнал пуст',
+                tone
+            })
+        ]),
+
+        card('Журнал запусков', 'Последние запуски по обоим источникам',
+            backupHistoryTable(backup.history || []))
+    ])
+}
+
 function dockerPartNotice(part) {
     if (!part || part.available) return null
     return dockerUnavailableNotice({ payload: part, message: part.message })
@@ -411,7 +589,11 @@ function serverSection(health, docker, dockerError, onRefresh) {
 }
 
 async function loadServerState() {
-    const [push, health] = await Promise.all([api.pushOverview(), api.health()])
+    const [push, health, backup] = await Promise.all([
+        api.pushOverview(),
+        api.health(),
+        api.backupStatus().catch(() => null)
+    ])
     let docker = null
     let dockerError = null
     try {
@@ -419,16 +601,17 @@ async function loadServerState() {
     } catch (error) {
         dockerError = error
     }
-    return { push, health, docker, dockerError }
+    return { push, health, backup, docker, dockerError }
 }
 
 export const systemView = {
     id: 'system',
     title: 'Рассылки и сервер',
-    subtitle: 'Push-уведомления, состояние API, Redis, Kubernetes и Docker',
+    subtitle: 'Бэкапы, push-уведомления, состояние API, Redis, Kubernetes и Docker',
     async render(root) {
         const loader = () => loadServerState()
         const builder = data => h('div', { class: 'stack' }, [
+            backupSection(data.backup),
             pushSection(data.push),
             serverSection(data.health, data.docker, data.dockerError,
                 () => loadInto(root, loader, builder, 'Обновляем состояние сервера…'))

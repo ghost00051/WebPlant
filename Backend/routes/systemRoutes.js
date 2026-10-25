@@ -2,6 +2,7 @@ import 'dotenv/config'
 import express from 'express'
 import rateLimit from 'express-rate-limit'
 import Docker from 'dockerode'
+import sequelize from '../db.js'
 import { requireAdmin } from '../middleware/admin.js'
 import { optionalAuth } from '../middleware/auth.js'
 import { getHttpMetrics } from '../middleware/accessLog.js'
@@ -28,10 +29,15 @@ import {
     podNameFromResourceId
 } from '../utils/k8sHealth.js'
 import { kubernetesConfig, listPods, podLogs } from '../utils/k8sClient.js'
+import { backupScheduleFromEnv, summarizeBackupStatus } from '../utils/backupStatus.js'
 
 const router = express.Router()
 
 const LOGS_REQUEST_TIMEOUT_MS = 5000
+
+const BACKUP_HISTORY_LIMIT = 20
+
+const MISSING_TABLE_CODE = '42P01'
 
 const visitLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -394,6 +400,41 @@ router.get('/features', async (req, res) => {
 
 router.get('/metrics', requireAdmin, (req, res) => {
   res.json(getHttpMetrics())
+})
+
+async function loadBackupRuns(limit) {
+  return sequelize.query(
+    `SELECT id, source, status, started_at, finished_at, database_bytes, uploads_bytes, files, error
+       FROM backup_runs
+      ORDER BY finished_at DESC NULLS LAST, id DESC
+      LIMIT $1`,
+    { bind: [limit], type: sequelize.QueryTypes.SELECT }
+  )
+}
+
+router.get('/backup', requireAdmin, async (req, res) => {
+  const schedule = backupScheduleFromEnv(process.env)
+  const base = { times: schedule.times, timeZone: schedule.timeZone }
+
+  try {
+    const runs = await loadBackupRuns(BACKUP_HISTORY_LIMIT)
+    return res.json(summarizeBackupStatus({ runs, ...base }))
+  } catch (error) {
+    const code = error?.original?.code || error?.parent?.code || error?.code
+
+    if (code === MISSING_TABLE_CODE) {
+      return res.json({
+        ...summarizeBackupStatus({ runs: [], ...base }),
+        available: false,
+        reason: 'not_migrated',
+        message: 'Таблица backup_runs не создана — примените миграции: ' +
+          'powershell -File Backend/scripts/apply-migrations.ps1'
+      })
+    }
+
+    console.warn('⚠️ /api/system/backup: не удалось прочитать журнал бэкапов:', error?.message || error)
+    return res.status(500).json({ message: 'Не удалось прочитать журнал бэкапов' })
+  }
 })
 
 router.get('/docker-stats', requireAdmin, async (req, res) => {

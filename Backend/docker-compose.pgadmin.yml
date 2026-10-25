@@ -17,6 +17,10 @@ services:
       - pgadmin_data:/var/lib/pgadmin
     networks:
       - pgadmin_net
+      # Сеть кластера kind: нужна, чтобы pgAdmin видел боевую базу в кластере
+      # (сервис postgres-nodeport, nodePort 30432). K8s ClusterIP из docker-сетей
+      # недостижим, поэтому ходим на IP ноды — как это делает ctp_k8s_gateway.
+      - kind
 
 volumes:
   pgadmin_data:
@@ -25,3 +29,6 @@ networks:
   pgadmin_net:
     external: true
     name: backend_pgadmin_net
+  kind:
+    external: true
+    name: kind

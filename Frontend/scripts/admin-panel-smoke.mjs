@@ -607,6 +607,106 @@ const healthPayload = {
     aiCache: { hits: 1, misses: 2 }
 }
 
+const backupPayload = {
+    available: true,
+    source: 'backup_runs',
+    timeZone: 'Europe/Moscow',
+    times: ['02:00', '14:00'],
+    intervalHours: 12,
+    next: {
+        at: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+        inSeconds: 3 * 3600
+    },
+    lastSuccess: {
+        id: 2,
+        source: 'host',
+        status: 'ok',
+        startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+        finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+        durationSeconds: 30,
+        databaseBytes: 143334,
+                uploadsBytes: 59171519,
+        files: ['/backups/webplant_1.dump'],
+        error: null,
+        hoursAgo: 9,
+        intervalPercent: 75
+    },
+    bySource: {
+        host: {
+            label: 'хост (ctp_backup)',
+            last: {
+                id: 2,
+                source: 'host',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+                durationSeconds: 30,
+                databaseBytes: 143334,
+                uploadsBytes: 59171519,
+                error: null
+            },
+            lastSuccess: {
+                id: 2,
+                source: 'host',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+                durationSeconds: 30,
+                databaseBytes: 143334,
+                uploadsBytes: 59171519,
+                error: null
+            }
+        },
+        cluster: {
+            label: 'кластер (CronJob db-backup)',
+            last: {
+                id: 1,
+                source: 'cluster',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+                durationSeconds: 20,
+                databaseBytes: 142000,
+                error: null
+            },
+            lastSuccess: {
+                id: 1,
+                source: 'cluster',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+                durationSeconds: 20,
+                databaseBytes: 142000,
+                error: null
+            }
+        }
+    },
+    health: { status: 'ok', message: 'Последний успешный бэкап 9 ч назад' },
+    history: [
+        {
+            id: 2,
+            source: 'host',
+            status: 'ok',
+            startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+            finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+            durationSeconds: 30,
+            databaseBytes: 143334,
+                uploadsBytes: 59171519,
+            error: null
+        },
+        {
+            id: 1,
+            source: 'cluster',
+            status: 'ok',
+            startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+            finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+            durationSeconds: 20,
+            databaseBytes: 142000,
+            error: null
+        }
+    ]
+}
+
 const dockerPayload = {
     timestamp: new Date().toISOString(),
     summary: {
@@ -875,6 +975,29 @@ function route(url) {
         if (mode === 'bots-404') return { status: 404, data: { message: 'Маршрут не найден' } }
         if (mode === 'bots-missing-tables') return { status: 200, data: emptyBotsPayload(false) }
         return { status: 200, data: empty ? emptyBotsPayload() : botsPayload }
+    }
+    if (path.includes('/system/backup')) {
+        if (empty) {
+            return {
+                status: 200,
+                data: {
+                    ...backupPayload,
+                    available: false,
+                    reason: 'not_migrated',
+                    message: 'Таблица backup_runs не создана — примените миграции'
+                }
+            }
+        }
+        if (mode === 'backup-stale') {
+            return {
+                status: 200,
+                data: {
+                    ...backupPayload,
+                    health: { status: 'stale', message: 'Бэкапа не было 33 ч — при расписании раз в 12 ч это пропуск' }
+                }
+            }
+        }
+        return { status: 200, data: backupPayload }
     }
     if (path.includes('/system/docker-stats/') && path.endsWith('/logs')) {
         if (empty) {
@@ -1253,6 +1376,23 @@ check('раздел сервера показывает карточки кон�
     Boolean(findNode(systemRoot, node => node.textContent === 'Проблемы')))
 check('notice перечисляет проблемные контейнеры с причиной',
     Boolean(findNode(systemRoot, node => node.textContent?.includes('ctp_redis — Остановлен: код выхода 1'))))
+
+const countdownNode = findNode(systemRoot, node => node.className === 'backup-countdown')
+check('карточка бэкапов: блок «До следующего бэкапа»',
+    Boolean(findNode(systemRoot, node => node.textContent === 'До следующего бэкапа')))
+check('обратный отсчёт до бэкапа отрисован', Boolean(countdownNode))
+check('отсчёт показывает часы и минуты',
+    Boolean(countdownNode && /\d+ ч \d{2} мин/.test(countdownNode.textContent)))
+check('журнал бэкапов называет кластерный источник', hasText(systemRoot, 'кластер'))
+check('карточка бэкапов показывает размер дампа', hasText(systemRoot, '140.0 КБ'))
+check('в журнале бэкапов есть колонка и размер фото', hasText(systemRoot, 'Фото') && hasText(systemRoot, '56.43 МБ'))
+
+mode = 'backup-stale'
+const backupStaleRoot = makeEl('div')
+await system.systemView.render(backupStaleRoot, makeCtx())
+check('пропущенный бэкап выделен предупреждением',
+    Boolean(findNode(backupStaleRoot, node => node.textContent?.includes('Бэкапа не было 33 ч'))))
+mode = 'full'
 
 const logsButton = findButton(systemRoot, 'Логи')
 check('кнопка «Логи» отрисована', Boolean(logsButton))

@@ -47,10 +47,12 @@ export function card(title, subtitle, children, extra) {
 }
 
 export function statCard({ label, value, hint, tone, badge }) {
+    const isNode = value && typeof value === 'object' && typeof value.nodeType === 'number'
+
     return h('article', { class: ['stat', tone ? `stat-${tone}` : null] }, [
         h('p', { class: 'stat-label', text: label }),
         h('p', { class: 'stat-value' }, [
-            String(value ?? 0),
+            isNode ? value : String(value ?? 0),
             badge ? h('span', { class: 'stat-badge', text: badge }) : null
         ]),
         hint ? h('p', { class: 'stat-hint', text: hint }) : null

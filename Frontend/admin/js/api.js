@@ -220,5 +220,6 @@ export const api = {
 
     health: () => requestServer('/health'),
     dockerStats: () => request('/system/docker-stats'),
+    backupStatus: () => request('/system/backup'),
     dockerLogs: (id, tail = 100) => request(`/system/docker-stats/${encodeURIComponent(id)}/logs${query({ tail })}`)
 }

@@ -7,7 +7,9 @@ metadata:
     app: db-backup
     app.kubernetes.io/name: webplant-backups
 spec:
-  schedule: "0 2 * * *"
+  # 02:00 и 14:00 МСК — должно совпадать с BACKUP_TIMES у контейнера ctp_backup
+  # (Backend/.env), иначе админка покажет неверный обратный отсчёт.
+  schedule: "0 2,14 * * *"
   timeZone: Europe/Moscow
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
@@ -86,6 +88,7 @@ spec:
                   set -eu
 
                   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+                  started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
                   retention_days="${BACKUP_RETENTION_DAYS:-14}"
                   tmp="/backups/.db-${stamp}.dump.tmp"
                   out="/backups/db-${stamp}.dump"
@@ -115,6 +118,24 @@ spec:
                     printf 'size_bytes=%s\n' "$size"
                   } > "${heartbeat}.tmp"
                   mv "${heartbeat}.tmp" "$heartbeat"
+
+                  files_json="[\"${out}\"]"
+                  finished="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                  # psql -c не подставляет переменные :'name', поэтому SQL идёт через stdin (-f -).
+                  record_sql="INSERT INTO backup_runs (source, status, started_at, finished_at, database_bytes, files)
+                              VALUES ('cluster', 'ok', :'started', :'finished',
+                                      NULLIF(:'db_bytes', '')::bigint, :'files'::jsonb);
+                              DELETE FROM backup_runs WHERE finished_at < now() - interval '180 days';"
+                  if printf '%s\n' "$record_sql" | psql -X -q -v ON_ERROR_STOP=1 \
+                      -v started="$started" \
+                      -v finished="$finished" \
+                      -v db_bytes="$size" \
+                      -v files="$files_json" \
+                      -f - > /dev/null 2>&1; then
+                    log "db-backup: run recorded in backup_runs"
+                  else
+                    log "db-backup: WARN backup_runs не обновлён (применены ли миграции?)"
+                  fi
 
                   find /backups -maxdepth 1 -type f -name 'db-*.dump' -mtime "+${retention_days}" -delete
                   log "db-backup: retention ${retention_days}d applied; done"

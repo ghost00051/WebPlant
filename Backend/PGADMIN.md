@@ -5,8 +5,40 @@
 - Только через сайт: **https://pgadmin.checktheplants.ru**
 - Логин: `admin@checktheplants.ru` (пароль задан отдельно, хранится у администратора;
   сменить: `docker exec -it ctp_pgadmin /venv/bin/python /pgadmin4/setup.py update-user admin@checktheplants.ru --password '<новый>' --admin`)
-- Сервер Postgres уже зарегистрирован в pgAdmin: `WebPlant` → host `postgres`, port `5432`,
-  БД `WebPlant`, пользователь `postgres`. Пароль базы берётся из `.env` (`DB_PASSWORD`).
+- В pgAdmin зарегистрированы два сервера:
+  - `WebPlant (k8s)` → host `172.20.0.5` (нода kind `desktop-control-plane`), port `30432`,
+    БД `WebPlant`, пользователь `postgres` — **боевая база в кластере**, см. ниже.
+  - `WebPlant` → host `postgres`, port `5432`, БД `WebPlant` — **архив compose-стека**:
+    замер 9 октября 2026 (10 пользователей), новые данные сюда не пишутся.
+- Пароль базы тот же, что в `.env` (`DB_PASSWORD`): он попадает и в compose-контейнер,
+  и в секрет кластера `webplant-secrets`.
+
+## Боевая база в кластере (доступ из pgAdmin)
+
+K8s `ClusterIP` из docker-сетей недостижим, поэтому доступ идёт через `NodePort`:
+
+- `Backend/k8s/20-postgres.yaml` объявляет сервис `postgres-nodeport` (`5432:30432`)
+  на IP нод kind (`172.20.0.0/16`) — не на хост и не в интернет;
+  создаётся автоматически из `deploy.ps1`.
+- `ctp_pgadmin` подключён к docker-сети `kind` (см. `docker-compose.pgadmin.yml`),
+  поэтому видит ноды по адресам из `kubectl get nodes -o wide`.
+- `pg_hba.conf` кластерной базы: `host all all all scram-sha-256` — вход по паролю.
+
+Проверка доступа:
+
+```bash
+docker exec -u pgadmin ctp_pgadmin /venv/bin/python -c "import socket; socket.create_connection(('172.20.0.5', 30432), 5); print('ok')"
+kubectl get svc postgres-nodeport -n webplant
+```
+
+Если кластер kind пересоздан, IP нод меняются: взять новый из `kubectl get nodes -o wide`
+и обновить host у сервера `WebPlant (k8s)` в pgAdmin.
+
+**Про изоляцию:** `backend_pgadmin_net` остаётся `internal` (без выхода в интернет), но
+подключение к сети `kind` даёт pgAdmin сетевой выход через её bridge. Если это нежелательно,
+вместо прямого подключения ставят TCP-прокси в духе `ctp_docker_socket_proxy`:
+socat в сетях `backend_pgadmin_net` + `kind`, а pgAdmin ходит на его IP.
+
 
 ## Схема изоляции
 
