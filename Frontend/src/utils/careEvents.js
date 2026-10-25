@@ -99,6 +99,33 @@ export function careFutureMarkersFromSchedule(items) {
   return map
 }
 
+export function carePlannedEventsByDate(items) {
+  const map = new Map()
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!item || typeof item !== 'object') continue
+    const iso = typeof item.date === 'string' && item.date ? item.date : null
+    const actionCode =
+      typeof item.action_code === 'string' && item.action_code
+        ? item.action_code
+        : null
+    if (!iso || !actionCode) continue
+    const title =
+      typeof item.title === 'string' && item.title.trim()
+        ? item.title.trim()
+        : careTitleFor(actionCode)
+    const plantName =
+      typeof item.plant_name === 'string' ? item.plant_name.trim() : ''
+    if (!map.has(iso)) map.set(iso, [])
+    map.get(iso).push({
+      action_code: actionCode,
+      title,
+      plant_id: item.plant_id ?? null,
+      plant_name: plantName
+    })
+  }
+  return map
+}
+
 export function hasCareMarkers(...maps) {
   return maps.some(map => map instanceof Map && map.size > 0)
 }

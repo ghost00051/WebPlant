@@ -3,7 +3,7 @@
     width: 100%;
     max-width: 1200px;
     margin: 0 auto;
-    padding: 30px 20px 48px;
+    padding: 0px 20px 48px;
 }
 
 .headerOfPlants {
@@ -11,6 +11,12 @@
     align-items: center;
     gap: 12px;
     margin-bottom: 16px;
+}
+
+@media (max-width: 1023px) {
+    .headerOfPlants {
+        padding-top: calc(8px + env(safe-area-inset-top, 0px) + 5%);
+    }
 }
 
 .headerOfPlants h1 {
@@ -365,6 +371,50 @@
     gap: 12px;
 }
 
+.plantEditorAi {
+    display: grid;
+    gap: 8px;
+}
+
+.plantEditorAiButton {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 42px;
+    box-sizing: border-box;
+    padding: 9px 14px;
+    border: 1px solid #C9D8CC;
+    border-radius: 10px;
+    background: #F4FAF6;
+    color: #2F6B47;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.plantEditorAiButton img {
+    width: 16px;
+    height: 16px;
+}
+
+.plantEditorAiButton:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+.plantEditorAiHint {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 9px;
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+    font-size: 12px;
+    line-height: 1.4;
+}
+
 .plantEditorReminders {
     display: grid;
     gap: 10px;
@@ -471,12 +521,17 @@
     line-height: 1.5;
 }
 
+.plantDialog:focus {
+    outline: none;
+}
+
 .plantDialog button:focus-visible,
 .plantDialog input:focus-visible,
 .plantDialog select:focus-visible,
 .myPlantsBackButton:focus-visible,
 .clearPlantSearch:focus-visible,
 .buttonEditPlants button:focus-visible,
+.plantEditorAiButton:focus-visible,
 .plantListMessage button:focus-visible {
     outline: 3px solid var(--theme-focus-ring);
     outline-offset: 2px;
@@ -493,5 +548,13 @@
 
     .plantDialog {
         padding: 20px 16px;
+    }
+}
+
+@media (max-width: 1024px), (pointer: coarse) {
+    .plantDialog input:not([type='checkbox']),
+    .plantDialog select,
+    .plantDialog textarea {
+        font-size: 16px;
     }
 }

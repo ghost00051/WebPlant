@@ -11,6 +11,7 @@ import {
   careMarkerTypesFromEvents,
   careMethodLabel,
   carePastMarkersFromTimeline,
+  carePlannedEventsByDate,
   careTitleFor,
   hasCareMarkers,
   sortedCareGroups
@@ -102,6 +103,81 @@ test('careFutureMarkersFromSchedule: плановые действия по да
   assert.equal(map.size, 2)
   assert.deepEqual(sortedCareGroups(map.get('2026-10-29')), ['feed', 'other'])
   assert.deepEqual(sortedCareGroups(map.get('2026-11-02')), ['spray'])
+})
+
+test('carePlannedEventsByDate: плановые действия сгруппированы по датам', () => {
+  const map = carePlannedEventsByDate([
+    {
+      date: '2026-10-28',
+      action_code: 'fertilize',
+      title: 'Подкормка «Агрикола»',
+      plant_id: 1,
+      plant_name: 'Монстера'
+    },
+    {
+      date: '2026-10-28',
+      action_code: 'leaf_clean',
+      plant_id: 2,
+      plant_name: 'Фикус'
+    },
+    {
+      date: '2026-11-01',
+      action_code: 'spray',
+      plant_id: 1,
+      plant_name: 'Монстера'
+    }
+  ])
+
+  assert.equal(map.size, 2)
+  assert.equal(map.get('2026-10-28').length, 2)
+  assert.deepEqual(map.get('2026-10-28')[0], {
+    action_code: 'fertilize',
+    title: 'Подкормка «Агрикола»',
+    plant_id: 1,
+    plant_name: 'Монстера'
+  })
+  assert.equal(map.get('2026-10-28')[1].title, 'Протирание листьев')
+  assert.deepEqual(map.get('2026-11-01'), [
+    {
+      action_code: 'spray',
+      title: 'Опрыскивание',
+      plant_id: 1,
+      plant_name: 'Монстера'
+    }
+  ])
+})
+
+test('carePlannedEventsByDate: битые элементы отбрасываются', () => {
+  const map = carePlannedEventsByDate([
+    null,
+    'мусор',
+    { action_code: 'fertilize' },
+    { date: 42, action_code: 'fertilize' },
+    { date: '2026-10-28' },
+    { date: '2026-10-28', action_code: 'unknown' }
+  ])
+
+  assert.equal(map.size, 1)
+  assert.equal(map.get('2026-10-28').length, 1)
+  assert.equal(map.get('2026-10-28')[0].title, 'unknown')
+})
+
+test('carePlannedEventsByDate: пустой и некорректный вход', () => {
+  assert.equal(carePlannedEventsByDate([]).size, 0)
+  assert.equal(carePlannedEventsByDate(null).size, 0)
+  assert.equal(carePlannedEventsByDate(undefined).size, 0)
+  assert.equal(carePlannedEventsByDate('2026-10-28').size, 0)
+})
+
+test('carePlannedEventsByDate: plant_name fallback', () => {
+  const items = carePlannedEventsByDate([
+    { date: '2026-10-28', action_code: 'rotate', plant_id: 7, plant_name: '  ' },
+    { date: '2026-10-28', action_code: 'rotate', plant_id: null }
+  ]).get('2026-10-28')
+
+  assert.equal(items[0].plant_name, '')
+  assert.equal(items[1].plant_name, '')
+  assert.equal(items[1].plant_id, null)
 })
 
 test('hasCareMarkers: пустые карты не включают легенду ухода', () => {

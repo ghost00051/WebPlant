@@ -65,6 +65,7 @@ import systemRouter from "./routes/systemRoutes.js"
 import uploadRouter from "./routes/uploadRoutes.js"
 import reminderService from './jobs/reminderService.js'
 import weeklyRecapJob from './jobs/weeklyRecapJob.js'
+import inactivityEmailJob from './jobs/inactivityEmailJob.js'
 import botPollingJob from './jobs/botPollingJob.js'
 import chatRouter from './routes/chatRoutes.js'
 import gardenShareRouter from './routes/gardenShareRoutes.js'
@@ -114,6 +115,7 @@ const MIGRATION_FILES_BY_TABLE = {
     'users.marketing_email_opt_in_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_in_source': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_out_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
+    'users.inactivity_email_sent_at': 'Backend/migrations/20261104_add_inactivity_email.sql',
     admin_audit_logs: 'Backend/migrations/20261025_create_admin_audit_logs.sql',
     bot_links: 'Backend/migrations/20261101_create_bot_channels.sql',
     bot_link_codes: 'Backend/migrations/20261101_create_bot_channels.sql',
@@ -429,6 +431,7 @@ async function startServer() {
             console.log("⏰ Запущена очистка истекших согласий и auth-данных")
             reminderService.start()
             weeklyRecapJob.start()
+            inactivityEmailJob.start()
             botPollingJob.start()
             startPushBroadcastJob()
             startMailBroadcastJob()
@@ -457,6 +460,7 @@ async function startServer() {
             server.close(async () => {
                 try {
                     weeklyRecapJob.stop()
+                    inactivityEmailJob.stop()
                     await botPollingJob.stop()
                 } catch (error) {
                     console.error('❌ Ошибка остановки ботов и recap:', error)

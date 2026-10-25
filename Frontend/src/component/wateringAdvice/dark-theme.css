@@ -1,0 +1,72 @@
+html[data-theme='dark'] .wateringAdviceDialog {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceDialog .wateringAdviceMessages,
+html[data-theme='dark'] .wateringAdviceDialog .wateringAdviceReply,
+html[data-theme='dark'] .wateringAdviceDialog .wateringRecommendation {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceHeader {
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .wateringAdviceHeader h2 {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceHeader p,
+html[data-theme='dark'] .wateringAdvicePlant {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .wateringAdvicePlant strong,
+html[data-theme='dark'] .wateringAdviceDialog .wateringRecommendation .wateringRecommendationInterval {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceClose {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceOptions button {
+    background: rgba(127, 209, 160, 0.14);
+    border-color: rgba(127, 209, 160, 0.4);
+    color: #9FD8B8;
+}
+
+html[data-theme='dark'] .wateringAdviceFooter .wateringAdviceSkip,
+html[data-theme='dark'] .wateringRecommendationRefine {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceDialog .wateringRecommendation .wateringRecommendationConfidence {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .wateringAdviceReply label,
+html[data-theme='dark'] .wateringAdviceFooter span {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .wateringAdviceReply textarea {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .wateringAdviceError {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .wateringAdviceError button {
+    color: var(--theme-danger);
+}

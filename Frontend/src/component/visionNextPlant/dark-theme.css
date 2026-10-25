@@ -52,3 +52,12 @@ html[data-theme='dark'] .classOfgetWateringTime--care {
     background: rgba(111, 174, 131, 0.12);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .plantsPreview__item--planned {
+    background: rgba(111, 174, 131, 0.1);
+}
+
+html[data-theme='dark'] .carePlannedBadge {
+    background: rgba(111, 174, 131, 0.18);
+    color: var(--theme-text);
+}

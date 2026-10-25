@@ -355,7 +355,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span className='dot dot--overdue' aria-hidden='true' /> Пропущенный/просроченный
         </span>
         <span className='legend-item'>
-          <span className='dot dot--today' aria-hidden='true' /> Сегодня
+          <span className='legend-today-swatch' aria-hidden='true' /> Сегодня
         </span>
         {showCareLegend && (
           <>
@@ -439,7 +439,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span><i className='dot dot--future' aria-hidden='true' /> Будущий полив</span>
           <span><i className='dot dot--past' aria-hidden='true' /> Прошлый полив</span>
           <span><i className='dot dot--overdue' aria-hidden='true' /> Пропущенный/просроченный</span>
-          <span><i className='dot dot--today' aria-hidden='true' /> Сегодня</span>
+          <span><span className='legend-today-swatch' aria-hidden='true' /> Сегодня</span>
           {showCareLegend && (
             <>
               <span><i className='care-dot care-dot--feed' aria-hidden='true' /> Подкормка</span>

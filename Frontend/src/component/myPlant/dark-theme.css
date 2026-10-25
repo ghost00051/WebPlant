@@ -65,3 +65,14 @@ html[data-theme='dark'] .plantDialogActions button:not(.confirmPlantDelete) {
     background: var(--theme-surface);
     color: var(--theme-text);
 }
+
+html[data-theme='dark'] .plantEditorAiButton {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .plantEditorAiHint {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+}

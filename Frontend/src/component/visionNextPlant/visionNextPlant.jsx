@@ -136,7 +136,6 @@ function VisionNextPlant ({
   const kind = day?.kind ?? 'empty'
 
   const isPast = kind === 'past'
-  const isEmpty = kind === 'empty'
 
   const pendingPlants = day?.plants ?? []
   const localEvents = day?.events ?? []
@@ -144,8 +143,10 @@ function VisionNextPlant ({
   const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
   const skippedEvents = localEvents.filter(e => e.kind === 'skipped')
   const careEvents = localEvents.filter(e => e.kind === 'care')
+  const plannedCareEvents = localEvents.filter(e => e.kind === 'care_planned')
   const pendingCount = pendingPlants.length
   const hasRows = pendingCount > 0 || localEvents.length > 0
+  const isEmpty = kind === 'empty' && !hasRows
 
   const dayIso = day?.iso ?? null
   const waterErrorMessage =
@@ -225,6 +226,13 @@ function VisionNextPlant ({
   if (careEvents.length) {
     counterParts.push(
       `${careEvents.length} ${pluralizeCare(careEvents.length)}`
+    )
+  }
+  if (plannedCareEvents.length) {
+    counterParts.push(
+      `${plannedCareEvents.length} ${pluralizeCare(
+        plannedCareEvents.length
+      )} ${plannedCareEvents.length === 1 ? 'запланирован' : 'запланировано'}`
     )
   }
   if (pendingCount) {
@@ -424,6 +432,39 @@ function VisionNextPlant ({
     )
   }
 
+  const renderPlannedCareRow = (event, index) => {
+    const plant = event?.plant ?? null
+    const actionCode = event?.action_code ?? event?.actionCode
+    const group = careGroupClass(actionCode)
+    const title = event?.title || careTitleFor(actionCode) || 'Уход'
+    const plantName = plant?.name || 'Растение'
+
+    return (
+      <li
+        key={`care-planned-${plant?.id ?? 'plant'}-${index}`}
+        className='plantsPreview__item plantsPreview__item--care plantsPreview__item--planned'
+      >
+        <div className='plantsPreview__photoWrap'>
+          <div>
+            <span
+              className={`careRowIcon careRowIcon--${group}`}
+              aria-hidden='true'
+            >
+              {careIconFor(actionCode)}
+            </span>
+          </div>
+          <div className='careRowText'>
+            <span className='careRowTitle'>{title}</span>
+            <p className='careRowMeta'>{plantName}</p>
+          </div>
+        </div>
+        <div className='plantsPreview__actions'>
+          <span className='carePlannedBadge'>Запланировано</span>
+        </div>
+      </li>
+    )
+  }
+
   return createPortal(
     <div
       className={`vision-overlay ${active ? 'is-active' : ''}`}
@@ -539,6 +580,7 @@ function VisionNextPlant ({
                   })
                 )}
                 {careEvents.map((ev, i) => renderCareRow(ev, i))}
+                {plannedCareEvents.map((ev, i) => renderPlannedCareRow(ev, i))}
               </ul>
             )}
           </div>

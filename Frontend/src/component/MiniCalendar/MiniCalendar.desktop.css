@@ -84,8 +84,8 @@
   }
 
   .mini-calendar__month-day .mini-calendar__dots .dot {
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
   }
 
   .mini-calendar__month-day .mini-calendar__care-dots {
@@ -95,41 +95,18 @@
   }
 
   .mini-calendar__month-day .mini-calendar__care-dots .care-dot {
-    width: 4px;
-    height: 4px;
+    width: 5px;
+    height: 5px;
+    border-radius: 2px;
     animation: none;
   }
 
   .mini-calendar__month-day.is-outside .mini-calendar__care-dots {
-    opacity: 0.6;
+    opacity: 0.75;
   }
 
   .mini-calendar__month-day.is-outside .mini-calendar__dots {
-    opacity: 0.6;
-  }
-
-  .mini-calendar__month-day.is-today .dot--future {
-    background: #d3e5f3;
-  }
-
-  .mini-calendar__month-day.is-today .dot--past {
-    background: #c8e9d5;
-  }
-
-  .mini-calendar__month-day.is-today .dot--overdue {
-    background: #f4c6c6;
-  }
-
-  .mini-calendar__month-day.is-today .care-dot--feed {
-    background: #c8e9d5;
-  }
-
-  .mini-calendar__month-day.is-today .care-dot--spray {
-    background: #d3e5f3;
-  }
-
-  .mini-calendar__month-day.is-today .care-dot--other {
-    background: #e2e5e7;
+    opacity: 0.75;
   }
 
   .mini-calendar__month-day:hover {
@@ -147,10 +124,10 @@
   }
 
   .mini-calendar__month-day.is-today {
-    border-color: #5C7463;
-    background: #5C7463;
-    color: #fff;
-    font-weight: 600;
+    border: 2px solid #5C7463;
+    background: #eaf1ea;
+    color: #2d2d2d;
+    font-weight: 700;
   }
 
   .mini-calendar__month-day.is-selected:not(.is-today) {
@@ -177,5 +154,30 @@
     width: 6px;
     height: 6px;
     border-radius: 50%;
+  }
+
+  .mini-calendar__desktop-legend .dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+  }
+
+  .mini-calendar__desktop-legend .care-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 2px;
+  }
+
+  .mini-calendar__desktop-legend .legend-today-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    box-sizing: border-box;
+    border: 2px solid #5C7463;
+    border-radius: 4px;
+    background: #eaf1ea;
+    flex-shrink: 0;
   }
 }

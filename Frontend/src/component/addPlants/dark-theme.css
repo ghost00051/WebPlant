@@ -5,16 +5,13 @@ html[data-theme='dark'] .addPlantPage {
 }
 
 html[data-theme='dark'] .formForPlant .addPhotoPlant,
-html[data-theme='dark'] .formForPlant .addNamePlant,
-html[data-theme='dark'] .formForPlant .wateringAdviceMessages,
-html[data-theme='dark'] .formForPlant .wateringRecommendation {
+html[data-theme='dark'] .formForPlant .addNamePlant {
     background: var(--theme-surface);
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
 
-html[data-theme='dark'] .formForPlant .wateringFrequency,
-html[data-theme='dark'] .formForPlant .wateringAdviceDialog {
+html[data-theme='dark'] .formForPlant .wateringFrequency {
     background: var(--theme-surface);
     border-color: var(--theme-border);
     color: var(--theme-text);
@@ -51,41 +48,6 @@ html[data-theme='dark'] .formForPlant .wateringWeekdayPreview b {
     color: #9FD8B8;
 }
 
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader {
-    border-color: var(--theme-border);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader h2 {
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader p,
-html[data-theme='dark'] .formForPlant .wateringAdvicePlant {
-    color: var(--theme-muted);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceClose {
-    background: var(--theme-raised);
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceOptions button {
-    background: rgba(127, 209, 160, 0.14);
-    border-color: rgba(127, 209, 160, 0.4);
-    color: #9FD8B8;
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceFooter .wateringAdviceSkip,
-html[data-theme='dark'] .formForPlant .wateringRecommendationRefine {
-    background: var(--theme-raised);
-    border-color: var(--theme-border);
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringRecommendation .wateringRecommendationConfidence {
-    color: var(--theme-muted);
-}
-
 html[data-theme='dark'] .formForPlant .draftRestoreNotice {
     background: var(--theme-raised);
     border-color: var(--theme-border);
@@ -100,4 +62,3 @@ html[data-theme='dark'] .formForPlant .addPlantError {
 html[data-theme='dark'] .formForPlant .addNamePlant input[aria-invalid='true'] {
     outline-color: var(--theme-danger);
 }
-

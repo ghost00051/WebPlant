@@ -53,7 +53,8 @@ import {
 import { markWateredWithQueue } from '../../utils/offlineQueue.js'
 import {
   careFutureMarkersFromSchedule,
-  carePastMarkersFromTimeline
+  carePastMarkersFromTimeline,
+  carePlannedEventsByDate
 } from '../../utils/careEvents.js'
 
 import './homePage.css'
@@ -201,6 +202,7 @@ function HomePage ({
   const [history, setHistory] = useState([])
   const [carePastTypes, setCarePastTypes] = useState(() => new Map())
   const [careFutureTypes, setCareFutureTypes] = useState(() => new Map())
+  const [careScheduleItems, setCareScheduleItems] = useState([])
   const [now, setNow] = useState(new Date())
   const [isLoading, setIsLoading] = useState(true)
   const [dataError, setDataError] = useState('')
@@ -286,6 +288,11 @@ function HomePage ({
   const pastDatesSet = useMemo(
     () => new Set(history.filter(item => item.hasWatering).map(item => item.date)),
     [history]
+  )
+
+  const plannedCareByDate = useMemo(
+    () => carePlannedEventsByDate(careScheduleItems),
+    [careScheduleItems]
   )
 
   const { planned: plannedDates, missed: missedScheduleDates } = useMemo(
@@ -426,6 +433,7 @@ function HomePage ({
       if (!Array.isArray(data.items)) {
         throw new Error('Сервер вернул некорректное расписание ухода')
       }
+      setCareScheduleItems(data.items)
       setCareFutureTypes(careFutureMarkersFromSchedule(data.items))
     } catch (error) {
       console.warn('Не удалось загрузить расписание ухода:', error)
@@ -888,7 +896,7 @@ function HomePage ({
         showWateringNotice(
           'Нет сети — отметка сохранена и отправится автоматически'
         )
-        return { ok: true, convertedSkip: false }
+        return { ok: true, queued: true, convertedSkip: false }
       }
 
       await loadHomeData()
@@ -948,6 +956,13 @@ function HomePage ({
       const pastEvents = pastItem?.events ?? []
       const careEvents = pastEvents.filter(event => event?.kind === 'care')
       const wateringEvents = pastEvents.filter(event => event?.kind !== 'care')
+      const plannedCare = plannedCareByDate.get(iso) ?? []
+      const plannedCareEvents = plannedCare.map(item => ({
+        kind: 'care_planned',
+        action_code: item.action_code,
+        title: item.title,
+        plant: { id: item.plant_id, name: item.plant_name }
+      }))
 
       const view = buildDayView({
         date: target,
@@ -956,9 +971,7 @@ function HomePage ({
         events: wateringEvents
       })
 
-      const events = careEvents.length
-        ? [...view.events, ...careEvents]
-        : view.events
+      const events = [...view.events, ...careEvents, ...plannedCareEvents]
       const kind =
         view.kind === 'empty' && events.length
           ? view.isPastDay
@@ -987,7 +1000,7 @@ function HomePage ({
         )} ${monthGenitive(target)}`
       }
     },
-    [scheduleMap, historyMap, now]
+    [scheduleMap, historyMap, plannedCareByDate, now]
   )
 
   const selectedDay = useMemo(
@@ -1106,13 +1119,27 @@ function HomePage ({
     setPouringOffSchedule(null)
   }
 
-  const renderWateringCard = (item, { overdue = false, daysLate = 0 } = {}) => {
+  const waterMissedCard = async (plantId, scheduledFor) => {
+    const result = await waterMissedPlant(plantId, scheduledFor)
+    if (!result || result.ok === false) {
+      if (result?.message) showWateringNotice(result.message)
+      return
+    }
+    if (result.queued) return
+    showWateringNotice('Полив отмечен — пропуск обновлён в календаре.')
+  }
+
+  const renderWateringCard = (
+    item,
+    { overdue = false, daysLate = 0, scheduledFor = null } = {}
+  ) => {
     const fullInfo = allPlantsMap.get(item.id)
     const mainPhoto =
       fullInfo?.photos?.find(photo => photo.is_main)?.url ??
       fullInfo?.photos?.[0]?.url
     const isRemoving = removingId === item.id
-    const isWatering = wateringId === item.id
+    const isWatering =
+      wateringId === item.id || missedWateringId === item.id
 
     return (
       <div
@@ -1147,8 +1174,15 @@ function HomePage ({
         <button
           type='button'
           className={`check-button ${isWatering ? 'is-watering' : ''}`}
-          onClick={() => waterPlant(item.id, { onTime: !overdue })}
-          disabled={!!wateringId}
+          onClick={() => {
+            if (overdue && scheduledFor) {
+              waterMissedCard(item.id, scheduledFor)
+              return
+            }
+            waterPlant(item.id, { onTime: !overdue })
+          }}
+          disabled={Boolean(wateringId || missedWateringId)}
+          aria-busy={isWatering || undefined}
           aria-label={`Отметить, что «${item.name}» полит`}
         >
           <img src={check} alt='' />
@@ -1415,8 +1449,12 @@ function HomePage ({
                     role='group'
                     aria-label='Пропущенные поливы'
                   >
-                    {missedPlants.map(({ plant: item, daysLate }) =>
-                      renderWateringCard(item, { overdue: true, daysLate })
+                    {missedPlants.map(({ plant: item, daysLate, dueDay }) =>
+                      renderWateringCard(item, {
+                        overdue: true,
+                        daysLate,
+                        scheduledFor: dueDay
+                      })
                     )}
                   </div>
                 ) : (

@@ -51,6 +51,12 @@
 * F10: серия ухода и недельный recap — `utils/careStreak.js`, `services/weeklyRecapService.js`,
   `jobs/weeklyRecapJob.js`; recap сохраняется как уведомление `weekly_recap` и уходит
   push + в подключённые мессенджеры (e-mail — при согласии на маркетинг);
+* письмо неактивным пользователям (subject «Лейка»: всё в порядке?) — `services/inactivityEmailService.js`,
+  `jobs/inactivityEmailJob.js`: находит тех, у кого есть зафиксированный последний заход
+  в `site_visit_days` и с него прошло больше `INACTIVITY_EMAIL_DAYS` дней, и отправляет
+  письмо с приглашением ответить разработчику и ссылкой вернуться в сад (с отпиской
+  и `List-Unsubscribe`); по умолчанию выключено до согласования текста; предпросмотр —
+  `cd Backend && node scripts/preview-inactivity-email.mjs --name=Иван --last-visit=2026-10-12`;
 * feature flags соцфич (`utils/featureFlags.js`): шаринг сада включён, лента и
   комментарии выключены до критической массы шарингов;
 * `nodemailer` (SMTP) — сброс пароля, приветственные письма, рассылки из админки;
@@ -284,6 +290,13 @@ npm run verify:admin
 | `WEEKLY_RECAP_ENABLED` | включает недельный recap (default `true`) |
 | `WEEKLY_RECAP_EMAIL_ENABLED` | дублировать recap на e-mail при маркетинговом согласии (default `false`) |
 | `WEEKLY_RECAP_HOUR`, `WEEKLY_RECAP_WEEKDAY` | локальное время recap: час (default 19) и ISO-день недели (7 = воскресенье) |
+| `INACTIVITY_EMAIL_ENABLED` | включает письмо давно не заходившим (subject «Лейка»: всё в порядке?; default `false` — текст согласуем и включаем вручную) |
+| `INACTIVITY_EMAIL_DAYS` | порог тишины: пишем, когда с последнего зафиксированного захода прошло строго больше N полных дней (default `7`, т.е. на 8-й день) |
+| `INACTIVITY_EMAIL_REQUIRE_MARKETING_CONSENT` | учитывать отдельное согласие на маркетинговые письма (default `true`); отписавшиеся не получают письмо в любом режиме |
+| `INACTIVITY_EMAIL_REPEAT_DAYS` | `0` — одно письмо за период отсутствия; `>0` — не чаще чем раз в N дней, пока пользователь не вернулся |
+| `INACTIVITY_EMAIL_WINDOW_START`, `INACTIVITY_EMAIL_WINDOW_END` | локальное окно отправки в поясе пользователя: start включительно, end исключительно (default 10–20) |
+| `INACTIVITY_EMAIL_MAX_PER_TICK`, `INACTIVITY_EMAIL_BATCH_SIZE`, `INACTIVITY_EMAIL_DELAY_MS` | лимит писем за тик, размер keyset-батча и пауза между письмами (default 200/100/200 мс) |
+| `INACTIVITY_EMAIL_DRY_RUN` | `true` — только посчитать и залогировать кандидатов, без писем и записи в БД |
 | `UNSUBSCRIBE_URL_BASE` | базовый URL страницы отписки от рассылок (по умолчанию `<FRONTEND_URL>/unsubscribe`) |
 | `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | сроки хранения чатов и журнала ИИ (0 — бессрочно) |
 | `NOTIFICATION_RETENTION_DAYS` | срок хранения уведомлений |

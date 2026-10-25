@@ -4,9 +4,11 @@ import BackBtn from '../../assets/BackBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
 import CareActionSheet from '../careActions/CareActionSheet.jsx'
+import WateringAdviceDialog from '../wateringAdvice/WateringAdviceDialog.jsx'
 import './myPlant.css'
 import './dark-theme.css'
 import search from '../../assets/search.svg'
+import sparkles from '../../assets/sparkles.svg'
 import xcircle from '../../assets/x-circle.svg'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
@@ -118,7 +120,12 @@ function MyPlant() {
     const [isDeleting, setIsDeleting] = useState(false)
     const [careSheetPlant, setCareSheetPlant] = useState(null)
     const [latestCare, setLatestCare] = useState({})
+    const [isWateringAdviceOpen, setIsWateringAdviceOpen] = useState(false)
+    const [aiIntervalHint, setAiIntervalHint] = useState('')
     const deepLinkHandledRef = useRef('')
+    const editDialogRef = useRef(null)
+    const previousFocusRef = useRef(null)
+    const wasEditingRef = useRef(false)
 
     const getAllPlant = useCallback(async () => {
         setIsLoading(true)
@@ -183,19 +190,26 @@ function MyPlant() {
         if (!editingPlant && !deleteTarget) return undefined
 
         const handleKeyDown = event => {
-            if (event.key === 'Escape' && !isSaving && !isDeleting) {
-                setEditingPlant(null)
-                setEditError('')
-                setDeleteTarget(null)
-                setDeleteError('')
+            if (event.key !== 'Escape' || isSaving || isDeleting) return
+            if (editingPlant && isWateringAdviceOpen) {
+                setIsWateringAdviceOpen(false)
+                return
             }
+            setEditingPlant(null)
+            setEditError('')
+            setDeleteTarget(null)
+            setDeleteError('')
         }
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [editingPlant, deleteTarget, isSaving, isDeleting])
+    }, [editingPlant, deleteTarget, isSaving, isDeleting, isWateringAdviceOpen])
 
     const openEditor = useCallback(selectedPlant => {
+        const activeElement = typeof document === 'undefined' ? null : document.activeElement
+        previousFocusRef.current = activeElement && activeElement !== document.body
+            ? activeElement
+            : null
         setEditingPlant(selectedPlant)
         setEditForm({
             name: selectedPlant.name ?? '',
@@ -209,7 +223,29 @@ function MyPlant() {
                 : []
         })
         setEditError('')
+        setIsWateringAdviceOpen(false)
+        setAiIntervalHint('')
     }, [])
+
+    useEffect(() => {
+        if (editingPlant) {
+            wasEditingRef.current = true
+            const frame = window.requestAnimationFrame(() => {
+                editDialogRef.current?.focus({ preventScroll: true })
+            })
+            return () => window.cancelAnimationFrame(frame)
+        }
+
+        if (!wasEditingRef.current) return undefined
+        wasEditingRef.current = false
+        const previous = previousFocusRef.current
+        previousFocusRef.current = null
+        if (!previous || typeof previous.focus !== 'function') return undefined
+        const frame = window.requestAnimationFrame(() => {
+            previous.focus({ preventScroll: true })
+        })
+        return () => window.cancelAnimationFrame(frame)
+    }, [editingPlant])
 
     useEffect(() => {
         if (isLoading) return undefined
@@ -237,6 +273,18 @@ function MyPlant() {
         setEditingPlant(null)
         setEditForm(null)
         setEditError('')
+        setIsWateringAdviceOpen(false)
+        setAiIntervalHint('')
+    }
+
+    const applyAiInterval = intervalDays => {
+        setEditForm(current => ({
+            ...current,
+            watering_interval_days: String(intervalDays)
+        }))
+        setAiIntervalHint(
+            `ИИ предложил раз в ${intervalDays} ${daysWord(intervalDays)} — сохраните изменения`
+        )
     }
 
     const handleEditSubmit = async event => {
@@ -329,6 +377,10 @@ function MyPlant() {
     const canRestrictWeekdays = weekdayRestrictionApplies(
         Number(editForm?.watering_interval_days)
     )
+    const editIntervalDays = Number(editForm?.watering_interval_days)
+    const editIntervalValue = Number.isInteger(editIntervalDays) && editIntervalDays > 0
+        ? editIntervalDays
+        : undefined
     const goBack = () => {
         if (location.key === 'default') {
             navigate('/home', { replace: true })
@@ -499,6 +551,8 @@ function MyPlant() {
                 >
                     <section
                         className='plantDialog'
+                        ref={editDialogRef}
+                        tabIndex={-1}
                         role='dialog'
                         aria-modal='true'
                         aria-labelledby='editPlantTitle'
@@ -518,7 +572,6 @@ function MyPlant() {
                             <label>
                                 Название
                                 <input
-                                    autoFocus
                                     type='text'
                                     maxLength={255}
                                     value={editForm.name}
@@ -550,10 +603,13 @@ function MyPlant() {
                                         max='365'
                                         step='1'
                                         value={editForm.watering_interval_days}
-                                        onChange={event => setEditForm(current => ({
-                                            ...current,
-                                            watering_interval_days: event.target.value
-                                        }))}
+                                        onChange={event => {
+                                            setAiIntervalHint('')
+                                            setEditForm(current => ({
+                                                ...current,
+                                                watering_interval_days: event.target.value
+                                            }))
+                                        }}
                                         required
                                     />
                                 </label>
@@ -571,6 +627,20 @@ function MyPlant() {
                                         ))}
                                     </select>
                                 </label>
+                            </div>
+                            <div className='plantEditorAi'>
+                                <button
+                                    type='button'
+                                    className='plantEditorAiButton'
+                                    onClick={() => setIsWateringAdviceOpen(true)}
+                                    disabled={isSaving}
+                                >
+                                    <img src={sparkles} alt='' aria-hidden='true' />
+                                    Пересмотреть частоту с ИИ
+                                </button>
+                                {aiIntervalHint && (
+                                    <p className='plantEditorAiHint' role='status'>{aiIntervalHint}</p>
+                                )}
                             </div>
                             <div className='plantEditorReminders'>
                                 <label>
@@ -637,6 +707,18 @@ function MyPlant() {
                         </form>
                     </section>
                 </div>
+            )}
+
+            {editingPlant && editForm && isWateringAdviceOpen && (
+                <WateringAdviceDialog
+                    open
+                    plantName={(editForm.name || '').trim() || editingPlant.name || ''}
+                    species={(editForm.species || '').trim() || editingPlant.species || ''}
+                    location={plantRoom(editingPlant)}
+                    currentIntervalDays={editIntervalValue}
+                    onClose={() => setIsWateringAdviceOpen(false)}
+                    onApply={applyAiInterval}
+                />
             )}
 
             {deleteTarget && (

@@ -253,7 +253,7 @@
   display: flex;
   gap: 4px;
   margin-top: 2px;
-  height: 6px;
+  height: 8px;
   align-items: center;
   justify-content: center;
 }
@@ -262,42 +262,51 @@
   display: flex;
   gap: 3px;
   margin-top: 3px;
-  height: 6px;
+  height: 8px;
   align-items: center;
   justify-content: center;
 }
 
 .care-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
+  --care-color: #6b46c1;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
   display: inline-block;
   flex-shrink: 0;
+  background: var(--care-color);
   animation: dot-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) 0.18s both;
 }
 
 .care-dot--feed {
-  background: #4c8b5f;
+  --care-color: #b7791f;
 }
 
 .care-dot--spray {
-  background: #4a90d9;
+  --care-color: #0f766e;
 }
 
 .care-dot--other {
-  background: #9aa0a6;
-}
-
-.care-dot--planned {
-  opacity: 0.45;
+  --care-color: #6b46c1;
 }
 
 .dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   display: inline-block;
   animation: dot-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) 0.12s both;
+}
+
+.legend-today-swatch {
+  width: 14px;
+  height: 14px;
+  box-sizing: border-box;
+  border: 2px solid #5c7463;
+  border-radius: 50%;
+  background: #eaf1ea;
+  display: inline-block;
+  flex-shrink: 0;
 }
 
 @keyframes dot-pop {
@@ -313,15 +322,11 @@
 }
 
 .dot--future {
-  background: #6f9fc4;
+  background: #2b6cb0;
 }
 
 .dot--past {
-  background: #5fb884;
-}
-
-.dot--today {
-  background: #5fb884;
+  background: #2f855a;
 }
 
 
@@ -363,7 +368,7 @@
 }
 
 .dot--overdue {
-  background: #e07a7a;
+  background: #c53030;
 }
 
 .mini-calendar__desktop-view {

@@ -16,19 +16,32 @@ html[data-theme='dark'] .mini-calendar__day.is-selected {
 }
 
 html[data-theme='dark'] .care-dot--feed {
-    background: #6fae83;
+    --care-color: #d9a441;
 }
 
 html[data-theme='dark'] .care-dot--spray {
-    background: #6aa5de;
+    --care-color: #4fb3a9;
 }
 
 html[data-theme='dark'] .care-dot--other {
-    background: #b0b6bb;
+    --care-color: #a78bfa;
 }
 
-html[data-theme='dark'] .care-dot--planned {
-    opacity: 0.5;
+html[data-theme='dark'] .dot--future {
+    background: #7fb3db;
+}
+
+html[data-theme='dark'] .dot--past {
+    background: #63c68e;
+}
+
+html[data-theme='dark'] .dot--overdue {
+    background: #ef8b8b;
+}
+
+html[data-theme='dark'] .legend-today-swatch {
+    border-color: #7FD1A0;
+    background: var(--theme-accent-soft);
 }
 
 @media (min-width: 1024px) {
@@ -37,9 +50,9 @@ html[data-theme='dark'] .care-dot--planned {
     }
 
     html[data-theme='dark'] .mini-calendar__month-day.is-today {
-        background: #5C7463;
-        border-color: #5C7463;
-        color: #ffffff;
+        background: var(--theme-accent-soft);
+        border-color: #7FD1A0;
+        color: var(--theme-text);
     }
 
     html[data-theme='dark'] .mini-calendar__month-day.is-outside {
@@ -54,5 +67,10 @@ html[data-theme='dark'] .care-dot--planned {
 
     html[data-theme='dark'] .mini-calendar__desktop-legend {
         color: var(--theme-muted);
+    }
+
+    html[data-theme='dark'] .mini-calendar__desktop-legend .legend-today-swatch {
+        border-color: #7FD1A0;
+        background: var(--theme-accent-soft);
     }
 }
