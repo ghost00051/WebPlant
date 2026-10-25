@@ -2,7 +2,7 @@ import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
 import MiniCalendar from '../MiniCalendar/MiniCalendar'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import check from '../../assets/check.svg'
 import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
@@ -34,6 +34,26 @@ import {
   missedWateringLabel,
   splitNeedWateringPlants
 } from '../../utils/wateringNeeds.js'
+import { isPushSupported } from '../../utils/pushNotifications.js'
+import { PLANTS } from '../../data/plants.js'
+import FirstPlantQuickAdd, {
+  OnboardingChecklist
+} from '../onboarding/onboarding.jsx'
+import {
+  buildQuickPlantPayload,
+  clearFirstPlantPending,
+  deriveOnboardingChecklist,
+  describeCreatePlantError,
+  parseIntervalDays,
+  pickPopularPlants,
+  readFirstPlantPending,
+  saveFirstPlantPending
+} from '../../utils/onboarding.js'
+import { markWateredWithQueue } from '../../utils/offlineQueue.js'
+import {
+  careFutureMarkersFromSchedule,
+  carePastMarkersFromTimeline
+} from '../../utils/careEvents.js'
 
 import './homePage.css'
 import './homePage.desktop.css'
@@ -43,6 +63,9 @@ import './notifications-button.css'
 const EXIT_MS = 420
 const POUR_ANIMATION_MS = 1200
 const OFF_SCHEDULE_PREVIEW_COUNT = 3
+const WATERING_NOTICE_TTL_MS = 8000
+
+const POPULAR_PLANTS = pickPopularPlants(PLANTS)
 
 const WATERING_TABS = [
   { id: 'today', label: 'Сегодня нужно полить' },
@@ -150,7 +173,21 @@ function badgeValue (count) {
   return value > 99 ? '99+' : String(value)
 }
 
-function HomePage ({ user, onTabChange }) {
+function readReminderState () {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return 'unsupported'
+  }
+  if (window.Notification.permission === 'granted') return 'granted'
+  if (window.Notification.permission === 'denied') return 'denied'
+  return isPushSupported() ? 'default' : 'unsupported'
+}
+
+function HomePage ({
+  user,
+  onTabChange,
+  onCollectionSummary,
+  onRequestPushPrompt
+}) {
   const navigate = useNavigate()
   const [plant, setPlant] = useState([])
   const [allPlants, setAllPlants] = useState([])
@@ -161,6 +198,8 @@ function HomePage ({ user, onTabChange }) {
   const [missedWateringId, setMissedWateringId] = useState(null)
   const [schedule, setSchedule] = useState([])
   const [history, setHistory] = useState([])
+  const [carePastTypes, setCarePastTypes] = useState(() => new Map())
+  const [careFutureTypes, setCareFutureTypes] = useState(() => new Map())
   const [now, setNow] = useState(new Date())
   const [isLoading, setIsLoading] = useState(true)
   const [dataError, setDataError] = useState('')
@@ -169,6 +208,11 @@ function HomePage ({ user, onTabChange }) {
   const [pouringOffSchedule, setPouringOffSchedule] = useState(null)
   const [offScheduleExpanded, setOffScheduleExpanded] = useState(false)
   const [wateringTab, setWateringTab] = useState('today')
+  const [creatingPlantSlug, setCreatingPlantSlug] = useState(null)
+  const [onboardingError, setOnboardingError] = useState('')
+  const [onboarding, setOnboarding] = useState(null)
+  const [reminderState, setReminderState] = useState('default')
+  const [wateringNotice, setWateringNotice] = useState('')
 
   const calendarRef = useRef(null)
   const wateringTabRefs = useRef(new Map())
@@ -237,7 +281,10 @@ function HomePage ({ user, onTabChange }) {
     return map
   }, [history])
 
-  const pastDatesSet = useMemo(() => new Set(historyMap.keys()), [historyMap])
+  const pastDatesSet = useMemo(
+    () => new Set(history.filter(item => item.hasWatering).map(item => item.date)),
+    [history]
+  )
 
   const { planned: plannedDates, missed: missedScheduleDates } = useMemo(
     () => partitionScheduleDates(schedule, now),
@@ -345,15 +392,42 @@ function HomePage ({ user, onTabChange }) {
         e => e.kind === 'overdue' || e.kind === 'skipped'
       )
       const hasWatered = events.some(e => e.kind === 'watered')
+      const hasWatering = events.some(e => e.kind !== 'care')
       return {
         date: item.date,
         events,
         hasOverdue,
-        hasWatered
+        hasWatered,
+        hasWatering
       }
     })
 
     setHistory(normalized)
+    setCarePastTypes(carePastMarkersFromTimeline(data.items))
+  }, [])
+
+  const getCareSchedule = useCallback(async () => {
+    try {
+      const response = await fetchWithTimeout(
+        `${API_URL}/plants/care-schedule?days=90`,
+        {
+          method: 'GET',
+          credentials: 'include'
+        }
+      )
+      if (!response.ok) {
+        throw new Error(
+          `Не удалось загрузить расписание ухода: HTTP ${response.status}`
+        )
+      }
+      const data = await response.json()
+      if (!Array.isArray(data.items)) {
+        throw new Error('Сервер вернул некорректное расписание ухода')
+      }
+      setCareFutureTypes(careFutureMarkersFromSchedule(data.items))
+    } catch (error) {
+      console.warn('Не удалось загрузить расписание ухода:', error)
+    }
   }, [])
 
   const loadHomeData = useCallback(
@@ -365,9 +439,11 @@ function HomePage ({ user, onTabChange }) {
         getWateringPlant(),
         getAllPlants(),
         getPlantSchedule(),
-        getPlantHistory()
+        getPlantHistory(),
+        getCareSchedule()
       ])
       const errors = results
+        .slice(0, -1)
         .filter(result => result.status === 'rejected')
         .map(result => result.reason)
 
@@ -383,7 +459,13 @@ function HomePage ({ user, onTabChange }) {
       }
       setIsLoading(false)
     },
-    [getWateringPlant, getAllPlants, getPlantSchedule, getPlantHistory]
+    [
+      getWateringPlant,
+      getAllPlants,
+      getPlantSchedule,
+      getPlantHistory,
+      getCareSchedule
+    ]
   )
 
   useEffect(() => {
@@ -404,6 +486,19 @@ function HomePage ({ user, onTabChange }) {
       }),
     [getNotifications]
   )
+
+  useEffect(() => {
+    const refreshReminderState = () => setReminderState(readReminderState())
+
+    refreshReminderState()
+    window.addEventListener('focus', refreshReminderState)
+    document.addEventListener('visibilitychange', refreshReminderState)
+
+    return () => {
+      window.removeEventListener('focus', refreshReminderState)
+      document.removeEventListener('visibilitychange', refreshReminderState)
+    }
+  }, [])
 
   useEffect(() => {
     const refresh = ({ force = false } = {}) => {
@@ -450,31 +545,241 @@ function HomePage ({ user, onTabChange }) {
     return () => document.removeEventListener('keydown', handleKeyDown)
   }, [offScheduleTarget])
 
+  const showWateringNotice = useCallback(
+    message => {
+      setWateringNotice(message)
+      scheduleTimeout(() => {
+        setWateringNotice(current => (current === message ? '' : current))
+      }, WATERING_NOTICE_TTL_MS)
+    },
+    [scheduleTimeout]
+  )
+
+  const collectionSummary = useMemo(
+    () => ({
+      plantCount: allPlants.length,
+      hasWatering:
+        history.some(item => item.hasWatered) ||
+        Boolean(onboarding?.firstWateringDone)
+    }),
+    [allPlants, history, onboarding]
+  )
+
+  useEffect(() => {
+    onCollectionSummary?.(collectionSummary)
+  }, [onCollectionSummary, collectionSummary])
+
+  useEffect(() => {
+    if (onboarding || isLoading || allPlants.length === 0) return
+
+    const pending = readFirstPlantPending()
+    if (!pending) return
+
+    const existing = allPlants.find(item => item.id === pending.id)
+    if (!existing || existing.last_watered_at) {
+      clearFirstPlantPending()
+      return
+    }
+
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOnboarding({
+      plant: {
+        id: existing.id,
+        name: existing.name || pending.name,
+        intervalDays: parseIntervalDays(existing.watering_interval_days),
+        image: ''
+      },
+      firstWateringDone: false,
+      dismissed: false
+    })
+  }, [allPlants, isLoading, onboarding])
+
+  const createFirstPlant = async popularPlant => {
+    if (creatingPlantSlug || !popularPlant?.name) return
+
+    const payload = buildQuickPlantPayload(popularPlant)
+    if (!payload) {
+      setOnboardingError('Не удалось подготовить данные растения. Попробуйте другое.')
+      return
+    }
+
+    setCreatingPlantSlug(popularPlant.slug)
+    setOnboardingError('')
+    setWateringNotice('')
+
+    try {
+      const response = await fetchWithTimeout(`${API_URL}/plants`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include'
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(describeCreatePlantError({ status: response.status, data }))
+      }
+      if (!data || !data.id) {
+        throw new Error('Сервер не вернул созданное растение. Обновите страницу.')
+      }
+
+      trackEvent('plant_created', {
+        source: 'onboarding_quick_add',
+        hasSpecies: Boolean(payload.species),
+        intervalDays: payload.watering_interval_days
+      })
+
+      const createdName = data.name || payload.name
+      setOnboarding({
+        plant: {
+          id: data.id,
+          name: createdName,
+          intervalDays: payload.watering_interval_days,
+          image: popularPlant.image || ''
+        },
+        firstWateringDone: false,
+        dismissed: false
+      })
+      setWateringTab('today')
+      saveFirstPlantPending({
+        id: data.id,
+        name: createdName,
+        intervalDays: payload.watering_interval_days
+      })
+      showWateringNotice(
+        `«${createdName}» добавлено. Отметьте первый полив в блоке «Сегодня».`
+      )
+      await loadHomeData()
+    } catch (error) {
+      console.error('Ошибка добавления первого растения:', error)
+      const rawMessage = typeof error?.message === 'string' ? error.message : ''
+      const isNetworkError =
+        /failed to fetch|load failed|network|timeout|aborted|превышено/i.test(
+          rawMessage
+        )
+      setOnboardingError(
+        isNetworkError
+          ? 'Нет сети. Проверьте подключение и попробуйте снова.'
+          : rawMessage || 'Не удалось добавить растение. Попробуйте ещё раз.'
+      )
+    } finally {
+      setCreatingPlantSlug(null)
+    }
+  }
+
+  const markFirstWatering = async () => {
+    const firstPlant = onboarding?.plant
+    if (!firstPlant || onboarding.firstWateringDone || wateringId) return
+
+    const plantId = firstPlant.id
+    setWateringId(plantId)
+
+    try {
+      const result = await markWateredWithQueue(plantId)
+      const alreadyWatered = result?.status === 409
+
+      if (!alreadyWatered && (!result || !result.ok)) {
+        throw new Error(
+          result?.data?.message ||
+            'Не удалось отметить полив. Попробуйте ещё раз.'
+        )
+      }
+
+      trackEvent('watering_marked', { onTime: true })
+      clearFirstPlantPending()
+
+      if (!alreadyWatered && result.queued) {
+        showWateringNotice(
+          'Нет сети — отметка сохранена и отправится автоматически'
+        )
+        setPlant(prev => prev.filter(item => item.id !== plantId))
+      } else {
+        showWateringNotice(
+          alreadyWatered
+            ? 'Полив уже отмечен — шаг засчитан.'
+            : 'Первый полив отмечен. Дальше подскажем, когда полить снова.'
+        )
+        setRemovingId(plantId)
+        scheduleTimeout(() => {
+          setPlant(prev => prev.filter(item => item.id !== plantId))
+          setRemovingId(null)
+        }, EXIT_MS)
+        if (!alreadyWatered) await loadHomeData()
+      }
+
+      setOnboarding(current =>
+        current && current.plant.id === plantId
+          ? { ...current, firstWateringDone: true }
+          : current
+      )
+    } catch (error) {
+      console.error('Ошибка отметки первого полива:', error)
+      setDataError(
+        error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
+      )
+    } finally {
+      setWateringId(null)
+    }
+  }
+
+  const handleChecklistAction = type => {
+    if (type === 'mark-watering') {
+      void markFirstWatering()
+      return
+    }
+    if (type === 'enable-reminders') {
+      const requested = onRequestPushPrompt?.()
+      if (requested) {
+        showWateringNotice(
+          'Разрешите уведомления в появившемся окне — напомним о поливе.'
+        )
+      } else {
+        showWateringNotice(
+          'Уведомления можно включить позже в настройках профиля.'
+        )
+      }
+    }
+  }
+
+  const dismissOnboardingChecklist = () => {
+    setOnboarding(current =>
+      current ? { ...current, dismissed: true } : current
+    )
+  }
+
+  const onboardingChecklist = useMemo(() => {
+    if (!onboarding) return null
+    return deriveOnboardingChecklist({
+      plantName: onboarding.plant.name,
+      reminderState,
+      hasWatered: onboarding.firstWateringDone
+    })
+  }, [onboarding, reminderState])
+
   const waterPlant = async (plantId, { onTime = true } = {}) => {
     if (!plantId || wateringId) return
     setWateringId(plantId)
 
     try {
-      const response = await fetchWithTimeout(
-        `${API_URL}/plants/${plantId}/water`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-          credentials: 'include'
-        }
-      )
+      const result = await markWateredWithQueue(plantId)
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}))
+      if (!result || !result.ok) {
         throw new Error(
-          errorData.message ||
-            `Не удалось отметить полив: HTTP ${response.status}`
+          result?.data?.message ||
+            'Не удалось отметить полив. Попробуйте ещё раз.'
         )
       }
 
-      // Без названий растений: только факт отметки и соблюдение графика.
       trackEvent('watering_marked', { onTime })
+
+      if (result.queued) {
+        showWateringNotice(
+          'Нет сети — отметка сохранена и отправится автоматически'
+        )
+        setPlant(prev => prev.filter(p => p.id !== plantId))
+        setWateringId(null)
+        return
+      }
 
       setRemovingId(plantId)
 
@@ -523,6 +828,39 @@ function HomePage ({ user, onTabChange }) {
     }
   }
 
+  const deleteCareAction = async (plantId, logId) => {
+    if (plantId === null || plantId === undefined) {
+      return { ok: false, message: '' }
+    }
+    if (logId === null || logId === undefined) {
+      return { ok: false, message: '' }
+    }
+
+    try {
+      const response = await fetchWithTimeout(
+        `${API_URL}/plants/${plantId}/care-actions/${logId}`,
+        { method: 'DELETE', credentials: 'include' }
+      )
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(
+          errorData.message ||
+            `Не удалось отменить действие ухода: HTTP ${response.status}`
+        )
+      }
+
+      await loadHomeData()
+      return { ok: true, message: '' }
+    } catch (error) {
+      console.error('Ошибка отмены действия ухода:', error)
+      return {
+        ok: false,
+        message:
+          error.message || 'Не удалось отменить действие ухода. Попробуйте ещё раз.'
+      }
+    }
+  }
+
   const waterMissedPlant = async (plantId, scheduledFor) => {
     if (!plantId || missedWateringId) {
       return { ok: false, message: '' }
@@ -531,28 +869,30 @@ function HomePage ({ user, onTabChange }) {
     setMissedWateringId(plantId)
     let alreadyWatered = false
     try {
-      const response = await fetchWithTimeout(
-        `${API_URL}/plants/${plantId}/water`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scheduled_for: scheduledFor }),
-          credentials: 'include'
-        }
-      )
-      const data = await response.json().catch(() => ({}))
+      const result = await markWateredWithQueue(plantId, { scheduledFor })
+      alreadyWatered = result?.status === 409
 
-      if (!response.ok) {
-        alreadyWatered = response.status === 409
+      if (!alreadyWatered && (!result || !result.ok)) {
         throw new Error(
-          data.message || `Не удалось отметить полив: HTTP ${response.status}`
+          result?.data?.message ||
+            'Не удалось отметить полив. Попробуйте ещё раз.'
         )
       }
 
       trackEvent('watering_marked', { onTime: false })
 
+      if (!alreadyWatered && result.queued) {
+        showWateringNotice(
+          'Нет сети — отметка сохранена и отправится автоматически'
+        )
+        return { ok: true, convertedSkip: false }
+      }
+
       await loadHomeData()
-      return { ok: true, convertedSkip: Boolean(data.converted_skip) }
+      return {
+        ok: true,
+        convertedSkip: Boolean(result?.data?.converted_skip)
+      }
     } catch (error) {
       console.error('Ошибка отметки просроченного полива:', error)
       if (alreadyWatered) await loadHomeData()
@@ -585,8 +925,15 @@ function HomePage ({ user, onTabChange }) {
   )
 
   const missedCount = missedPlants.length
-  const needWateringUnavailable = Boolean(dataError) && plant.length === 0
+  const needWateringUnavailable =
+    Boolean(dataError) && plant.length === 0 && allPlants.length === 0
   const collectionEmpty = plant.length === 0 && allPlants.length === 0
+
+  const firstPlantId = onboarding?.plant?.id ?? null
+  const firstPlantIsDueToday =
+    firstPlantId !== null &&
+    (todayPlants.some(item => item.id === firstPlantId) ||
+      missedPlants.some(entry => entry.plant?.id === firstPlantId))
 
   const buildDay = useCallback(
     date => {
@@ -596,22 +943,34 @@ function HomePage ({ user, onTabChange }) {
       const futurePlants = scheduleMap.get(iso) ?? []
       const pastItem = historyMap.get(iso) ?? null
       const pastEvents = pastItem?.events ?? []
+      const careEvents = pastEvents.filter(event => event?.kind === 'care')
+      const wateringEvents = pastEvents.filter(event => event?.kind !== 'care')
 
       const view = buildDayView({
         date: target,
         now,
         plannedPlants: futurePlants,
-        events: pastEvents
+        events: wateringEvents
       })
+
+      const events = careEvents.length
+        ? [...view.events, ...careEvents]
+        : view.events
+      const kind =
+        view.kind === 'empty' && events.length
+          ? view.isPastDay
+            ? 'past'
+            : 'future'
+          : view.kind
 
       return {
         date: target,
         diffDays: diffInDays(target, now),
         relative,
         iso,
-        kind: view.kind,
+        kind,
         plants: view.plants,
-        events: view.events,
+        events,
         futurePlants,
         pastEvents,
         hasOverdue: pastItem?.hasOverdue ?? false,
@@ -757,7 +1116,11 @@ function HomePage ({ user, onTabChange }) {
         key={item.id}
         className={`plantRender ${isRemoving ? 'is-removing' : ''}`}
       >
-        <div className='description'>
+        <Link
+          to='/my-plants'
+          className='description plantOpenLink'
+          aria-label={`Открыть «${item.name}» в списке растений`}
+        >
           {mainPhoto ? (
             <PlantPhoto src={mainPhoto} alt={item.name} />
           ) : (
@@ -777,7 +1140,7 @@ function HomePage ({ user, onTabChange }) {
               {overdue ? missedWateringLabel(daysLate) : 'Полить сегодня'}
             </div>
           </div>
-        </div>
+        </Link>
         <button
           type='button'
           className={`check-button ${isWatering ? 'is-watering' : ''}`}
@@ -787,6 +1150,64 @@ function HomePage ({ user, onTabChange }) {
         >
           <img src={check} alt='' />
           <span>Полить</span>
+        </button>
+      </div>
+    )
+  }
+
+  const renderFirstWateringCard = () => {
+    if (!onboarding || onboarding.firstWateringDone || firstPlantIsDueToday) {
+      return null
+    }
+
+    const firstPlant = onboarding.plant
+    const fullInfo = allPlantsMap.get(firstPlant.id)
+    const mainPhoto =
+      fullInfo?.photos?.find(photo => photo.is_main)?.url ??
+      fullInfo?.photos?.[0]?.url
+    const isWatering = wateringId === firstPlant.id
+    const isRemoving = removingId === firstPlant.id
+
+    return (
+      <div
+        key={`first-plant-${firstPlant.id}`}
+        className={`plantRender plantRender--first ${
+          isRemoving ? 'is-removing' : ''
+        }`}
+      >
+        <Link
+          to='/my-plants'
+          className='description plantOpenLink'
+          aria-label={`Открыть «${firstPlant.name}» в списке растений`}
+        >
+          {mainPhoto ? (
+            <PlantPhoto src={mainPhoto} alt={firstPlant.name} />
+          ) : (
+            <div className='no-photo' />
+          )}
+          <div className='plant-info'>
+            <p className='plant-name'>{firstPlant.name}</p>
+            <div className='plant-details'>
+              <span>{wateringEveryLabel(firstPlant.intervalDays)}</span>
+            </div>
+            <div className='watering-badge watering-badge--first'>
+              <img src={droplets} alt='' />
+              Первый полив — отметьте, что полили
+            </div>
+          </div>
+        </Link>
+        <button
+          type='button'
+          className={`check-button check-button--first ${
+            isWatering ? 'is-watering' : ''
+          }`}
+          onClick={markFirstWatering}
+          disabled={!!wateringId}
+          aria-busy={isWatering || undefined}
+          aria-label={`Уже полил(а) «${firstPlant.name}»`}
+        >
+          <img src={check} alt='' />
+          <span>Уже полил(а)</span>
         </button>
       </div>
     )
@@ -804,6 +1225,11 @@ function HomePage ({ user, onTabChange }) {
           <img src={LogoMark} alt='' />
           <p>{greeting}</p>
           <h1 className='homePageMobileTitle'>Мои растения</h1>
+          {allPlants.length > 0 && (
+            <Link to='/my-plants' className='homePageAllPlantsLink'>
+              Все растения ({allPlants.length})
+            </Link>
+          )}
         </div>
         <div
           className='notificationsButtonWrap'
@@ -829,6 +1255,11 @@ function HomePage ({ user, onTabChange }) {
           </p>
         </div>
         <div className='desktopHeaderActions'>
+          {allPlants.length > 0 && (
+            <Link to='/my-plants' className='desktopAllPlantsLink'>
+              Все растения ({allPlants.length})
+            </Link>
+          )}
           <span className='desktopDateBadge'>
             <img src={CalendarIcon} alt='' />
             {todayLabel}
@@ -858,8 +1289,30 @@ function HomePage ({ user, onTabChange }) {
           pastDates={pastDatesSet}
           overdueDates={overdueDatesSet}
           externalIso={selectedDay?.iso}
+          carePastTypes={carePastTypes}
+          careFutureTypes={careFutureTypes}
         />
         <section className='homePageWatering'>
+          {onboarding && !onboarding.dismissed && onboardingChecklist && (
+            <OnboardingChecklist
+              checklist={onboardingChecklist}
+              onAction={handleChecklistAction}
+              onDismiss={dismissOnboardingChecklist}
+            />
+          )}
+          {wateringNotice && (
+            <p className='homePageNotice' role='status'>
+              <span>{wateringNotice}</span>
+              <button
+                type='button'
+                className='homePageNoticeDismiss'
+                onClick={() => setWateringNotice('')}
+                aria-label='Скрыть сообщение'
+              >
+                <span aria-hidden='true'>×</span>
+              </button>
+            </p>
+          )}
           <div
             className='wateringTabs'
             role='tablist'
@@ -936,24 +1389,23 @@ function HomePage ({ user, onTabChange }) {
                 Загружаем расписание…
               </p>
             ) : needWateringUnavailable ? null : collectionEmpty ? (
-              <div className='plant-empty'>
-                <p>В коллекции пока нет растений.</p>
-                <button
-                  type='button'
-                  className='homePageAddPlant'
-                  onClick={() => navigate('/add-plant')}
-                >
-                  Добавить первое растение
-                </button>
-              </div>
+              <FirstPlantQuickAdd
+                plants={POPULAR_PLANTS}
+                creatingSlug={creatingPlantSlug}
+                error={onboardingError}
+                onCreate={createFirstPlant}
+              />
             ) : (
               <div key={wateringTab} className='wateringPanelContent'>
                 {wateringTab === 'today' ? (
-                  todayPlants.length > 0 ? (
-                    todayPlants.map(item => renderWateringCard(item))
-                  ) : (
-                    <p className='plant-empty'>На сегодня всё полито 💚</p>
-                  )
+                  <>
+                    {renderFirstWateringCard()}
+                    {todayPlants.length > 0 ? (
+                      todayPlants.map(item => renderWateringCard(item))
+                    ) : onboarding && !onboarding.firstWateringDone ? null : (
+                      <p className='plant-empty'>На сегодня всё полито 💚</p>
+                    )}
+                  </>
                 ) : missedCount > 0 ? (
                   <div
                     className='wateringMissedList'
@@ -1007,7 +1459,11 @@ function HomePage ({ user, onTabChange }) {
                           <span className='offScheduleDrop offScheduleDrop--5' />
                         </div>
                       )}
-                      <div className='menuOfSoffSchedule'>
+                      <Link
+                        to='/my-plants'
+                        className='menuOfSoffSchedule plantOpenLink'
+                        aria-label={`Открыть «${view.name}» в списке растений`}
+                      >
                         <div className='childOfmenuOfSoffSchedule'>
                           {view.photo_url ? (
                             <PlantPhoto src={view.photo_url} alt={view.name} />
@@ -1033,7 +1489,7 @@ function HomePage ({ user, onTabChange }) {
                             </div>
                           </div>
                         </div>
-                      </div>
+                      </Link>
                       <button
                         type='button'
                         className={`offScheduleWaterButton ${
@@ -1143,6 +1599,7 @@ function HomePage ({ user, onTabChange }) {
         onGoToDate={handleGoToDate}
         onWater={waterMissedPlant}
         onDeleteWatering={deleteWatering}
+        onDeleteCareAction={deleteCareAction}
         wateringPlantId={missedWateringId}
         deletingWateringId={deletingWateringId}
         onClose={() => setSelectedDate(null)}

@@ -10,6 +10,12 @@ import minus from '../../assets/minus.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import { trackEvent } from '../../utils/productEvents.js'
+import { saveFirstPlantPending } from '../../utils/onboarding.js'
+import { PLANTS } from '../../data/plants.js'
+import {
+    POPULAR_SPECIES_LIMIT,
+    mapPopularSpecies
+} from '../../utils/popularSpecies.js'
 import {
     reminderWeekdaysForInterval,
     upcomingWateringDays,
@@ -182,6 +188,10 @@ function AddPlants() {
     const [nameError, setNameError] = useState('')
     const [isSuggestingSpecies, setIsSuggestingSpecies] = useState(false)
     const [speciesSuggestionError, setSpeciesSuggestionError] = useState('')
+    const [popularSpecies, setPopularSpecies] = useState(() =>
+        mapPopularSpecies([], { plants: PLANTS })
+    )
+    const [popularSpeciesLoading, setPopularSpeciesLoading] = useState(true)
     const [isWateringDialogOpen, setIsWateringDialogOpen] = useState(false)
     const [wateringAnswers, setWateringAnswers] = useState([])
     const [wateringMessages, setWateringMessages] = useState([])
@@ -595,6 +605,36 @@ function AddPlants() {
         return () => window.removeEventListener('beforeunload', handleBeforeUnload)
     }, [draftHasContent, saveCompleted])
 
+    useEffect(() => {
+        let cancelled = false
+
+        const loadPopularSpecies = async () => {
+            try {
+                const response = await fetchWithTimeout(
+                    `${API_URL}/plants/popular-species?limit=${POPULAR_SPECIES_LIMIT}`,
+                    { method: 'GET', credentials: 'include' }
+                )
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`)
+                }
+                const data = await response.json().catch(() => ({}))
+                if (cancelled) return
+                setPopularSpecies(mapPopularSpecies(data?.items, { plants: PLANTS }))
+            } catch (error) {
+                if (cancelled) return
+                console.warn('Не удалось загрузить популярные виды:', error)
+                setPopularSpecies(mapPopularSpecies([], { plants: PLANTS }))
+            } finally {
+                if (!cancelled) setPopularSpeciesLoading(false)
+            }
+        }
+
+        loadPopularSpecies()
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
     const addPlant = async (event) => {
         event.preventDefault()
         if (isSubmitting) return
@@ -665,6 +705,12 @@ function AddPlants() {
                     intervalDays: Number(days) || 0
                 })
                 if (hasPhoto) trackEvent('photo_added')
+
+                saveFirstPlantPending({
+                    id: responseData.id,
+                    name: name.trim(),
+                    intervalDays: Number(days)
+                })
 
                 setSaveCompleted(true)
                 clearDraft()
@@ -837,14 +883,19 @@ function AddPlants() {
                             </div>
                             <div className='popularTypes'>
                                 <p>Популярные виды</p>
-                                <div>
-                                    {[
-                                        ['Монстера', 'Monstera'],
-                                        ['Фикус', 'Ficus'],
-                                        ['Суккулент', 'Succulent']
-                                    ].map(([label, value]) => (
-                                        <button key={value} type="button" onClick={() => setSpecies(value)}>
-                                            {label}
+                                <div
+                                    aria-busy={popularSpeciesLoading || undefined}
+                                    aria-label='Популярные виды растений'
+                                >
+                                    {popularSpecies.map(item => (
+                                        <button
+                                            key={item.species}
+                                            type="button"
+                                            title={item.species}
+                                            aria-label={`Подставить вид «${item.label}»`}
+                                            onClick={() => setSpecies(item.species)}
+                                        >
+                                            {item.label}
                                         </button>
                                     ))}
                                 </div>

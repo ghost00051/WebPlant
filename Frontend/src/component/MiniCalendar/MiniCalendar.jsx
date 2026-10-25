@@ -17,6 +17,10 @@ import {
   today,
   toISODate,
 } from '../../utils/date.js'
+import {
+  hasCareMarkers,
+  sortedCareGroups,
+} from '../../utils/careEvents.js'
 import './MiniCalendar.css'
 import './MiniCalendar.desktop.css'
 import './dark-theme.css'
@@ -26,6 +30,40 @@ const DAYS_IN_VIEW = 14
 const MONTH_WEEK_DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const DAYS_IN_WEEK = 7
 
+const CARE_GROUP_LABELS = {
+  feed: 'Подкормка',
+  spray: 'Опрыскивание',
+  other: 'Другой уход',
+}
+
+const PLANNED_CARE_GROUP_LABELS = {
+  feed: 'Плановая подкормка',
+  spray: 'Плановое опрыскивание',
+  other: 'Плановый другой уход',
+}
+
+const EMPTY_CARE_MAP = new Map()
+
+const careGroupLabel = (group, isPlanned = false) => {
+  const labels = isPlanned ? PLANNED_CARE_GROUP_LABELS : CARE_GROUP_LABELS
+  return labels[group] ?? ''
+}
+
+const collectCareGroups = (pastTypes, futureTypes, iso) => {
+  const past = pastTypes instanceof Map ? pastTypes.get(iso) : null
+  const future = futureTypes instanceof Map ? futureTypes.get(iso) : null
+  const groups = new Set()
+  if (past instanceof Set) for (const group of past) groups.add(group)
+  if (future instanceof Set) for (const group of future) groups.add(group)
+
+  return sortedCareGroups(groups).map(group => ({
+    group,
+    planned:
+      Boolean(future instanceof Set && future.has(group)) &&
+      !(past instanceof Set && past.has(group)),
+  }))
+}
+
 const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
 
 const wateringStateLabels = ({ isFuture, isPast, isOverdue }) => [
@@ -34,11 +72,18 @@ const wateringStateLabels = ({ isFuture, isPast, isOverdue }) => [
   isPast && 'прошлый полив',
 ].filter(Boolean)
 
-const buildDayLabel = (date, { isToday, isSelected, isFuture, isPast, isOverdue }) => {
+const buildDayLabel = (
+  date,
+  { isToday, isSelected, isFuture, isPast, isOverdue, careGroups = [] }
+) => {
   const parts = [`${dayOfMonth(date)} ${monthGenitive(date)}`]
   if (isToday) parts.push('сегодня')
   const watering = wateringStateLabels({ isFuture, isPast, isOverdue })
   if (watering.length) parts.push(watering.join(', '))
+  const care = careGroups
+    .map(item => careGroupLabel(item.group, item.planned).toLowerCase())
+    .filter(Boolean)
+  if (care.length) parts.push(care.join(', '))
   if (isSelected) parts.push('выбран')
   return parts.join(', ')
 }
@@ -79,7 +124,15 @@ const handleGridKeyDown = (event, grid, setFocusIndex) => {
 }
 
 const MiniCalendar = forwardRef(function MiniCalendar(
-  { onSelectDay, futureDates, pastDates, overdueDates, externalIso },
+  {
+    onSelectDay,
+    futureDates,
+    pastDates,
+    overdueDates,
+    externalIso,
+    carePastTypes = EMPTY_CARE_MAP,
+    careFutureTypes = EMPTY_CARE_MAP,
+  },
   ref
 ) {
   const [anchorTime, setAnchorTime] = useState(
@@ -186,12 +239,36 @@ const MiniCalendar = forwardRef(function MiniCalendar(
     hasMissed: overdueDates?.has?.(dateStr) ?? false,
   }), [futureDates, pastDates, overdueDates])
 
-  const renderDots = ({ isFuture, isPast, isOverdue }) => (
-    <div className='mini-calendar__dots' aria-hidden='true'>
-      {isFuture && <span className='dot dot--future' title='Будущий полив' />}
-      {isOverdue && <span className='dot dot--overdue' title='Просроченный или пропущенный полив' />}
-      {isPast && <span className='dot dot--past' title='Прошлый полив' />}
-    </div>
+  const getCareGroups = useCallback(
+    dateStr => collectCareGroups(carePastTypes, careFutureTypes, dateStr),
+    [carePastTypes, careFutureTypes]
+  )
+
+  const showCareLegend = hasCareMarkers(carePastTypes, careFutureTypes)
+
+  const renderDots = ({ isFuture, isPast, isOverdue }, careGroups = []) => (
+    <>
+      <div className='mini-calendar__dots' aria-hidden='true'>
+        {isFuture && <span className='dot dot--future' title='Будущий полив' />}
+        {isOverdue && <span className='dot dot--overdue' title='Просроченный или пропущенный полив' />}
+        {isPast && <span className='dot dot--past' title='Прошлый полив' />}
+      </div>
+      {careGroups.length > 0 && (
+        <div className='mini-calendar__care-dots'>
+          {careGroups.map(({ group, planned }) => {
+            const label = careGroupLabel(group, planned)
+            return (
+              <span
+                key={group}
+                className={`care-dot care-dot--${group}${planned ? ' care-dot--planned' : ''}`}
+                title={label}
+                aria-label={label}
+              />
+            )
+          })}
+        </div>
+      )}
+    </>
   )
 
   return (
@@ -234,6 +311,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
             const isToday = isSameDay(day, todayDate)
             const isSelected = externalIso === dateStr
             const wateringState = getWateringState(dateStr)
+            const careGroups = getCareGroups(dateStr)
 
             return (
               <button
@@ -241,7 +319,12 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                 type='button'
                 data-day='true'
                 tabIndex={index === mobileTabIndex ? 0 : -1}
-                aria-label={buildDayLabel(day, { isToday, isSelected, ...wateringState })}
+                aria-label={buildDayLabel(day, {
+                  isToday,
+                  isSelected,
+                  ...wateringState,
+                  careGroups,
+                })}
                 aria-current={isToday ? 'date' : undefined}
                 className={[
                   'mini-calendar__day',
@@ -254,7 +337,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                 onFocus={() => setMobileFocusIndex(index)}
               >
                 <span className='mini-calendar__day-number'>{dayOfMonth(day)}</span>
-                {renderDots(wateringState)}
+                {renderDots(wateringState, careGroups)}
               </button>
             )
           })}
@@ -274,6 +357,19 @@ const MiniCalendar = forwardRef(function MiniCalendar(
         <span className='legend-item'>
           <span className='dot dot--today' aria-hidden='true' /> Сегодня
         </span>
+        {showCareLegend && (
+          <>
+            <span className='legend-item legend-item--care'>
+              <span className='care-dot care-dot--feed' aria-hidden='true' /> Подкормка
+            </span>
+            <span className='legend-item legend-item--care'>
+              <span className='care-dot care-dot--spray' aria-hidden='true' /> Опрыскивание
+            </span>
+            <span className='legend-item legend-item--care'>
+              <span className='care-dot care-dot--other' aria-hidden='true' /> Другой уход
+            </span>
+          </>
+        )}
       </div>
       <div className='mini-calendar__desktop-view'>
         <div className='mini-calendar__header'>
@@ -307,6 +403,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
             const isToday = isSameDay(day, todayDate)
             const isSelected = externalIso === dateStr
             const wateringState = getWateringState(dateStr)
+            const careGroups = getCareGroups(dateStr)
             const isWateringDay = wateringState.isFuture || wateringState.isPast || wateringState.isOverdue
 
             return (
@@ -319,6 +416,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                   isToday,
                   isSelected,
                   ...wateringState,
+                  careGroups,
                 })}
                 aria-current={isToday ? 'date' : undefined}
                 className={[
@@ -332,7 +430,7 @@ const MiniCalendar = forwardRef(function MiniCalendar(
                 onFocus={() => setDesktopFocusIndex(index)}
               >
                 <span className='mini-calendar__day-number'>{dayOfMonth(day)}</span>
-                {renderDots(wateringState)}
+                {renderDots(wateringState, careGroups)}
               </button>
             )
           })}
@@ -342,6 +440,13 @@ const MiniCalendar = forwardRef(function MiniCalendar(
           <span><i className='dot dot--past' aria-hidden='true' /> Прошлый полив</span>
           <span><i className='dot dot--overdue' aria-hidden='true' /> Пропущенный/просроченный</span>
           <span><i className='dot dot--today' aria-hidden='true' /> Сегодня</span>
+          {showCareLegend && (
+            <>
+              <span><i className='care-dot care-dot--feed' aria-hidden='true' /> Подкормка</span>
+              <span><i className='care-dot care-dot--spray' aria-hidden='true' /> Опрыскивание</span>
+              <span><i className='care-dot care-dot--other' aria-hidden='true' /> Другой уход</span>
+            </>
+          )}
         </div>
       </div>
     </div>

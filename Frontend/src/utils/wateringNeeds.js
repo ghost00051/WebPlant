@@ -97,6 +97,12 @@ export function splitNeedWateringPlants(
     const missedSince = toInstant(plant.metadata?.missed_since)
     const plannedDay = zonedIsoDay(plant.next_watering_at, timeZone)
     const plannedInPast = Boolean(todayDay && plannedDay && plannedDay < todayDay)
+    const plannedToday = Boolean(todayDay && plannedDay && plannedDay === todayDay)
+
+    if (plannedToday) {
+      today.push(plant)
+      continue
+    }
 
     if (!missedSince && !plannedInPast) {
       today.push(plant)

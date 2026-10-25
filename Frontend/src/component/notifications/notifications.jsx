@@ -9,9 +9,11 @@ import notificationAlert from '../../assets/notification-alert.svg'
 import notificationCheck from '../../assets/notification-check.svg'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { CARE_ACTION_CODES } from '../../utils/careEvents.js'
 import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
 import { publishUnreadCount } from '../../utils/appBadge.js'
 import { diffInDays } from '../../utils/date.js'
+import CareActionSheet from '../careActions/CareActionSheet.jsx'
 import { TABS } from '../tools/tabs.js'
 import {
   isPushSupported,
@@ -29,8 +31,7 @@ const PAGE_SIZE = 20
 const FILTER_TABS = [
   { id: 'all', label: 'Все' },
   { id: 'watering', label: 'Поливы' },
-  { id: 'care', label: 'Уход' },
-  { id: 'advice', label: 'Советы' }
+  { id: 'care', label: 'Уход' }
 ]
 
 const FILTER_TAB_ID = filterId => `notificationsFilter-${filterId}`
@@ -47,8 +48,7 @@ const CATEGORIES = {
 const EMPTY_TEXTS = {
   all: 'Пока нет уведомлений. Здесь появятся напоминания о поливе и утренние сводки.',
   watering: 'Пока нет уведомлений о поливе.',
-  care: 'Пока нет уведомлений об уходе.',
-  advice: 'Пока нет советов по уходу.'
+  care: 'Пока нет уведомлений об уходе.'
 }
 
 function canUsePush () {
@@ -75,16 +75,18 @@ function categoryFor (item) {
   return 'system'
 }
 
+function feedCategoryFor (item) {
+  if (item?.type === 'watering_due' || item?.type === 'watering_day_before' ||
+    item?.type === 'morning_summary') {
+    return 'watering'
+  }
+  if (item?.type === 'care_reminder' || item?.type === 'care_tip') return 'care'
+  return null
+}
+
 function actionLabelFor (item, category) {
   if (item?.type === 'morning_summary') return 'Сводка'
   return CATEGORIES[category].label
-}
-
-function matchesFilter (item, filter) {
-  if (filter === 'all') return true
-  const category = categoryFor(item)
-  if (filter === 'watering') return category === 'watering' || category === 'alert'
-  return category === filter
 }
 
 function newWord (count) {
@@ -122,18 +124,27 @@ function formatCardTime (value) {
   return `${day}, ${clock}`
 }
 
-function readableUrl (value) {
-  if (typeof value !== 'string') return '/home'
-  if (!value.startsWith('/') || value.startsWith('//') || value.startsWith('/\\')) {
-    return '/home'
-  }
-  return value
+function isCareNotification (item) {
+  return item?.type === 'care_reminder' || item?.type === 'care_tip'
+}
+
+function isWateringNotification (item) {
+  return item?.type === 'watering_due' ||
+    item?.type === 'watering_day_before' ||
+    item?.type === 'morning_summary'
+}
+
+function careInitialActionFor (item) {
+  const code = item?.payload?.action_code
+  if (typeof code === 'string' && CARE_ACTION_CODES.includes(code)) return code
+  return item?.type === 'care_tip' ? 'spray' : 'fertilize'
 }
 
 function Notifications () {
   const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [unreadCount, setUnreadCount] = useState(0)
+  const [unreadByCategory, setUnreadByCategory] = useState({ all: 0, watering: 0, care: 0 })
   const [nextOffset, setNextOffset] = useState(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
@@ -147,8 +158,13 @@ function Notifications () {
   const [pushBusy, setPushBusy] = useState(false)
   const [pushError, setPushError] = useState('')
   const [pushSuccess, setPushSuccess] = useState('')
+  const [selectedNotification, setSelectedNotification] = useState(null)
+  const [careSheet, setCareSheet] = useState(null)
   const filterRefs = useRef(new Map())
+  const detailRef = useRef(null)
   const lastSyncRef = useRef(0)
+  const feedRequestIdRef = useRef(0)
+  const activeFilterRef = useRef('all')
 
   const setFilterRef = tabId => node => {
     if (node) {
@@ -180,9 +196,9 @@ function Notifications () {
     setFilter(nextTab.id)
   }
 
-  const loadPage = useCallback(async offset => {
+  const loadPage = useCallback(async (offset, category = 'all') => {
     const response = await fetchWithTimeout(
-      `${API_URL}/notifications?limit=${PAGE_SIZE}&offset=${offset}&status=all`,
+      `${API_URL}/notifications?limit=${PAGE_SIZE}&offset=${offset}&status=all&category=${encodeURIComponent(category)}`,
       { method: 'GET', credentials: 'include' }
     )
     if (response.status === 401) {
@@ -196,55 +212,73 @@ function Notifications () {
     if (!Array.isArray(data.items)) {
       throw new Error('Сервер вернул некорректный список уведомлений')
     }
+    const unreadCount = Number.isInteger(data.unreadCount) ? data.unreadCount : 0
+    const categoryTotals = data.unreadByCategory && typeof data.unreadByCategory === 'object'
+      ? data.unreadByCategory
+      : {}
+    const toCount = value => (Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0)
+
     return {
       items: data.items,
       nextOffset: Number.isInteger(data.nextOffset) ? data.nextOffset : null,
-      unreadCount: Number.isInteger(data.unreadCount) ? data.unreadCount : 0
+      unreadCount,
+      unreadByCategory: {
+        all: toCount(categoryTotals.all ?? unreadCount),
+        watering: toCount(categoryTotals.watering),
+        care: toCount(categoryTotals.care)
+      }
     }
   }, [navigate])
 
-  const loadInitial = useCallback(async () => {
+  const loadInitial = useCallback(async category => {
+    const requestId = feedRequestIdRef.current + 1
+    feedRequestIdRef.current = requestId
     setIsLoading(true)
     setError('')
     try {
-      const page = await loadPage(0)
-      if (!page) return
+      const page = await loadPage(0, category)
+      if (!page || requestId !== feedRequestIdRef.current) return
       setItems(page.items)
       setNextOffset(page.nextOffset)
       setUnreadCount(page.unreadCount)
+      setUnreadByCategory(page.unreadByCategory)
     } catch (loadError) {
+      if (requestId !== feedRequestIdRef.current) return
       console.error('Ошибка загрузки уведомлений:', loadError)
       setError('Не удалось загрузить уведомления. Проверьте подключение и попробуйте ещё раз.')
     } finally {
-      setIsLoading(false)
+      if (requestId === feedRequestIdRef.current) setIsLoading(false)
     }
   }, [loadPage])
 
   useEffect(() => {
+    activeFilterRef.current = filter
     let cancelled = false
     const run = async () => {
       if (cancelled) return
-      await loadInitial()
+      await loadInitial(filter)
     }
     run()
     return () => {
       cancelled = true
     }
-  }, [loadInitial])
+  }, [filter, loadInitial])
 
   const refreshFirstPage = useCallback(async () => {
+    const category = filter
     try {
-      const page = await loadPage(0)
-      if (!page) return
+      const page = await loadPage(0, category)
+      if (!page || category !== activeFilterRef.current) return
       setItems(current => {
         const freshIds = new Set(page.items.map(item => item.id))
         return [...page.items, ...current.filter(item => !freshIds.has(item.id))]
       })
       setUnreadCount(page.unreadCount)
+      setUnreadByCategory(page.unreadByCategory)
     } catch (refreshError) {
       console.warn('Не удалось обновить уведомления:', refreshError)
     }
-  }, [loadPage])
+  }, [filter, loadPage])
 
   useEffect(() => {
     const refresh = () => {
@@ -310,16 +344,11 @@ function Notifications () {
     return null
   }, [permission])
 
-  const visibleItems = useMemo(
-    () => items.filter(item => matchesFilter(item, filter)),
-    [filter, items]
-  )
-
   const groups = useMemo(() => {
     const today = []
     const earlier = []
 
-    for (const item of visibleItems) {
+    for (const item of items) {
       if (diffInDays(item.created_at, new Date()) === 0) {
         today.push(item)
       } else {
@@ -351,21 +380,23 @@ function Notifications () {
     }
 
     return result
-  }, [visibleItems])
+  }, [items])
 
   const loadMore = async () => {
     if (nextOffset === null || isLoadingMore) return
+    const category = filter
     setIsLoadingMore(true)
     setError('')
     try {
-      const page = await loadPage(nextOffset)
-      if (!page) return
+      const page = await loadPage(nextOffset, category)
+      if (!page || category !== activeFilterRef.current) return
       setItems(current => [
         ...current,
         ...page.items.filter(item => !current.some(existing => existing.id === item.id))
       ])
       setNextOffset(page.nextOffset)
       setUnreadCount(page.unreadCount)
+      setUnreadByCategory(page.unreadByCategory)
     } catch (loadError) {
       console.error('Ошибка загрузки уведомлений:', loadError)
       setError('Не удалось загрузить уведомления. Попробуйте ещё раз.')
@@ -397,6 +428,7 @@ function Notifications () {
       ))
       const nextUnread = Number.isInteger(data.unreadCount) ? data.unreadCount : 0
       setUnreadCount(nextUnread)
+      setUnreadByCategory({ all: 0, watering: 0, care: 0 })
       publishUnreadCount(nextUnread)
     } catch (markError) {
       console.error('Ошибка отметки уведомлений:', markError)
@@ -429,6 +461,14 @@ function Notifications () {
             ? data.unreadCount
             : Math.max(0, unreadCount - 1)
           setUnreadCount(nextUnread)
+          const feedCategory = feedCategoryFor(item)
+          if (feedCategory) {
+            setUnreadByCategory(current => ({
+              ...current,
+              all: Math.max(0, current.all - 1),
+              [feedCategory]: Math.max(0, current[feedCategory] - 1)
+            }))
+          }
           publishUnreadCount(nextUnread)
         }
       } catch (readError) {
@@ -436,7 +476,50 @@ function Notifications () {
       }
     }
 
-    navigate(readableUrl(item.url))
+    setSelectedNotification(item)
+  }
+
+  useEffect(() => {
+    if (!selectedNotification) return undefined
+
+    const previouslyFocused = document.activeElement
+    const handleKeyDown = event => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setSelectedNotification(null)
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown)
+    const frame = window.requestAnimationFrame(() => {
+      detailRef.current?.querySelector('button')?.focus?.()
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', handleKeyDown)
+      previouslyFocused?.focus?.()
+    }
+  }, [selectedNotification])
+
+  const closeNotificationDetail = () => setSelectedNotification(null)
+
+  const openCareFromNotification = item => {
+    setCareSheet({
+      plantId: item?.plant_id ?? null,
+      initialAction: careInitialActionFor(item),
+      notificationId: item?.id ?? null
+    })
+    setSelectedNotification(null)
+  }
+
+  const goToPlantFromNotification = item => {
+    setSelectedNotification(null)
+    if (item?.plant_id !== null && item?.plant_id !== undefined) {
+      navigate(`/my-plants?plant=${item.plant_id}`)
+      return
+    }
+    navigate('/my-plants')
   }
 
   const subscribeAfterPermission = async () => {
@@ -499,6 +582,9 @@ function Notifications () {
     }
     navigate('/home', { state: { activeTab: tabId } })
   }
+
+  const detailCategory = selectedNotification ? categoryFor(selectedNotification) : 'system'
+  const detailMeta = CATEGORIES[detailCategory]
 
   return (
     <main className='notificationsPage'>
@@ -588,6 +674,11 @@ function Notifications () {
             onKeyDown={event => handleFilterKeyDown(event, index)}
           >
             {tab.label}
+            {(tab.id === 'all' ? unreadCount : unreadByCategory[tab.id]) > 0 && (
+              <span className='notificationsFilterCount'>
+                {tab.id === 'all' ? unreadCount : unreadByCategory[tab.id]}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -601,7 +692,7 @@ function Notifications () {
         {error && (
           <div className='notificationsError' role='alert'>
             <p>{error}</p>
-            <button type='button' onClick={loadInitial}>Повторить</button>
+            <button type='button' onClick={() => loadInitial(filter)}>Повторить</button>
           </div>
         )}
 
@@ -679,6 +770,114 @@ function Notifications () {
           </button>
         )}
       </div>
+
+      {selectedNotification && (
+        <div
+          className='notificationsDetailOverlay'
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeNotificationDetail()
+          }}
+        >
+          <section
+            className='notificationsDetail'
+            ref={detailRef}
+            role='dialog'
+            aria-modal='true'
+            aria-labelledby='notificationDetailTitle'
+          >
+            <header className='notificationsDetailHeader'>
+              <span className={`notificationsIcon notificationsIcon--${detailCategory}`}>
+                <img src={detailMeta.icon} alt='' />
+              </span>
+              <div className='notificationsDetailHeading'>
+                <span className='notificationsDetailType'>{detailMeta.label}</span>
+                <h2 id='notificationDetailTitle'>{selectedNotification.title}</h2>
+              </div>
+              <button
+                type='button'
+                className='notificationsDetailClose'
+                onClick={closeNotificationDetail}
+                aria-label='Закрыть'
+              >
+                ×
+              </button>
+            </header>
+
+            <p className='notificationsDetailBody'>{selectedNotification.body}</p>
+            <p className='notificationsDetailTime'>
+              {formatCardTime(selectedNotification.created_at)}
+            </p>
+
+            <div className='notificationsDetailActions'>
+              {isWateringNotification(selectedNotification) && (
+                <button
+                  type='button'
+                  className='notificationsDetailPrimary'
+                  onClick={() => {
+                    closeNotificationDetail()
+                    navigate('/home')
+                  }}
+                >
+                  Полить
+                </button>
+              )}
+
+              {isCareNotification(selectedNotification) && (
+                <>
+                  <button
+                    type='button'
+                    className='notificationsDetailPrimary'
+                    onClick={() => openCareFromNotification(selectedNotification)}
+                  >
+                    Выполнено
+                  </button>
+                  {selectedNotification.plant_id !== null &&
+                    selectedNotification.plant_id !== undefined && (
+                      <button
+                        type='button'
+                        className='notificationsDetailSecondary'
+                        onClick={() => goToPlantFromNotification(selectedNotification)}
+                      >
+                        К растению
+                      </button>
+                    )}
+                </>
+              )}
+
+              {!isWateringNotification(selectedNotification) &&
+                !isCareNotification(selectedNotification) && (
+                  <button
+                    type='button'
+                    className='notificationsDetailPrimary'
+                    onClick={() => {
+                      closeNotificationDetail()
+                      navigate('/my-plants')
+                    }}
+                  >
+                    К растениям
+                  </button>
+                )}
+
+              <button
+                type='button'
+                className='notificationsDetailSecondary'
+                onClick={closeNotificationDetail}
+              >
+                Закрыть
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      <CareActionSheet
+        open={Boolean(careSheet)}
+        plantId={careSheet?.plantId ?? null}
+        initialAction={careSheet?.initialAction ?? 'fertilize'}
+        notificationId={careSheet?.notificationId ?? null}
+        onClose={() => setCareSheet(null)}
+        onSaved={() => setCareSheet(null)}
+      />
 
       <nav className='notificationsBottomNav' aria-label='Основная навигация'>
         {TABS.map(tab => (

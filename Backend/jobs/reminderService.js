@@ -24,6 +24,14 @@ import User from '../models/userModels.js'
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
 import { isRemindersPaused, registerAutoSkip } from '../utils/plantMetadata.js'
 import { readPrediction } from '../utils/wateringPrediction.js'
+import {
+    forEachInChunks,
+    iterateActiveDuePlants,
+    iterateBatchesById,
+    readReminderBatchConfig,
+    readReminderPushConcurrency
+} from '../utils/plantBatching.js'
+import { recordReminderTick } from '../utils/reminderTickMetrics.js'
 
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
@@ -309,7 +317,10 @@ class ReminderService {
     }
 
     async reminderTick(now = new Date()) {
+        const tickStartedAt = new Date()
         console.log(`\n🔔 ReminderService.reminderTick() @ ${now.toISOString()}`)
+
+        const totals = this.createTickCounters()
 
         for (const [name, run] of [
             ['autoSkipOverdue', () => this.autoSkipOverdue(now)],
@@ -318,145 +329,214 @@ class ReminderService {
         ]) {
             const startedAt = Date.now()
             try {
-                await run()
+                const result = await run()
+                totals.batches += Number(result?.batches) || 0
+                totals.plantsProcessed += Number(result?.plantsProcessed) || 0
+                totals.notificationsCreated += Number(result?.notificationsCreated) || 0
+                totals.errors += Number(result?.errors) || 0
             } catch (error) {
+                totals.errors += 1
                 console.error(`❌ ReminderService.${name} error:`, error)
             }
             console.log(`⏱ reminderTick.${name}: ${Date.now() - startedAt} мс`)
+        }
+
+        const metric = recordReminderTick({
+            startedAt: tickStartedAt.toISOString(),
+            durationMs: Date.now() - tickStartedAt.getTime(),
+            batches: totals.batches,
+            plantsProcessed: totals.plantsProcessed,
+            notificationsCreated: totals.notificationsCreated,
+            errors: totals.errors
+        })
+        console.info('[reminder-tick]', JSON.stringify(metric))
+    }
+
+    createTickCounters() {
+        return {
+            batches: 0,
+            plantsProcessed: 0,
+            notificationsCreated: 0,
+            errors: 0
+        }
+    }
+
+    applyBatchOutcome(counters, outcome, label) {
+        if (!outcome) return counters
+        counters.batches = Number(outcome.batches) || 0
+        counters.plantsProcessed = Number(outcome.plantsProcessed) || 0
+        if (outcome.truncated) {
+            console.warn(
+                `⚠️ ${label}: тик упёрся в REMINDER_TICK_MAX_BATCHES — ` +
+                'остальные растения будут обработаны следующим тиком'
+            )
+        }
+        return counters
+    }
+
+    async processPlantsConcurrently(plants, { failureLabel, failureText, counters, worker }) {
+        const concurrency = readReminderPushConcurrency()
+        const settled = await forEachInChunks(plants, concurrency, async plant => {
+            try {
+                const notificationCreated = await worker(plant)
+                if (notificationCreated) counters.notificationsCreated += 1
+            } catch (error) {
+                counters.errors += 1
+                console.error(`❌ ${failureLabel}: plant#${plant?.id} — ${failureText}:`, error)
+            }
+        })
+
+        for (const result of settled) {
+            if (result.status === 'rejected') {
+                counters.errors += 1
+                console.error(
+                    `❌ ${failureLabel}: непредвиденная ошибка обработки растения:`,
+                    result.reason
+                )
+            }
         }
     }
 
     async autoSkipOverdue(now = new Date()) {
         const cutoff = new Date(now.getTime() - MISSED_GRACE_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 next_watering_at: { [Op.lte]: cutoff }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async candidates => {
+                const zonesByUser = await loadTimeZones(candidates.map(plant => plant.user_id))
+                await this.processPlantsConcurrently(candidates, {
+                    failureLabel: 'autoSkipOverdue',
+                    failureText: 'пропуск не выполнен',
+                    counters,
+                    worker: candidate => this.autoSkipPlant(candidate, { now, cutoff, zonesByUser })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        return this.applyBatchOutcome(counters, outcome, 'autoSkipOverdue')
+    }
 
-        for (const candidate of plants) {
-            let transaction
-            try {
-                transaction = await Plant.sequelize.transaction()
+    async autoSkipPlant(candidate, { now, cutoff, zonesByUser }) {
+        let transaction
+        try {
+            transaction = await Plant.sequelize.transaction()
 
-                const plant = await Plant.findOne({
-                    where: {
-                        id: candidate.id,
-                        is_active: true,
-                        next_watering_at: { [Op.lte]: cutoff }
-                    },
-                    transaction,
-                    lock: transaction.LOCK.UPDATE
-                })
-                if (!plant) {
-                    await transaction.rollback()
-                    transaction = null
-                    continue
-                }
-
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                const scheduledFor = new Date(plant.next_watering_at)
-                const intervalDays = intervalDaysOf(plant)
-
-                const { missed, next } = splitMissedWaterings(
-                    scheduledFor,
-                    intervalDays,
-                    wateringHour(plant),
-                    timeZone,
-                    now
-                )
-
-                if (!missed.length || !next || !Number.isFinite(next.getTime())) {
-                    await transaction.rollback()
-                    transaction = null
-                    continue
-                }
-
-                const wasPaused = isRemindersPaused(plant.metadata)
-                const metadata = registerAutoSkip(plant.metadata, { missedSince: missed[0] })
-                const becamePaused = !wasPaused && metadata.reminders_paused === true
-
-                await plant.update({
-                    next_watering_at: next,
-                    metadata
-                }, { transaction })
-
-                const truncated = missed.length > MAX_SKIP_LOGS_PER_TICK
-                const logged = truncated
-                    ? missed.slice(-MAX_SKIP_LOGS_PER_TICK)
-                    : missed
-
-                if (truncated) {
-                    console.warn(
-                        `⚠️ autoSkip plant#${plant.id}: ${missed.length} пропущенных слотов, ` +
-                        `в watering_logs сохранены последние ${logged.length}`
-                    )
-                }
-
-                for (const slot of logged) {
-                    await WateringLog.create({
-                        plant_id: plant.id,
-                        user_id: plant.user_id,
-                        action: 'skipped',
-                        action_at: now,
-                        scheduled_for: slot,
-                        hours_late: Math.max(0, Math.round((now.getTime() - slot.getTime()) / HOUR)),
-                        note: AUTO_SKIP_NOTE
-                    }, { transaction })
-                }
-
-                await transaction.commit()
+            const plant = await Plant.findOne({
+                where: {
+                    id: candidate.id,
+                    is_active: true,
+                    next_watering_at: { [Op.lte]: cutoff }
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (!plant) {
+                await transaction.rollback()
                 transaction = null
+                return false
+            }
 
-                console.log(
-                    `⏭ plant#${plant.id} «${plant.name}»: пропущено ${missed.length}, ` +
-                    `слоты: ${logged.map(slot => slot.toISOString()).join(', ')}, ` +
-                    `следующий полив ${next.toISOString()}`
-                )
+            const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+            const scheduledFor = new Date(plant.next_watering_at)
+            const intervalDays = intervalDaysOf(plant)
 
-                await this.notifyAutoSkipOutcome(plant, {
-                    missed,
-                    timeZone,
-                    wasPaused,
-                    becamePaused,
-                    consecutiveSkips: metadata.consecutive_skips
-                })
-            } catch (error) {
-                if (transaction && !transaction.finished) await transaction.rollback()
-                console.error(
-                    `❌ autoSkipOverdue: plant#${candidate.id} — пропуск не выполнен:`,
-                    error
+            const { missed, next } = splitMissedWaterings(
+                scheduledFor,
+                intervalDays,
+                wateringHour(plant),
+                timeZone,
+                now
+            )
+
+            if (!missed.length || !next || !Number.isFinite(next.getTime())) {
+                await transaction.rollback()
+                transaction = null
+                return false
+            }
+
+            const wasPaused = isRemindersPaused(plant.metadata)
+            const metadata = registerAutoSkip(plant.metadata, { missedSince: missed[0] })
+            const becamePaused = !wasPaused && metadata.reminders_paused === true
+
+            await plant.update({
+                next_watering_at: next,
+                metadata
+            }, { transaction })
+
+            const truncated = missed.length > MAX_SKIP_LOGS_PER_TICK
+            const logged = truncated
+                ? missed.slice(-MAX_SKIP_LOGS_PER_TICK)
+                : missed
+
+            if (truncated) {
+                console.warn(
+                    `⚠️ autoSkip plant#${plant.id}: ${missed.length} пропущенных слотов, ` +
+                    `в watering_logs сохранены последние ${logged.length}`
                 )
             }
+
+            for (const slot of logged) {
+                await WateringLog.create({
+                    plant_id: plant.id,
+                    user_id: plant.user_id,
+                    action: 'skipped',
+                    action_at: now,
+                    scheduled_for: slot,
+                    hours_late: Math.max(0, Math.round((now.getTime() - slot.getTime()) / HOUR)),
+                    note: AUTO_SKIP_NOTE
+                }, { transaction })
+            }
+
+            await transaction.commit()
+            transaction = null
+
+            console.log(
+                `⏭ plant#${plant.id} «${plant.name}»: пропущено ${missed.length}, ` +
+                `слоты: ${logged.map(slot => slot.toISOString()).join(', ')}, ` +
+                `следующий полив ${next.toISOString()}`
+            )
+
+            return await this.notifyAutoSkipOutcome(plant, {
+                missed,
+                timeZone,
+                wasPaused,
+                becamePaused,
+                consecutiveSkips: metadata.consecutive_skips
+            })
+        } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
+            throw error
         }
     }
 
     async notifyAutoSkipOutcome(plant, { missed, timeZone, wasPaused, becamePaused, consecutiveSkips }) {
         if (becamePaused) {
-            await this.notifyRemindersPaused(plant, {
+            return this.notifyRemindersPaused(plant, {
                 slot: missed[0],
                 consecutiveSkips
             })
-            return
         }
         if (wasPaused) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: напоминания на паузе — уведомление не отправляется`)
-            return
+            return false
         }
         if (plant.notify_morning === false) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: notify_morning=false — уведомление не отправляется`)
-            return
+            return false
         }
         if (!matchesWeekdayForSlot(plant, missed[0], timeZone)) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: день недели не выбран — уведомление не отправляется`)
-            return
+            return false
         }
-        await this.notifyAutoSkip(plant, missed)
+        return this.notifyAutoSkip(plant, missed)
     }
 
     async notifyAutoSkip(plant, missed) {
@@ -473,15 +553,17 @@ class ReminderService {
                 dedupeKey: `plant:${plant.id}:auto_skip:${first.toISOString()}`,
                 scheduledFor: first
             })
-            if (!created) return
+            if (!created) return false
             await sendNotificationPush({
                 userId: plant.user_id,
                 title,
                 body,
                 data: { plantId: plant.id, url: '/home', tag: 'auto_skip', notificationId: notification.id }
             })
+            return true
         } catch (error) {
             console.error(`❌ Не удалось отправить уведомление о пропуске plant#${plant.id}:`, error)
+            return false
         }
     }
 
@@ -498,17 +580,19 @@ class ReminderService {
                 dedupeKey: `plant:${plant.id}:reminders_paused:${slot.toISOString()}`,
                 scheduledFor: slot
             })
-            if (!created) return
+            if (!created) return false
 
-            if (plant.notify_morning === false) return
+            if (plant.notify_morning === false) return true
             await sendNotificationPush({
                 userId: plant.user_id,
                 title,
                 body,
                 data: { plantId: plant.id, url: '/home', tag: 'reminders_paused', notificationId: notification.id }
             })
+            return true
         } catch (error) {
             console.error(`❌ Не удалось отправить уведомление о паузе plant#${plant.id}:`, error)
+            return false
         }
     }
 
@@ -523,33 +607,48 @@ class ReminderService {
     }
 
     async sendMorningSummary(now = new Date()) {
-        const preferences = await NotificationPreference.findAll({
-            where: { morning_summary_enabled: true }
-        })
-        if (!preferences.length) return
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const zonesByUser = await loadTimeZones(
-            preferences.map(preference => preference.user_id)
-        )
-
-        for (const preference of preferences) {
-            try {
-                const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
-                const localTime = getDateParts(now, timeZone)
-
-                if (localTime.hour !== SUMMARY_HOUR) continue
-
-                const { date, end } = getDayBounds(now, timeZone)
-                if (preference.last_morning_summary_date === date) continue
-
-                await this.sendMorningSummaryTo(preference, { date, end })
-            } catch (error) {
-                console.error(
-                    `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
-                    error
+        const outcome = await iterateBatchesById({
+            model: NotificationPreference,
+            idColumn: 'user_id',
+            where: { morning_summary_enabled: true },
+            batchSize,
+            maxBatches,
+            onBatch: async preferences => {
+                const zonesByUser = await loadTimeZones(
+                    preferences.map(preference => preference.user_id)
                 )
+
+                for (const preference of preferences) {
+                    try {
+                        const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
+                        const localTime = getDateParts(now, timeZone)
+
+                        if (localTime.hour !== SUMMARY_HOUR) continue
+
+                        const { date, end } = getDayBounds(now, timeZone)
+                        if (preference.last_morning_summary_date === date) continue
+
+                        await this.sendMorningSummaryTo(preference, { date, end })
+                    } catch (error) {
+                        console.error(
+                            `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
+                            error
+                        )
+                    }
+                }
             }
+        })
+
+        if (outcome.truncated) {
+            console.warn(
+                '⚠️ sendMorningSummary: тик упёрся в REMINDER_TICK_MAX_BATCHES — ' +
+                'часть пользователей будет обработана следующим тиком'
+            )
         }
+
+        return outcome
     }
 
     async sendMorningSummaryTo(preference, { date, end }) {
@@ -635,109 +734,122 @@ class ReminderService {
     async sendDayBefore(now) {
         const from = new Date(now.getTime() + DAY_BEFORE_QUERY_FROM_MS)
         const to = new Date(now.getTime() + DAY_BEFORE_QUERY_TO_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 notify_day_before: true,
                 next_watering_at: { [Op.between]: [from, to] }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async plants => {
+                const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+                await this.processPlantsConcurrently(plants, {
+                    failureLabel: 'sendDayBefore',
+                    failureText: 'напоминание не отправлено',
+                    counters,
+                    worker: plant => this.sendDayBeforeTo(plant, { now, zonesByUser })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        return this.applyBatchOutcome(counters, outcome, 'sendDayBefore')
+    }
 
-        for (const plant of plants) {
-            try {
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                if (isRemindersPaused(plant.metadata)) continue
-                if (!this.matchesWeekday(plant, timeZone)) continue
+    async sendDayBeforeTo(plant, { now, zonesByUser }) {
+        const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+        if (isRemindersPaused(plant.metadata)) return false
+        if (!this.matchesWeekday(plant, timeZone)) return false
 
-                const localHour = getDateParts(now, timeZone).hour
-                if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) continue
-                if (zonedDayKey(plant.next_watering_at, timeZone) !== localTomorrowKey(now, timeZone)) continue
+        const localHour = getDateParts(now, timeZone).hour
+        if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) return false
+        if (zonedDayKey(plant.next_watering_at, timeZone) !== localTomorrowKey(now, timeZone)) return false
 
-                const slot = new Date(plant.next_watering_at)
-                if (this.alreadyNotified(plant, 'day_before', slot)) continue
+        const slot = new Date(plant.next_watering_at)
+        if (this.alreadyNotified(plant, 'day_before', slot)) return false
 
-                const result = await this.notify(plant, {
-                    title: '🌿 Напоминание',
-                    body: `Завтра полить «${truncateText(plant.name || 'Растение', NOTIFY_NAME_MAX_LENGTH)}»` +
-                        `${plant.location ? ` (${truncateText(plant.location, SUMMARY_LOCATION_MAX_LENGTH)})` : ''}`,
-                    tag: 'day_before',
-                    type: 'watering_day_before',
-                    slot
-                })
+        const result = await this.notify(plant, {
+            title: '🌿 Напоминание',
+            body: `Завтра полить «${truncateText(plant.name || 'Растение', NOTIFY_NAME_MAX_LENGTH)}»` +
+                `${plant.location ? ` (${truncateText(plant.location, SUMMARY_LOCATION_MAX_LENGTH)})` : ''}`,
+            tag: 'day_before',
+            type: 'watering_day_before',
+            slot
+        })
 
-                if (result.notification) {
-                    await this.markNotified(plant, 'day_before', slot)
-                }
-            } catch (error) {
-                console.error(
-                    `❌ sendDayBefore: plant#${plant.id} — напоминание не отправлено:`,
-                    error
-                )
-            }
+        if (result.notification) {
+            await this.markNotified(plant, 'day_before', slot)
         }
+        return Boolean(result.created)
     }
 
     async sendOnDay(now) {
-
         const catchupFrom = new Date(
             now.getTime() - (MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS)
         )
         const to = new Date(now.getTime() + ON_DAY_EARLY_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 notify_morning: true,
                 next_watering_at: { [Op.between]: [catchupFrom, to] }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async plants => {
+                const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+                await this.processPlantsConcurrently(plants, {
+                    failureLabel: 'sendOnDay',
+                    failureText: 'напоминание не отправлено',
+                    counters,
+                    worker: plant => this.sendOnDayTo(plant, { now, to, zonesByUser })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        return this.applyBatchOutcome(counters, outcome, 'sendOnDay')
+    }
 
-        for (const plant of plants) {
-            try {
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                if (isRemindersPaused(plant.metadata)) continue
-                if (!this.matchesWeekday(plant, timeZone)) continue
+    async sendOnDayTo(plant, { now, to, zonesByUser }) {
+        const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
+        if (isRemindersPaused(plant.metadata)) return false
+        if (!this.matchesWeekday(plant, timeZone)) return false
 
-                const slot = new Date(plant.next_watering_at)
-                if (!Number.isFinite(slot.getTime())) continue
-                if (slot.getTime() > to.getTime()) continue
-                const lateness = now.getTime() - slot.getTime()
-                if (lateness > MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS) continue
+        const slot = new Date(plant.next_watering_at)
+        if (!Number.isFinite(slot.getTime())) return false
+        if (slot.getTime() > to.getTime()) return false
+        const lateness = now.getTime() - slot.getTime()
+        if (lateness > MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS) return false
 
-                if (lateness > ON_DAY_LATE_MS) {
-                    const localHour = getDateParts(now, timeZone).hour
-                    if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) {
-                        continue
-                    }
-                }
-                if (this.alreadyNotified(plant, 'on_day', slot)) continue
-
-                const { title, body } = buildOnDayNotification(plant, { slot, timeZone, now })
-                const result = await this.notify(plant, {
-                    title,
-                    body,
-                    tag: 'on_day',
-                    type: 'watering_due',
-                    slot
-                })
-
-                if (result.notification) {
-                    await this.markNotified(plant, 'on_day', slot)
-                }
-            } catch (error) {
-                console.error(
-                    `❌ sendOnDay: plant#${plant.id} — напоминание не отправлено:`,
-                    error
-                )
+        if (lateness > ON_DAY_LATE_MS) {
+            const localHour = getDateParts(now, timeZone).hour
+            if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) {
+                return false
             }
         }
+        if (this.alreadyNotified(plant, 'on_day', slot)) return false
+
+        const { title, body } = buildOnDayNotification(plant, { slot, timeZone, now })
+        const result = await this.notify(plant, {
+            title,
+            body,
+            tag: 'on_day',
+            type: 'watering_due',
+            slot
+        })
+
+        if (result.notification) {
+            await this.markNotified(plant, 'on_day', slot)
+        }
+        return Boolean(result.created)
     }
 
     matchesWeekday(plant, timeZone = DEFAULT_TIME_ZONE) {

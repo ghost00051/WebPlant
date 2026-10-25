@@ -1,4 +1,5 @@
 import WateringLog from './WateringLog.js'
+import PlantCareLog from './PlantCareLog.js'
 import User from './userModels.js'
 import Plant from './Plant.js'
 import PlantPhoto from './PlantPhoto.js'
@@ -43,6 +44,12 @@ WateringLog.belongsTo(Plant, { foreignKey: 'plant_id', as: 'plant' })
 
 User.hasMany(WateringLog, { foreignKey: 'user_id', onDelete: 'CASCADE' })
 WateringLog.belongsTo(User, { foreignKey: 'user_id' })
+
+Plant.hasMany(PlantCareLog, { foreignKey: 'plant_id', as: 'careLogs', onDelete: 'CASCADE' })
+PlantCareLog.belongsTo(Plant, { foreignKey: 'plant_id', as: 'plant' })
+
+User.hasMany(PlantCareLog, { foreignKey: 'user_id', as: 'careLogs', onDelete: 'CASCADE' })
+PlantCareLog.belongsTo(User, { foreignKey: 'user_id' })
 
 User.hasMany(AdminAuditLog, {
     foreignKey: 'admin_id',

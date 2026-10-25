@@ -26,6 +26,7 @@ import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
 import GardenShareCard from '../gardenShare/GardenShareCard.jsx'
+import { clearOfflineApiCache } from '../../utils/offlineQueue.js'
 import './dark-theme.css'
 
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
@@ -434,6 +435,7 @@ function Profile () {
       )
       return
     }
+    void clearOfflineApiCache()
     navigate('/login')
   }
 
@@ -534,6 +536,7 @@ function Profile () {
         method: 'POST',
         credentials: 'include'
       }).catch(() => {})
+      void clearOfflineApiCache()
       navigate('/', { replace: true })
     } catch (error) {
       console.error('Ошибка удаления аккаунта:', error)
@@ -709,6 +712,13 @@ function Profile () {
             </p>
           )}
         </div>
+      </div>
+      <div className='gofOfHeaderOfAllPlants'>
+        <p className='HeaderOfAllPlants'>Мои растения</p>
+        <Link to='/my-plants' className='buttonOfPlant'>
+          Все растения
+          {Number.isInteger(plant) ? ` (${plant})` : ''}
+        </Link>
       </div>
       {isAdmin && (
         <Suspense

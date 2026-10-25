@@ -1,0 +1,67 @@
+.offlineBanner {
+    position: fixed;
+    top: max(8px, env(safe-area-inset-top, 0px));
+    left: 50%;
+    z-index: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    max-width: min(440px, calc(100vw - 24px));
+    padding: 8px 14px;
+    border: 1px solid var(--theme-border, #e3e9e3);
+    border-radius: 999px;
+    background: var(--theme-surface, #ffffff);
+    box-shadow: 0 8px 24px rgba(45, 55, 47, 0.16);
+    color: var(--theme-text, #2d2d2d);
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm, 13px);
+    font-weight: 600;
+    line-height: 1.35;
+    text-align: center;
+    transform: translateX(-50%);
+    pointer-events: none;
+    animation: offlineBannerIn 0.2s ease;
+}
+
+.offlineBannerDot {
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--theme-danger, #b3352c);
+}
+
+.offlineBanner[data-state='pending'] .offlineBannerDot {
+    background: var(--theme-accent-text, #2f6b47);
+}
+
+.offlineBannerText {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+@keyframes offlineBannerIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (max-width: 480px) {
+    .offlineBanner {
+        max-width: calc(100vw - 16px);
+        padding: 7px 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .offlineBanner {
+        animation: none;
+    }
+}

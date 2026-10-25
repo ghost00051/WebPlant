@@ -1091,6 +1091,46 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/popular-species:
+    get:
+      tags: [plants]
+      operationId: listPopularPlantSpecies
+      summary: Популярные виды растений
+      description: >-
+        Виды (`plants.species`), которые реально добавляют пользователи: агрегат по
+        активным растениям, сортировка по числу уникальных пользователей, затем по числу
+        добавлений. Ответ кэшируется в процессе backend на 5 минут; `items` может быть
+        пустым (тогда клиент показывает резервный список из справочника).
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 8
+      responses:
+        '200':
+          description: 'объект `{items: [{species, addedCount, usersCount, avgIntervalDays}], totalSpecies, generatedAt}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PopularPlantSpecies'
+                  totalSpecies:
+                    type: integer
+                  generatedAt:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/plants/need-watering:
     get:
       tags: [plants]
@@ -1319,6 +1359,100 @@ paths:
             text/csv:
               schema:
                 type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/care-actions/latest:
+    get:
+      tags: [plants]
+      operationId: getLatestCareActions
+      summary: Последнее действие ухода по каждому растению
+      description: |
+        Берёт логи ухода пользователя (`limit` последних записей, 1–200) и возвращает
+        первую (самую свежую) запись для каждого `plant_id`.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 200
+      responses:
+        '200':
+          description: 'объект `{items: [{plant_id, action_code, title, product_name, dose, performed_at}]}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [plant_id, action_code, title, performed_at]
+                      properties:
+                        plant_id:
+                          type: integer
+                        action_code:
+                          type: string
+                          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+                        title:
+                          type: [string, 'null']
+                        product_name:
+                          type: [string, 'null']
+                          maxLength: 160
+                        dose:
+                          type: [string, 'null']
+                          maxLength: 120
+                        performed_at:
+                          type: string
+                          format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/care-schedule:
+    get:
+      tags: [plants]
+      operationId: getCareSchedule
+      summary: Календарь планового ухода
+      description: |
+        Для каждого активного растения и каждого действия из его плана ухода возвращает
+        ближайшую плановую дату: последняя отметка (или сейчас) + `minIntervalDays`,
+        просроченное действие переносится на сегодня. Учитываются сезоны из плана и
+        часовой пояс пользователя; `maxPerMonth: 0` исключает действие.
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 180
+            default: 90
+      responses:
+        '200':
+          description: 'объект `{items: [CareScheduleItem], days}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, days]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CareScheduleItem'
+                  days:
+                    type: integer
+                    minimum: 1
+                    maximum: 180
         '401':
           $ref: '#/components/responses/Unauthorized'
         '500':
@@ -1679,6 +1813,111 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/{id}/care-actions:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: listCareActions
+      summary: Журнал ухода растения
+      description: Записи журнала ухода растения, сортировка по `performed_at` DESC.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: журнал ухода
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareActionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [plants]
+      operationId: createCareAction
+      summary: Отметка действия ухода
+      description: |
+        Валидация: `action_code` обязателен; `product_name` обязателен для `fertilize`
+        (до 160 символов); `dose` до 120; `note` до 500; `method` только для `spray`
+        (`spray_bottle` по умолчанию или `humidifier`); `performed_at` — ISO-дата не в
+        будущем (допуск 5 минут) и не старше 365 дней. Если передан `notification_id`,
+        уведомление помечается прочитанным и получает `payload.done_at`. Лимит записи:
+        120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CareActionInput'
+      responses:
+        '201':
+          description: 'объект `{item}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/CareAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/care-actions/{logId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/LogId'
+    delete:
+      tags: [plants]
+      operationId: deleteCareAction
+      summary: Удаление отметки ухода
+      description: Удаляет запись журнала ухода, принадлежащую растению пользователя. Лимит записи — 120 операций за 15 минут.
+      responses:
+        '200':
+          description: 'объект `{removed: true}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/chat/chat:
     post:
       tags: [chat]
@@ -1901,6 +2140,16 @@ paths:
             type: string
             enum: [all, unread, read]
             default: all
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [all, watering, care]
+            default: all
+          description: >-
+            Категория ленты: watering — напоминания о поливе и сводки,
+            care — напоминания и советы по уходу (care_reminder + care_tip),
+            all — без фильтра.
         - name: limit
           in: query
           schema:
@@ -2536,6 +2785,32 @@ paths:
                   counted:
                     type: boolean
                     const: false
+
+  /api/system/features:
+    get:
+      tags: [system]
+      operationId: getSystemFeatures
+      summary: Состояние соцфич и feature flags (риск 11)
+      description: |
+        Публичный эндпоинт без авторизации: клиент узнаёт, какие соцфичи включены и
+        почему. Шаринг сада F13 уже запущен и включён по умолчанию
+        (`FEATURE_GARDEN_SHARING=on`). Лента (`FEATURE_SOCIAL_FEED`) и комментарии
+        (`FEATURE_SOCIAL_COMMENTS`) по умолчанию выключены и включаются только если
+        env-флаг явно включён И `criticalMass.current >= criticalMass.threshold`
+        (`SOCIAL_CRITICAL_MASS`, дефолт 50 активных шарингов сада).
+
+        `reason`: `enabled` — включено; `disabled` — выключено env-флагом;
+        `critical_mass` — флаг включён, но критическая масса не достигнута;
+        `unavailable` — не удалось посчитать шаринги (fail-closed: соцфича выключена,
+        ответ остаётся `200`, а не `500`). Секретов не возвращает.
+      security: []
+      responses:
+        '200':
+          description: состояние соцфич
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemFeatureState'
 
   /api/events:
     post:
@@ -3204,6 +3479,33 @@ paths:
       responses:
         '200':
           description: 'объект `{total, limit, offset, kind, byKind, kindLabels, sourceLabels, items}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/reminder-metrics:
+    get:
+      tags: [admin]
+      operationId: adminReminderMetrics
+      summary: Метрики cron-движка напоминаний
+      description: >-
+        In-memory ring buffer последних 50 тиков процесса:
+        `{maxTicks, count, lastTickAt, ticks: [{startedAt, durationMs, batches,
+        plantsProcessed, notificationsCreated, errors}]}`. При нескольких инстансах
+        показывает срез процесса, обслужившего запрос; после рестарта сбрасывается.
+        Используется для контроля риска «рост числа растений замедляет циклы».
+      responses:
+        '200':
+          description: метрики тиков
           content:
             application/json:
               schema:
@@ -5074,6 +5376,28 @@ components:
               type: object
               additionalProperties: true
 
+    PopularPlantSpecies:
+      type: object
+      required: [species, addedCount, usersCount]
+      properties:
+        species:
+          type: string
+          maxLength: 160
+          description: Вид растения так, как его сохранили пользователи (обычно латынь).
+        addedCount:
+          type: integer
+          minimum: 0
+          description: Сколько активных растений этого вида добавлено.
+        usersCount:
+          type: integer
+          minimum: 0
+          description: Сколько уникальных пользователей добавили этот вид.
+        avgIntervalDays:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 365
+          description: Средний интервал полива по этому виду в днях.
+
     PlantCreateRequest:
       type: object
       required: [name]
@@ -5326,11 +5650,13 @@ components:
               events:
                 type: array
                 description: |
-                  Событие содержит `kind` (`overdue` | `skipped` | `watered`) и `plant`
+                  Событие содержит `kind` (`overdue` | `skipped` | `watered` | `care`) и `plant`
                   (`id`, `name`, `species`, `location`, `photo_url`). Для `overdue` —
                   `scheduled_for`, `hours_late`, `days_late`; для `skipped` — `id`,
                   `scheduled_for`, `skipped_at`, `hours_late`, `days_late`, `note`;
-                  для `watered` — `id`, `watered_at`, `scheduled_for`, `hours_late`, `note`.
+                  для `watered` — `id`, `watered_at`, `scheduled_for`, `hours_late`, `note`;
+                  для `care` — `action_code`, `title`, `product_name`, `dose`, `method`,
+                  `log_id`, `performed_at`.
                 items:
                   type: object
                   required: [kind, plant]
@@ -5338,7 +5664,7 @@ components:
                   properties:
                     kind:
                       type: string
-                      enum: [overdue, skipped, watered]
+                      enum: [overdue, skipped, watered, care]
                     plant:
                       type: object
                       additionalProperties: true
@@ -5378,6 +5704,105 @@ components:
           type: number
         avg_hours_late:
           type: number
+
+    CareActionInput:
+      type: object
+      required: [action_code]
+      description: Отметка действия ухода. Пустые строки сохраняются как `null`.
+      properties:
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        product_name:
+          type: [string, 'null']
+          maxLength: 160
+          description: Обязателен для `fertilize`.
+        dose:
+          type: [string, 'null']
+          maxLength: 120
+        method:
+          type: [string, 'null']
+          enum: [spray_bottle, humidifier]
+          description: 'Только для `spray`; по умолчанию `spray_bottle`.'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+        performed_at:
+          type: [string, 'null']
+          format: date-time
+          description: Не в будущем (допуск 5 минут) и не старше 365 дней; по умолчанию — сейчас.
+        notification_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: Уведомление, по которому отмечен уход; помечается прочитанным, в `payload` добавляется `done_at`.
+
+    CareAction:
+      type: object
+      required: [id, plant_id, action_code, title, performed_at]
+      properties:
+        id:
+          type: integer
+        plant_id:
+          type: integer
+        plant_name:
+          type: [string, 'null']
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        title:
+          type: [string, 'null']
+          description: 'Человекочитаемое название действия, например «Подкормка».'
+        product_name:
+          type: [string, 'null']
+          maxLength: 160
+        dose:
+          type: [string, 'null']
+          maxLength: 120
+        method:
+          type: [string, 'null']
+          enum: [spray_bottle, humidifier]
+        note:
+          type: [string, 'null']
+          maxLength: 500
+        performed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: [string, 'null']
+          format: date-time
+
+    CareActionList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CareAction'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    CareScheduleItem:
+      type: object
+      required: [date, action_code, title, plant_id, plant_name]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Локальная дата ближайшего планового действия.
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        title:
+          type: [string, 'null']
+        plant_id:
+          type: integer
+        plant_name:
+          type: [string, 'null']
 
     WateringAdviceRequest:
       type: object
@@ -5617,6 +6042,10 @@ components:
         url:
           type: string
           maxLength: 2048
+        payload:
+          type: object
+          additionalProperties: true
+          description: 'Данные уведомления: для ухода — action_code, action_title, topic, done_at.'
         scheduled_for:
           type: [string, 'null']
           format: date-time
@@ -5637,7 +6066,7 @@ components:
 
     NotificationList:
       type: object
-      required: [items, total, unreadCount, status, limit, offset]
+      required: [items, total, unreadCount, unreadByCategory, category, status, limit, offset]
       properties:
         items:
           type: array
@@ -5647,6 +6076,20 @@ components:
           type: integer
         unreadCount:
           type: integer
+        unreadByCategory:
+          type: object
+          required: [all, watering, care]
+          properties:
+            all:
+              type: integer
+            watering:
+              type: integer
+            care:
+              type: integer
+          description: 'Непрочитанные по категориям ленты: care включает care_reminder и care_tip.'
+        category:
+          type: string
+          enum: [all, watering, care]
         status:
           type: string
           enum: [all, unread, read]
@@ -5986,3 +6429,39 @@ components:
         фиксирует только факт JSON-объекта и коды ответов. Для полей, которые нужно
         использовать программно, опирайтесь на `Backend/controllers/admin*.js`
         (админка — единственный потребитель этих эндпоинтов).
+
+    SystemFeatureState:
+      type: object
+      required: [gardenSharing, socialFeed, socialComments, criticalMass]
+      description: Состояние соцфич для публичного клиента (риск 11).
+      properties:
+        gardenSharing:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        socialFeed:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        socialComments:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        criticalMass:
+          type: object
+          required: [current, threshold, reached]
+          properties:
+            current:
+              type: [integer, 'null']
+              description: 'активных шарингов сада; null — посчитать не удалось (fail-closed)'
+            threshold:
+              type: integer
+              minimum: 0
+              default: 50
+            reached:
+              type: boolean
+
+    SocialFeatureFlagState:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          enum: [enabled, disabled, critical_mass, unavailable]
+

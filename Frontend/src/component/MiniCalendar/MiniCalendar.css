@@ -258,6 +258,40 @@
   justify-content: center;
 }
 
+.mini-calendar__care-dots {
+  display: flex;
+  gap: 3px;
+  margin-top: 3px;
+  height: 6px;
+  align-items: center;
+  justify-content: center;
+}
+
+.care-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+  animation: dot-pop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) 0.18s both;
+}
+
+.care-dot--feed {
+  background: #4c8b5f;
+}
+
+.care-dot--spray {
+  background: #4a90d9;
+}
+
+.care-dot--other {
+  background: #9aa0a6;
+}
+
+.care-dot--planned {
+  opacity: 0.45;
+}
+
 .dot {
   width: 6px;
   height: 6px;

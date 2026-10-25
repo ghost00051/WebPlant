@@ -72,6 +72,35 @@ test('split: missed_since важнее будущего next_watering_at (пос
   assert.equal(missed[0].daysLate, 3)
 })
 
+test('split: новый плановый полив сегодня важнее старого пропуска', () => {
+  const now = new Date('2026-10-25T09:00:00.000Z') // 12:00 MSK
+  const plant = {
+    id: 9,
+    next_watering_at: '2026-10-25T06:00:00.000Z', // 25 октября, 09:00 MSK — снова пора полить
+    metadata: { missed_since: '2026-10-24T06:00:00.000Z' }
+  }
+
+  const { today, missed } = splitNeedWateringPlants([plant], { now, timeZone: MSK })
+
+  assert.deepEqual(today.map(item => item.id), [9])
+  assert.equal(missed.length, 0)
+})
+
+test('split: пропуск остаётся в «Пропущенных», если следующий полив ещё не сегодня', () => {
+  const now = new Date('2026-10-25T09:00:00.000Z')
+  const plant = {
+    id: 10,
+    next_watering_at: '2026-10-27T06:00:00.000Z',
+    metadata: { missed_since: '2026-10-24T06:00:00.000Z' }
+  }
+
+  const { today, missed } = splitNeedWateringPlants([plant], { now, timeZone: MSK })
+
+  assert.equal(today.length, 0)
+  assert.equal(missed.length, 1)
+  assert.equal(missed[0].plant.id, 10)
+})
+
 test('split: некорректный missed_since не превращает растение в пропущенное', () => {
   const now = new Date('2026-10-22T07:00:00.000Z')
   const plant = {

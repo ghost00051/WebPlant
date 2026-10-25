@@ -42,6 +42,29 @@
     white-space: nowrap;
   }
 
+  .desktopAllPlantsLink {
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: #eef2eb;
+    color: #2f6b47;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 650;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .desktopAllPlantsLink:hover {
+    background: #e3ece4;
+  }
+
+  .desktopAllPlantsLink:focus-visible {
+    outline: 2px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+  }
+
   .desktopDateBadge img {
     width: 14px;
     height: 14px;
@@ -253,9 +276,15 @@
   }
 
   html[data-theme='dark'] .desktopDateBadge,
+  html[data-theme='dark'] .desktopAllPlantsLink,
   html[data-theme='dark'] .desktopDashboardAssistant,
   html[data-theme='dark'] .plantRender {
     background: var(--theme-accent-soft);
+  }
+
+  html[data-theme='dark'] .desktopAllPlantsLink,
+  html[data-theme='dark'] .desktopAllPlantsLink:hover {
+    color: var(--theme-text);
   }
 
   html[data-theme='dark'] .homePageWatering,

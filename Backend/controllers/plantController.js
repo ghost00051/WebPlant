@@ -3,6 +3,8 @@ import path from 'node:path'
 import Plant from '../models/Plant.js'
 import PlantPhoto from '../models/PlantPhoto.js'
 import WateringLog from '../models/WateringLog.js'
+import PlantCareLog from '../models/PlantCareLog.js'
+import Notification from '../models/Notification.js'
 import sequelize from '../db.js'
 import { Op } from 'sequelize'
 import {
@@ -18,6 +20,13 @@ import {
 } from '../services/aiService.js'
 import { logAiAdvice } from '../utils/aiAdviceLog.js'
 import { removePlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
+import {
+    POPULAR_SPECIES_MAX_SPECIES_LENGTH,
+    POPULAR_SPECIES_MIN_SPECIES_LENGTH,
+    POPULAR_SPECIES_SQL,
+    buildPopularSpeciesPayload,
+    parsePopularSpeciesLimit
+} from '../utils/popularSpecies.js'
 import {
     generateWateringOccurrences,
     findFirstWateringAfter,
@@ -47,6 +56,11 @@ import User from '../models/userModels.js'
 import { resolveHemisphere, resolveTimeZone } from '../utils/timeZone.js'
 import { recalculatePrediction, resetPrediction } from '../services/wateringLearning.js'
 import { buildPredictionMetadata } from '../utils/wateringPrediction.js'
+import { careTitleFor, normalizeCareActionPayload, serializeCareLog } from '../utils/careLogs.js'
+import { buildCareSchedule } from '../utils/careSchedule.js'
+import { buildDefaultCarePlan } from '../utils/careKnowledge.js'
+import { detectPlantGroup } from '../utils/wateringKnowledge.js'
+import carePlanService from '../services/carePlanService.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
@@ -54,6 +68,33 @@ const WATERING_DUPLICATE_WINDOW_MS = 60 * 1000
 const MAX_METADATA_BYTES = 8 * 1024
 const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips', 'prediction']
 const DEFAULT_SCHEDULE_DAYS = 7
+const POPULAR_SPECIES_CACHE_TTL_MS = 5 * 60 * 1000
+const CARE_HISTORY_DAYS = 365
+const DAY_MS = 24 * 60 * 60 * 1000
+
+let popularSpeciesCache = null
+
+function readPopularSpeciesCache(limit) {
+    if (!popularSpeciesCache) return null
+    if (popularSpeciesCache.expiresAt <= Date.now()) {
+        popularSpeciesCache = null
+        return null
+    }
+    if (popularSpeciesCache.limit !== limit) return null
+    return popularSpeciesCache.payload
+}
+
+function writePopularSpeciesCache(limit, payload) {
+    popularSpeciesCache = {
+        limit,
+        payload,
+        expiresAt: Date.now() + POPULAR_SPECIES_CACHE_TTL_MS
+    }
+}
+
+function invalidatePopularSpeciesCache() {
+    popularSpeciesCache = null
+}
 
 function computeHoursLate(scheduledFor, actionAt) {
     if (!scheduledFor) return null
@@ -163,6 +204,38 @@ class PlantController {
             console.error('❌ Ошибка подсказки вида растения:', error)
             return res.status(503).json({
                 message: error.message || 'Сервис подсказок временно недоступен'
+            })
+        }
+    }
+
+    async getPopularSpecies(req, res) {
+        const limit = parsePopularSpeciesLimit(req.query?.limit)
+        try {
+            const cached = readPopularSpeciesCache(limit)
+            if (cached) return res.json(cached)
+
+            const rows = await sequelize.query(POPULAR_SPECIES_SQL, {
+                replacements: {
+                    limit,
+                    minLength: POPULAR_SPECIES_MIN_SPECIES_LENGTH,
+                    maxLength: POPULAR_SPECIES_MAX_SPECIES_LENGTH
+                },
+                type: sequelize.QueryTypes.SELECT
+            })
+
+            const payload = buildPopularSpeciesPayload(rows, { limit })
+            writePopularSpeciesCache(limit, payload)
+            return res.json(payload)
+        } catch (error) {
+            console.error('❌ Ошибка популярных видов растений:', error)
+
+            const cached = readPopularSpeciesCache(limit)
+            if (cached) return res.json(cached)
+
+            return res.status(200).json({
+                items: [],
+                totalSpecies: 0,
+                generatedAt: new Date().toISOString()
             })
         }
     }
@@ -708,6 +781,7 @@ class PlantController {
                 include: [{ model: PlantPhoto, as: 'photos' }]
             })
 
+            invalidatePopularSpeciesCache()
             return res.status(201).json(result)
         } catch (error) {
             if (t && !t.finished) await t.rollback()
@@ -995,6 +1069,7 @@ class PlantController {
             await transaction.commit()
             transaction = null
 
+            invalidatePopularSpeciesCache()
             return res.json(plant)
         } catch (error) {
             if (transaction && !transaction.finished) await transaction.rollback()
@@ -1048,6 +1123,7 @@ class PlantController {
                 console.warn('⚠️ Не удалось удалить файлы фото растения:', error?.message || error)
             }
 
+            invalidatePopularSpeciesCache()
             return res.json({ message: 'Растение удалено' })
         } catch (error) {
             if (transaction && !transaction.finished) {
@@ -1200,6 +1276,39 @@ class PlantController {
                     scheduled_for: log.scheduled_for,
                     hours_late: log.hours_late,
                     note: log.note
+                })
+            }
+
+            const careLogs = await PlantCareLog.findAll({
+                where: {
+                    user_id: userId,
+                    plant_id: { [Op.in]: [...plantsById.keys()] }
+                },
+                order: [['performed_at', 'DESC'], ['id', 'DESC']],
+                limit: 300,
+                raw: true
+            })
+
+            for (const log of careLogs) {
+                const plant = plantsById.get(log.plant_id)
+                if (!plant) continue
+
+                pushEvent(zonedDayKey(log.performed_at, timeZone), {
+                    kind: 'care',
+                    action_code: log.action_code,
+                    title: careTitleFor(log.action_code),
+                    product_name: log.product_name ?? null,
+                    dose: log.dose ?? null,
+                    method: log.method ?? null,
+                    log_id: log.id,
+                    performed_at: log.performed_at,
+                    plant: {
+                        id: plant.id,
+                        name: plant.name,
+                        species: plant.species,
+                        location: plant.location,
+                        photo_url: plant.photo_url
+                    }
                 })
             }
 
@@ -1566,6 +1675,222 @@ class PlantController {
         } catch (error) {
             if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка удаления записи о поливе:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async listCareActions(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId }
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const pagination = parsePagination(req.query, { defaultLimit: 20, maxLimit: 50 })
+            if (!pagination) {
+                return res.status(400).json({ message: 'Параметры limit и offset должны быть целыми числами в допустимом диапазоне' })
+            }
+            const { limit, offset } = pagination
+
+            const logs = await PlantCareLog.findAndCountAll({
+                where: { plant_id: plant.id, user_id: userId },
+                order: [['performed_at', 'DESC'], ['id', 'DESC']],
+                limit,
+                offset
+            })
+
+            return res.json({
+                items: logs.rows.map(row => serializeCareLog(row, { plantName: plant.name })),
+                total: logs.count,
+                limit,
+                offset
+            })
+        } catch (error) {
+            console.error('❌ Ошибка журнала ухода:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async createCareAction(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId }
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const now = new Date()
+            const normalized = normalizeCareActionPayload(req.body, { now })
+            if (!normalized.ok) {
+                return res.status(400).json({ message: normalized.error })
+            }
+
+            const rawNotificationId = req.body?.notification_id
+            const notificationId = Number.isInteger(rawNotificationId) && rawNotificationId > 0
+                ? rawNotificationId
+                : null
+
+            const log = await PlantCareLog.create({
+                user_id: userId,
+                plant_id: plant.id,
+                action_code: normalized.value.action_code,
+                product_name: normalized.value.product_name,
+                dose: normalized.value.dose,
+                method: normalized.value.method,
+                note: normalized.value.note,
+                performed_at: normalized.value.performed_at,
+                notification_id: notificationId,
+                metadata: {}
+            })
+
+            if (notificationId) {
+                try {
+                    const notification = await Notification.findOne({
+                        where: { id: notificationId, user_id: userId }
+                    })
+                    if (notification) {
+                        const payload = isPlainObject(notification.payload)
+                            ? notification.payload
+                            : {}
+                        await notification.update({
+                            read_at: notification.read_at ?? now,
+                            payload: { ...payload, done_at: now.toISOString() }
+                        })
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Не удалось обновить уведомление об уходе:', error?.message || error)
+                }
+            }
+
+            return res.status(201).json({
+                item: serializeCareLog(log, { plantName: plant.name })
+            })
+        } catch (error) {
+            console.error('❌ Ошибка отметки ухода:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async deleteCareAction(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId }
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const log = await PlantCareLog.findOne({
+                where: {
+                    id: req.params.logId,
+                    plant_id: plant.id,
+                    user_id: userId
+                }
+            })
+            if (!log) return res.status(404).json({ message: 'Запись ухода не найдена' })
+
+            await log.destroy()
+            return res.json({ removed: true })
+        } catch (error) {
+            console.error('❌ Ошибка удаления отметки ухода:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async latestCareActions(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const pagination = parsePagination(req.query, { defaultLimit: 200, maxLimit: 200 })
+            if (!pagination) {
+                return res.status(400).json({ message: 'Параметр limit должен быть целым числом в допустимом диапазоне' })
+            }
+
+            const logs = await PlantCareLog.findAll({
+                where: { user_id: userId },
+                order: [['performed_at', 'DESC'], ['id', 'DESC']],
+                limit: pagination.limit,
+                raw: true
+            })
+
+            const seenPlantIds = new Set()
+            const items = []
+            for (const log of logs) {
+                if (seenPlantIds.has(log.plant_id)) continue
+                seenPlantIds.add(log.plant_id)
+                items.push({
+                    plant_id: log.plant_id,
+                    action_code: log.action_code,
+                    title: careTitleFor(log.action_code),
+                    product_name: log.product_name ?? null,
+                    dose: log.dose ?? null,
+                    performed_at: log.performed_at ?? null
+                })
+            }
+
+            return res.json({ items })
+        } catch (error) {
+            console.error('❌ Ошибка последних действий ухода:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async getCareSchedule(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const rawDays = req.query?.days
+            const parsedDays = rawDays === undefined ? 90 : Number(rawDays)
+            const days = Number.isInteger(parsedDays)
+                ? Math.min(180, Math.max(1, parsedDays))
+                : 90
+
+            const now = new Date()
+            const timeZone = await getUserTimeZone(userId)
+            const plants = await Plant.findAll({
+                where: { user_id: userId, is_active: true },
+                attributes: ['id', 'name', 'species'],
+                order: [['id', 'ASC']]
+            })
+            const plantIds = plants.map(plant => plant.id)
+            if (!plantIds.length) return res.json({ items: [], days })
+
+            const planRows = await carePlanService.loadPlans(plantIds)
+            const since = new Date(now.getTime() - CARE_HISTORY_DAYS * DAY_MS)
+            const logs = await PlantCareLog.findAll({
+                where: {
+                    user_id: userId,
+                    plant_id: { [Op.in]: plantIds },
+                    performed_at: { [Op.gte]: since }
+                },
+                attributes: ['plant_id', 'action_code', 'performed_at'],
+                order: [['performed_at', 'DESC']],
+                raw: true
+            })
+
+            const schedulePlants = plants.map(plant => {
+                const storedPlan = planRows.get(plant.id)?.plan
+                const plan = isPlainObject(storedPlan)
+                    ? storedPlan
+                    : buildDefaultCarePlan({
+                        plant,
+                        group: detectPlantGroup({ name: plant.name, species: plant.species })
+                    })
+                return { id: plant.id, name: plant.name, plan }
+            })
+
+            const schedule = buildCareSchedule({ plants: schedulePlants, logs, now, days, timeZone })
+            return res.json({ items: schedule.items, days })
+        } catch (error) {
+            console.error('❌ Ошибка расписания ухода:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }

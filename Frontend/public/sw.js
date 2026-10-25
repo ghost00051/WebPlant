@@ -1,7 +1,29 @@
-const CACHE_VERSION = 'v9'
+const CACHE_VERSION = 'v10'
 const CACHE_NAME = `ctp-${CACHE_VERSION}`
 const DEFAULT_API_BASE = '/api'
 const VALID_API_PROTOCOLS = ['http:', 'https:']
+
+const API_CACHE_NAME = 'ctp-api-v1'
+const API_CACHE_TTL_MS = 12 * 60 * 60 * 1000
+const API_CACHE_TIMESTAMP_HEADER = 'X-Offline-Cached-At'
+const OFFLINE_CACHE_MARKER_HEADER = 'X-Offline-Cache'
+const API_CACHEABLE_PATHS = new Set([
+    '/plants',
+    '/plants/need-watering',
+    '/plants/schedule',
+    '/plants/timeline',
+    '/notifications/unread-count'
+])
+
+const WATERING_QUEUE_DB_NAME = 'webplant-offline'
+const WATERING_QUEUE_DB_VERSION = 1
+const WATERING_QUEUE_STORE_NAME = 'watering-queue'
+const WATERING_QUEUE_SYNC_TAG = 'watering-queue'
+const WATERING_QUEUE_CHANGED_MESSAGE = 'watering-queue-changed'
+const WATERING_QUEUE_MAX_ATTEMPTS = 5
+
+const PRESERVED_CACHE_NAMES = new Set([API_CACHE_NAME])
+
 const GARDEN_PATH_PATTERN = /^\/garden\/[A-Za-z0-9_-]{16,64}\/?$/
 
 const PRECACHE_URLS = [
@@ -73,6 +95,19 @@ self.addEventListener('message', (event) => {
             console.warn('⚠️ SW: не удалось отправить версию клиенту:', error)
         }
     }
+
+    if (data.type === 'CLEAR_API_CACHE') {
+        event.waitUntil((async () => {
+            await clearApiCache()
+
+            if (!event.source) return
+            try {
+                event.source.postMessage({ type: 'API_CACHE_CLEARED' })
+            } catch (error) {
+                console.warn('⚠️ SW: не удалось подтвердить очистку кэша API:', error)
+            }
+        })())
+    }
 })
 
 self.addEventListener('activate', (event) => {
@@ -82,7 +117,7 @@ self.addEventListener('activate', (event) => {
             const cacheNames = await caches.keys()
             await Promise.all(
                 cacheNames
-                    .filter((name) => name !== CACHE_NAME)
+                    .filter((name) => name !== CACHE_NAME && !PRESERVED_CACHE_NAMES.has(name))
                     .map((name) => caches.delete(name))
             )
         } catch (error) {
@@ -168,12 +203,143 @@ function isGardenNavigation(request) {
     }
 }
 
+function resolveApiBaseUrl() {
+    try {
+        return new URL(API_BASE, self.location.origin)
+    } catch {
+        return null
+    }
+}
+
+function isCacheableApiRequest(request) {
+    if (!request || request.method !== 'GET') return false
+
+    try {
+        const requestUrl = new URL(request.url)
+        const baseUrl = resolveApiBaseUrl()
+        if (!baseUrl) return false
+        if (requestUrl.origin !== baseUrl.origin) return false
+
+        const basePath = baseUrl.pathname.replace(/\/+$/, '')
+        if (basePath && requestUrl.pathname !== basePath &&
+            !requestUrl.pathname.startsWith(`${basePath}/`)) {
+            return false
+        }
+
+        const apiPath = requestUrl.pathname.slice(basePath.length)
+        const normalizedPath = apiPath.length > 1
+            ? apiPath.replace(/\/+$/, '')
+            : apiPath
+        return API_CACHEABLE_PATHS.has(normalizedPath)
+    } catch {
+        return false
+    }
+}
+
+function offlineJsonResponse() {
+    return new Response(
+        JSON.stringify({ message: 'Нет подключения к сети, сохранённых данных пока нет' }),
+        {
+            status: 503,
+            statusText: 'Offline',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' }
+        }
+    )
+}
+
+async function clearApiCache() {
+    try {
+        await caches.delete(API_CACHE_NAME)
+    } catch (error) {
+        console.warn('⚠️ SW: не удалось очистить кэш API:', error)
+    }
+}
+
+async function writeApiCache(request, response) {
+    if (!response || !response.ok || response.status !== 200) return
+    if (response.type !== 'basic' && response.type !== 'cors') return
+
+    try {
+        const cache = await caches.open(API_CACHE_NAME)
+        const headers = new Headers(response.headers)
+        headers.set(API_CACHE_TIMESTAMP_HEADER, String(Date.now()))
+        const body = await response.arrayBuffer()
+        await cache.put(
+            request,
+            new Response(body, {
+                status: response.status,
+                statusText: response.statusText,
+                headers
+            })
+        )
+    } catch (error) {
+        console.warn('⚠️ SW: не удалось сохранить ответ API в кэш:', error)
+    }
+}
+
+async function readApiCache(request) {
+    try {
+        const cache = await caches.open(API_CACHE_NAME)
+        const cached = await cache.match(request)
+        if (!cached) return null
+
+        const cachedAt = Number(cached.headers.get(API_CACHE_TIMESTAMP_HEADER))
+        if (!Number.isFinite(cachedAt) || cachedAt <= 0 ||
+            Date.now() - cachedAt > API_CACHE_TTL_MS) {
+            await cache.delete(request)
+            return null
+        }
+
+        const headers = new Headers(cached.headers)
+        headers.delete(API_CACHE_TIMESTAMP_HEADER)
+        headers.set(OFFLINE_CACHE_MARKER_HEADER, '1')
+
+        const body = await cached.clone().arrayBuffer()
+        return new Response(body, {
+            status: cached.status,
+            statusText: cached.statusText,
+            headers
+        })
+    } catch (error) {
+        console.warn('⚠️ SW: не удалось прочитать кэш API:', error)
+        return null
+    }
+}
+
+async function handleCacheableApiRequest(request) {
+    let response
+
+    try {
+        response = await fetch(request)
+    } catch (error) {
+        console.log('📴 SW: API недоступен, отдаём кэш:', error)
+        return (await readApiCache(request)) || offlineJsonResponse()
+    }
+
+    if (response.status === 401) {
+        await clearApiCache()
+        return response
+    }
+
+    if (response.status === 200) {
+        const responseForCache = response.clone()
+        await writeApiCache(request, responseForCache)
+    }
+
+    return response
+}
+
 self.addEventListener('fetch', (event) => {
     const req = event.request
 
     if (req.method !== 'GET') return
 
     const url = new URL(req.url)
+
+    if (isCacheableApiRequest(req)) {
+        event.respondWith(handleCacheableApiRequest(req))
+        return
+    }
 
     if (
         url.pathname.startsWith('/api/') ||
@@ -223,6 +389,212 @@ self.addEventListener('fetch', (event) => {
             return new Response('', { status: 504, statusText: 'Offline' })
         }
     })())
+})
+
+
+function openWateringQueueDatabase() {
+    if (typeof indexedDB === 'undefined') return Promise.resolve(null)
+
+    return new Promise((resolve) => {
+        let request
+        try {
+            request = indexedDB.open(WATERING_QUEUE_DB_NAME, WATERING_QUEUE_DB_VERSION)
+        } catch (error) {
+            console.warn('⚠️ SW: не удалось открыть офлайн-очередь:', error)
+            resolve(null)
+            return
+        }
+
+        request.onupgradeneeded = () => {
+            const database = request.result
+            if (!database.objectStoreNames.contains(WATERING_QUEUE_STORE_NAME)) {
+                database.createObjectStore(WATERING_QUEUE_STORE_NAME, {
+                    keyPath: 'id',
+                    autoIncrement: true
+                })
+            }
+        }
+        request.onsuccess = () => resolve(request.result)
+        request.onerror = () => resolve(null)
+        request.onblocked = () => resolve(null)
+    })
+}
+
+function withWateringQueueStore(database, mode, run) {
+    return new Promise((resolve) => {
+        let transaction
+        try {
+            transaction = database.transaction(WATERING_QUEUE_STORE_NAME, mode)
+        } catch (error) {
+            console.warn('⚠️ SW: транзакция офлайн-очереди недоступна:', error)
+            resolve(null)
+            return
+        }
+
+        let settled = false
+        const finish = (value) => {
+            if (settled) return
+            settled = true
+            resolve(value)
+        }
+
+        transaction.onabort = () => finish(null)
+        transaction.onerror = () => finish(null)
+
+        try {
+            run(transaction.objectStore(WATERING_QUEUE_STORE_NAME), finish)
+        } catch (error) {
+            console.warn('⚠️ SW: ошибка работы с офлайн-очередью:', error)
+            finish(null)
+        }
+    })
+}
+
+async function readWateringQueue(database) {
+    const result = await withWateringQueueStore(database, 'readonly', (store, finish) => {
+        const request = store.getAll()
+        request.onsuccess = () => finish(Array.isArray(request.result) ? request.result : [])
+        request.onerror = () => finish([])
+    })
+    return Array.isArray(result) ? result : []
+}
+
+function putWateringQueueEntry(database, entry) {
+    return withWateringQueueStore(database, 'readwrite', (store, finish) => {
+        const request = store.put(entry)
+        request.onsuccess = () => finish(true)
+        request.onerror = () => finish(false)
+    })
+}
+
+function deleteWateringQueueEntry(database, id) {
+    return withWateringQueueStore(database, 'readwrite', (store, finish) => {
+        const request = store.delete(id)
+        request.onsuccess = () => finish(true)
+        request.onerror = () => finish(false)
+    })
+}
+
+function resolveQueuedWateringBody(entry) {
+    const scheduledFor = typeof entry?.scheduledFor === 'string'
+        ? entry.scheduledFor.trim()
+        : ''
+    if (!scheduledFor) return {}
+    return { scheduled_for: scheduledFor }
+}
+
+async function sendQueuedWatering(entry) {
+    const rawPlantId = entry?.plantId
+    const plantId = typeof rawPlantId === 'number'
+        ? String(rawPlantId)
+        : (typeof rawPlantId === 'string' ? rawPlantId.trim() : '')
+
+    if (!plantId || !/^[A-Za-z0-9_-]{1,64}$/.test(plantId)) return 'drop'
+
+    let response
+    try {
+        response = await fetch(
+            `${API_BASE}/plants/${encodeURIComponent(plantId)}/water`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(resolveQueuedWateringBody(entry))
+            }
+        )
+    } catch (error) {
+        console.warn('⚠️ SW: отметка полива не ушла в сеть, попробуем позже:', error)
+        return 'retry'
+    }
+
+    const status = response.status
+    if (status >= 200 && status < 300) return 'sent'
+    if (status === 409) return 'sent'
+    if (status >= 500 || status === 401) return 'retry'
+    if (status >= 400 && status < 500) return 'drop'
+    return 'retry'
+}
+
+async function processWateringQueue() {
+    const database = await openWateringQueueDatabase()
+    if (!database) return
+
+    let entries = []
+    try {
+        entries = await readWateringQueue(database)
+    } catch (error) {
+        console.warn('⚠️ SW: не удалось прочитать офлайн-очередь:', error)
+    }
+
+    if (!Array.isArray(entries) || !entries.length) {
+        try {
+            database.close()
+        } catch {
+            void 0
+        }
+        return
+    }
+
+    let sent = 0
+    let changed = false
+
+    for (const entry of entries) {
+        const outcome = await sendQueuedWatering(entry)
+
+        if (outcome === 'sent' || outcome === 'drop') {
+            if (outcome === 'drop') {
+                console.error('⚠️ SW: отметка полива отклонена сервером и удалена из очереди:', {
+                    plantId: entry?.plantId ?? null
+                })
+            } else {
+                sent += 1
+            }
+            await deleteWateringQueueEntry(database, entry.id)
+            changed = true
+            continue
+        }
+
+        const attempts = (Number.isInteger(entry?.attempts) && entry.attempts >= 0
+            ? entry.attempts
+            : 0) + 1
+
+        if (attempts >= WATERING_QUEUE_MAX_ATTEMPTS) {
+            console.error('⚠️ SW: отметка полива не отправлена после лимита попыток:', {
+                plantId: entry?.plantId ?? null,
+                attempts
+            })
+            await deleteWateringQueueEntry(database, entry.id)
+            changed = true
+            continue
+        }
+
+        await putWateringQueueEntry(database, {
+            ...entry,
+            attempts,
+            lastAttemptAt: Date.now()
+        })
+        changed = true
+    }
+
+    try {
+        database.close()
+    } catch {
+        void 0
+    }
+
+    if (!changed) return
+
+    await notifyClients({ type: WATERING_QUEUE_CHANGED_MESSAGE })
+
+    if (sent > 0) await syncAppBadge()
+}
+
+self.addEventListener('sync', (event) => {
+    if (event.tag !== WATERING_QUEUE_SYNC_TAG) return
+
+    console.log('🔄 SW: sync', event.tag)
+
+    event.waitUntil(processWateringQueue())
 })
 
 async function notifyClients(message) {

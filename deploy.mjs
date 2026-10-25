@@ -52,8 +52,9 @@ const config = loadedConfig.config
 const envKeys = Object.keys(process.env).filter(key => key.startsWith('DEPLOY_'))
 
 const opt = (name, fallback) => {
-    const envKey = `DEPLOY_${name.toUpperCase()}`
-    return process.env[envKey] ?? config[name] ?? fallback
+    const envKey = `DEPLOY_${name.replace(/([A-Z])/g, '_$1').toUpperCase()}`
+    const legacyEnvKey = `DEPLOY_${name.toUpperCase()}`
+    return process.env[envKey] ?? process.env[legacyEnvKey] ?? config[name] ?? fallback
 }
 
 const protocol = String(opt('protocol', 'ftp')).toLowerCase()
@@ -241,9 +242,7 @@ class FtpClient {
         for (const level of levels) {
             try {
                 await this.command(`MKD ${level}`, 257)
-            } catch {
-                /* уже существует */
-            }
+            } catch { void 0 }
         }
     }
 
@@ -395,6 +394,9 @@ function runBuild() {
 async function checkServed(files) {
     const problems = []
     const queue = [...files]
+    const canonicalRoutes = {
+        'garden.html': { directStatus: 404, canonicalPath: '/garden/AbCdEfGhIjKlMnOpQrSt' }
+    }
     const workers = Array.from({ length: 6 }, async () => {
         while (queue.length) {
             const file = queue.shift()
@@ -405,6 +407,25 @@ async function checkServed(files) {
                 if (isServiceFile) {
                     if (response.status !== 403 && response.status !== 404) {
                         problems.push(`${file.remote} → ${response.status} (служебный файл не должен отдаваться)`)
+                    }
+                    continue
+                }
+                const canonical = canonicalRoutes[file.remote]
+                if (canonical) {
+                    if (response.status !== canonical.directStatus) {
+                        problems.push(
+                            `${file.remote} → ${response.status} (ожидался ${canonical.directStatus}: .html-дубль закрыт намеренно)`
+                        )
+                    }
+                    const prettyResponse = await fetch(`${siteUrl}${canonical.canonicalPath}`, {
+                        redirect: 'manual',
+                        headers: { 'User-Agent': 'WebPlantDeploy/1.0' }
+                    }).catch(error => {
+                        problems.push(`${canonical.canonicalPath} → ${error.message} (${file.remote})`)
+                        return null
+                    })
+                    if (prettyResponse && prettyResponse.status !== 200) {
+                        problems.push(`${canonical.canonicalPath} → ${prettyResponse.status} (${file.remote}: ожидался 200)`)
                     }
                     continue
                 }
@@ -424,6 +445,7 @@ async function checkContent(files) {
     const problems = []
     const sample = [
         'index.html',
+        'garden.html',
         ...files.filter(file => /^plants-[a-z-]+\.html$/.test(file.remote)).slice(0, 2).map(file => file.remote),
         ...files.filter(file => /^care-[a-z-]+\.html$/.test(file.remote)).slice(0, 2).map(file => file.remote)
     ]

@@ -1103,3 +1103,126 @@ html[data-theme='dark'] .offScheduleWaterButton.is-pouring {
     animation-iteration-count: 1 !important;
   }
 }
+
+
+.plantOpenLink {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 12px;
+}
+
+.plantOpenLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.homePageAllPlantsLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.homePageAllPlantsLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.desktopAllPlantsLink {
+  display: none;
+}
+
+.homePageNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.homePageNotice>span:first-child {
+  min-width: 0;
+}
+
+.homePageNoticeDismiss {
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.homePageNoticeDismiss:hover {
+  background: rgba(45, 61, 50, 0.08);
+}
+
+.homePageNoticeDismiss:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.plantRender--first {
+  border-color: var(--theme-accent-text);
+  box-shadow: 0 6px 18px rgba(45, 61, 50, 0.08);
+}
+
+.watering-badge--first {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+.check-button--first {
+  width: auto;
+  height: 34px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+
+.check-button--first img {
+  width: 16px;
+  height: 16px;
+}
+
+.check-button--first span {
+  display: inline;
+  color: var(--theme-on-accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.check-button--first:disabled {
+  opacity: 0.75;
+}
+
+@media (max-width: 359px) {
+  .check-button--first span {
+    display: none;
+  }
+}

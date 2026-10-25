@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import BackBtn from '../../assets/BackBtn.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
+import CareActionSheet from '../careActions/CareActionSheet.jsx'
 import './myPlant.css'
 import './dark-theme.css'
 import search from '../../assets/search.svg'
 import xcircle from '../../assets/x-circle.svg'
 import { API_URL } from '../../utils/api.js'
+import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
+import { formatCareSummary } from '../../utils/careActionForm.js'
 import {
     dayOfMonth,
     diffInDays,
@@ -100,6 +103,8 @@ async function readResponse(response) {
 
 function MyPlant() {
     const navigate = useNavigate()
+    const location = useLocation()
+    const [searchParams, setSearchParams] = useSearchParams()
     const [plant, setPlant] = useState([])
     const [searchQuery, setSearchQuery] = useState('')
     const [isLoading, setIsLoading] = useState(true)
@@ -111,6 +116,9 @@ function MyPlant() {
     const [deleteTarget, setDeleteTarget] = useState(null)
     const [deleteError, setDeleteError] = useState('')
     const [isDeleting, setIsDeleting] = useState(false)
+    const [careSheetPlant, setCareSheetPlant] = useState(null)
+    const [latestCare, setLatestCare] = useState({})
+    const deepLinkHandledRef = useRef('')
 
     const getAllPlant = useCallback(async () => {
         setIsLoading(true)
@@ -145,6 +153,32 @@ function MyPlant() {
         loadPlants()
     }, [getAllPlant])
 
+    const loadLatestCare = useCallback(async () => {
+        try {
+            const response = await fetchWithTimeout(
+                `${API_URL}/plants/care-actions/latest`,
+                { method: 'GET', credentials: 'include' }
+            )
+            if (!response.ok) return
+            const data = await response.json().catch(() => ({}))
+            const items = Array.isArray(data?.items) ? data.items : []
+            const next = {}
+            for (const item of items) {
+                if (item && item.plant_id !== null && item.plant_id !== undefined) {
+                    next[item.plant_id] = item
+                }
+            }
+            setLatestCare(next)
+        } catch (error) {
+            console.warn('Не удалось загрузить последний уход:', error)
+        }
+    }, [])
+
+    useEffect(() => {
+        const load = async () => loadLatestCare()
+        load()
+    }, [loadLatestCare])
+
     useEffect(() => {
         if (!editingPlant && !deleteTarget) return undefined
 
@@ -161,7 +195,7 @@ function MyPlant() {
         return () => window.removeEventListener('keydown', handleKeyDown)
     }, [editingPlant, deleteTarget, isSaving, isDeleting])
 
-    const openEditor = selectedPlant => {
+    const openEditor = useCallback(selectedPlant => {
         setEditingPlant(selectedPlant)
         setEditForm({
             name: selectedPlant.name ?? '',
@@ -175,7 +209,28 @@ function MyPlant() {
                 : []
         })
         setEditError('')
-    }
+    }, [])
+
+    useEffect(() => {
+        if (isLoading) return undefined
+        const plantParam = searchParams.get('plant')
+        if (!plantParam) {
+            deepLinkHandledRef.current = ''
+            return undefined
+        }
+        if (deepLinkHandledRef.current === plantParam) return undefined
+        const target = plant.find(item => String(item.id) === plantParam)
+        if (!target) return undefined
+
+        const frame = window.requestAnimationFrame(() => {
+            deepLinkHandledRef.current = plantParam
+            openEditor(target)
+            const next = new URLSearchParams(searchParams)
+            next.delete('plant')
+            setSearchParams(next, { replace: true })
+        })
+        return () => window.cancelAnimationFrame(frame)
+    }, [isLoading, plant, searchParams, setSearchParams, openEditor])
 
     const closeEditor = () => {
         if (isSaving) return
@@ -274,6 +329,13 @@ function MyPlant() {
     const canRestrictWeekdays = weekdayRestrictionApplies(
         Number(editForm?.watering_interval_days)
     )
+    const goBack = () => {
+        if (location.key === 'default') {
+            navigate('/home', { replace: true })
+            return
+        }
+        navigate(-1)
+    }
 
     return (
         <main className='gofOfMyplants'>
@@ -281,7 +343,7 @@ function MyPlant() {
                 <button
                     type='button'
                     className='myPlantsBackButton'
-                    onClick={() => navigate(-1)}
+                    onClick={goBack}
                     aria-label='Назад'
                 >
                     <ThemedIcon src={BackBtn} alt='' />
@@ -340,6 +402,7 @@ function MyPlant() {
                             ? formatDayMonth(item.last_watered_at)
                             : ''
                         const interval = Number(item.watering_interval_days)
+                        const lastCare = latestCare[item.id]
 
                         return (
                             <article key={item.id} className='plantRenderOfPants'>
@@ -377,6 +440,9 @@ function MyPlant() {
                                         </dd>
                                     </div>
                                 </dl>
+                                <p className='plantCardLastCare'>
+                                    Последний уход: {lastCare ? formatCareSummary(lastCare) : 'нет данных'}
+                                </p>
                                 {status ? (
                                     <p className={`plantCardStatus plantCardStatus--${status.tone}`}>
                                         <span className='plantCardStatusDot' aria-hidden='true' />
@@ -388,7 +454,18 @@ function MyPlant() {
                                     </p>
                                 )}
                                 <div className='buttonEditPlants'>
-                                    <button type='button' onClick={() => openEditor(item)}>
+                                    <button
+                                        type='button'
+                                        className='careActionButton'
+                                        onClick={() => setCareSheetPlant(item)}
+                                    >
+                                        Уход
+                                    </button>
+                                    <button
+                                        type='button'
+                                        className='editPlantButton'
+                                        onClick={() => openEditor(item)}
+                                    >
                                         Изменить
                                     </button>
                                     <button
@@ -607,6 +684,30 @@ function MyPlant() {
                     </section>
                 </div>
             )}
+            <CareActionSheet
+                open={Boolean(careSheetPlant)}
+                plantId={careSheetPlant?.id ?? null}
+                plants={plant}
+                initialAction='fertilize'
+                onClose={() => setCareSheetPlant(null)}
+                onSaved={savedItem => {
+                    const savedPlantId = savedItem?.plant_id ??
+                        savedItem?.plantId ??
+                        careSheetPlant?.id
+                    if (savedPlantId === null || savedPlantId === undefined) {
+                        void loadLatestCare()
+                        return
+                    }
+                    if (!savedItem || typeof savedItem !== 'object') {
+                        void loadLatestCare()
+                        return
+                    }
+                    setLatestCare(current => ({
+                        ...current,
+                        [savedPlantId]: savedItem
+                    }))
+                }}
+            />
         </main>
     )
 }

@@ -65,16 +65,16 @@ data:
 
   BACKGROUND_JOBS_ENABLED: "true"
 
-  # Docker-статистика compose-контейнеров из пода. docker-socket-proxy подключён к сети
-  # kind со статическим адресом 172.20.0.250 (это делает deploy.ps1, там же константа):
-  # поды k8s видят docker-сети по IP, а 127.0.0.1/имя контейнера им недоступны.
-  # Если панель показывает «Docker недоступен», значит связка отвалилась после перезапуска
-  # Docker Desktop — повторный deploy.ps1 её восстановит.
+  REMINDER_TICK_BATCH_SIZE: "500"
+  REMINDER_TICK_MAX_BATCHES: "20"
+  REMINDER_PUSH_CONCURRENCY: "5"
+
+  FEATURE_GARDEN_SHARING: "on"
+  FEATURE_SOCIAL_FEED: "off"
+  FEATURE_SOCIAL_COMMENTS: "off"
+  SOCIAL_CRITICAL_MASS: "50"
+
   DOCKER_STATS_ENABLED: "true"
   DOCKER_HOST: "tcp://172.20.0.250:2375"
-  # В панель попадают только контейнеры этого compose-проекта и контейнеры без метки
-  # проекта (ctp_k8s_gateway); соседние проекты на том же Docker-хосте не мешают.
   DOCKER_COMPOSE_PROJECT: "backend"
-  # Остановленные намеренно: в k8s-режиме compose-бэкенд и разовый migrate выключены,
-  # иначе последует двойная отправка напоминаний и push (см. k8s/README.md).
   DOCKER_EXPECTED_STOPPED: "ctp_backend,ctp_migrate"

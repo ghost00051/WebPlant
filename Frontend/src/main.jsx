@@ -1,6 +1,7 @@
 import { createRoot, hydrateRoot } from 'react-dom/client';
 import App from './App.jsx';
 import ErrorBoundary from './component/ErrorBoundary/ErrorBoundary.jsx';
+import OfflineBanner from './component/OfflineBanner/OfflineBanner.jsx';
 import { registerServiceWorker } from './utils/pushNotifications.js';
 import { startVisitTracking } from './utils/visits.js';
 import './utils/pwaInstall.js';
@@ -27,6 +28,16 @@ function cleanupPrerenderedSkeleton (rootElement, attempt = 0) {
 
     delete rootElement.dataset.skeleton
     document.getElementById('app-private-skeleton')?.remove()
+}
+
+function mountOfflineBanner () {
+    if (typeof document === 'undefined' || !document.body) return
+    if (document.getElementById('offline-banner-root')) return
+
+    const container = document.createElement('div')
+    container.id = 'offline-banner-root'
+    document.body.appendChild(container)
+    createRoot(container).render(<OfflineBanner />)
 }
 
 const rootElement = document.getElementById('root')
@@ -56,5 +67,7 @@ if (rootElement.dataset.prerendered === 'true') {
         }
     }
 }
+
+mountOfflineBanner()
 
 startVisitTracking()

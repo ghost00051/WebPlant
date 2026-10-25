@@ -60,3 +60,16 @@ html[data-theme='dark'] .offScheduleToggle:hover {
     background: var(--theme-raised);
     border-color: #4a4d55;
 }
+
+html[data-theme='dark'] .plantRender--first {
+    border-color: var(--theme-accent);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme='dark'] .homePageAllPlantsLink {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .homePageNoticeDismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+}

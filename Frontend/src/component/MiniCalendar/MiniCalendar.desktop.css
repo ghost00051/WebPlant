@@ -88,6 +88,22 @@
     height: 4px;
   }
 
+  .mini-calendar__month-day .mini-calendar__care-dots {
+    height: auto;
+    margin-top: 0;
+    gap: 2px;
+  }
+
+  .mini-calendar__month-day .mini-calendar__care-dots .care-dot {
+    width: 4px;
+    height: 4px;
+    animation: none;
+  }
+
+  .mini-calendar__month-day.is-outside .mini-calendar__care-dots {
+    opacity: 0.6;
+  }
+
   .mini-calendar__month-day.is-outside .mini-calendar__dots {
     opacity: 0.6;
   }
@@ -102,6 +118,18 @@
 
   .mini-calendar__month-day.is-today .dot--overdue {
     background: #f4c6c6;
+  }
+
+  .mini-calendar__month-day.is-today .care-dot--feed {
+    background: #c8e9d5;
+  }
+
+  .mini-calendar__month-day.is-today .care-dot--spray {
+    background: #d3e5f3;
+  }
+
+  .mini-calendar__month-day.is-today .care-dot--other {
+    background: #e2e5e7;
   }
 
   .mini-calendar__month-day:hover {

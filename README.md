@@ -20,7 +20,7 @@
 | Компонент | Версия | Файл |
 | --- | --- | --- |
 | Backend | **1.2.6** | `Backend/package.json` |
-| Frontend | **1.2.20** | `Frontend/package.json` |
+| Frontend | **1.2.28** | `Frontend/package.json` |
 
 Версии независимы: фронт выкладывается по FTP отдельно от backend, поэтому контракт `/api`
 должен оставаться обратно совместимым (см. `docs/api/openapi.yaml` и `CHANGELOG.md`).
@@ -39,15 +39,20 @@
 * аутентификация: `jsonwebtoken` (JWT в httpOnly cookie) + `auth_sessions` для отзыва,
   `bcrypt`, passkeys через `@simplewebauthn/server`;
 * `web-push` (VAPID), in-app уведомления в БД;
+* feature flags соцфич (`utils/featureFlags.js`): шаринг сада включён, лента и
+  комментарии выключены до критической массы шарингов;
 * `nodemailer` (SMTP) — сброс пароля, приветственные письма, рассылки из админки;
 * `multer` + `sharp` (загрузка фото и миниатюры), `helmet`, `cors`, `express-rate-limit`,
   `node-cron`, `dockerode` (телеметрия контейнеров в админке).
 
-**Frontend 1.2.20**
+**Frontend 1.2.28**
 
 * React 19, `react-router-dom` 7, `react-day-picker`, сборка Vite 8 (rolldown);
 * PWA-манифест, service worker, темы оформления, passkeys в браузере
   (`@simplewebauthn/browser`);
+* офлайн-режим PWA: кэш расписания в service worker, очередь отметок полива в
+  IndexedDB (+ Background Sync, повтор при восстановлении сети), индикатор сети и
+  плашка «доступна новая версия»;
 * публичные страницы предгенерируются скриптом `scripts/prerender.mjs`, SEO-мета —
   `scripts/generate-seo-meta.mjs`;
 * админка `Frontend/admin/` — статический сайт (HTML + CSS + ES-модули) без сборки,

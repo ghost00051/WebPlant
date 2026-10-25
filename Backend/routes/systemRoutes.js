@@ -6,6 +6,8 @@ import { requireAdmin } from '../middleware/admin.js'
 import { optionalAuth } from '../middleware/auth.js'
 import { getHttpMetrics } from '../middleware/accessLog.js'
 import visitController from '../controllers/visitController.js'
+import GardenShare from '../models/GardenShare.js'
+import { getSocialFeatureState } from '../utils/featureFlags.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 import {
     MAX_LOG_RESPONSE_LENGTH,
@@ -196,7 +198,6 @@ async function readContainerLogs(container, tail) {
 
     if (Buffer.isBuffer(raw) || typeof raw === 'string') return normalizeDockerLogs(raw)
 
-    // На случай stream-режима (некоторые версии dockerode): собираем чанки с тем же таймаутом.
     if (raw && typeof raw.on === 'function') {
       return await new Promise((resolve, reject) => {
         const chunks = []
@@ -206,7 +207,6 @@ async function readContainerLogs(container, tail) {
       })
     }
 
-    // dockerode пытается распарсить тело как JSON; для контейнера с JSON-only выводом вернём текст.
     if (raw && typeof raw === 'object') return normalizeDockerLogs(JSON.stringify(raw))
 
     return normalizeDockerLogs('')
@@ -269,7 +269,6 @@ async function collectContainer(info) {
       inspectError = error
     }
 
-    // Для остановленных контейнеров stats() не запрашиваем: это лишняя нагрузка и шум в логах.
     let stats = null
     if (info.State === 'running') {
       try {
@@ -298,7 +297,6 @@ async function collectContainer(info) {
       ...(stats ? buildResourceStats(stats) : emptyResourceStats()),
     }
   } catch (error) {
-    // Ошибка одного контейнера не должна ронять весь ответ.
     console.error(`Docker: не удалось собрать данные контейнера ${name}: ${error?.message || error?.code || 'unknown'}`)
     return emptyContainerFallback(info, error)
   }
@@ -311,10 +309,6 @@ let cache = {
 
 const CACHE_TTL = 3000
 
-/**
- * Docker-статистика compose-стека. Возвращает либо готовый payload, либо описание,
- * почему Docker недоступен — вызывающий код решает, отдавать 200 или 503.
- */
 async function collectDockerStats() {
   if (dockerConfigReason) {
     return dockerUnavailable(dockerConfigReason)
@@ -348,10 +342,6 @@ async function collectDockerStats() {
   return payload
 }
 
-/**
- * Поды namespace через API кластера. Вне Kubernetes (или без RBAC) возвращает
- * error, но не роняет маршрут: ниже есть fallback на Docker-статистику.
- */
 async function collectKubernetesStats() {
   const config = kubernetesConfig()
   if (!config) {
@@ -385,6 +375,23 @@ async function collectKubernetesStats() {
   }
 }
 
+async function countActiveGardenShares() {
+  try {
+    return await GardenShare.count({ where: { revoked_at: null } })
+  } catch (error) {
+    console.warn(
+      '⚠️ /api/system/features: не удалось посчитать шаринги сада:',
+      error?.message || error
+    )
+    return null
+  }
+}
+
+router.get('/features', async (req, res) => {
+  const shareCount = await countActiveGardenShares()
+  return res.json(getSocialFeatureState({ shareCount }))
+})
+
 router.get('/metrics', requireAdmin, (req, res) => {
   res.json(getHttpMetrics())
 })
@@ -416,8 +423,6 @@ router.get('/docker-stats', requireAdmin, async (req, res) => {
   }
 
   if (dockerPart.available) {
-    // В Kubernetes, но без доступа к API: показываем docker-контейнеры и предупреждаем
-    // о проблеме с подами, чтобы она не потерялась в тишине.
     const kubernetesError = kubernetes.error && kubernetes.error.reason !== 'not_configured'
       ? kubernetes.error
       : null

@@ -2,6 +2,11 @@ import { Op, QueryTypes } from 'sequelize'
 import sequelize from '../db.js'
 import Notification from '../models/Notification.js'
 import { hasNotificationClicks } from '../utils/adminSchema.js'
+import {
+    buildUnreadByCategory,
+    categoryWhere,
+    parseNotificationCategory
+} from '../utils/notificationCategories.js'
 
 const LIST_ATTRIBUTES = [
     'id',
@@ -10,6 +15,7 @@ const LIST_ATTRIBUTES = [
     'title',
     'body',
     'url',
+    'payload',
     'scheduled_for',
     'read_at',
     'created_at'
@@ -94,8 +100,19 @@ class NotificationController {
                 })
             }
 
-            const where = { user_id: req.user.id, ...STATUS_FILTERS[status]() }
-            const [result, unreadCount] = await Promise.all([
+            const category = parseNotificationCategory(req.query.category)
+            if (!category) {
+                return res.status(400).json({
+                    message: 'Параметр category должен принимать значение all, watering или care'
+                })
+            }
+
+            const where = {
+                user_id: req.user.id,
+                ...STATUS_FILTERS[status](),
+                ...categoryWhere(category)
+            }
+            const [result, unreadRows] = await Promise.all([
                 Notification.findAndCountAll({
                     where,
                     attributes: LIST_ATTRIBUTES,
@@ -104,17 +121,21 @@ class NotificationController {
                     offset: pagination.offset
                 }),
                 Notification.count({
-                    where: { user_id: req.user.id, read_at: null }
+                    where: { user_id: req.user.id, read_at: null },
+                    group: ['type']
                 })
             ])
 
             const items = result.rows.map(notification => notification.toJSON())
             const nextOffset = pagination.offset + items.length
+            const unreadByCategory = buildUnreadByCategory(unreadRows)
 
             return res.json({
                 items,
                 total: result.count,
-                unreadCount,
+                unreadCount: unreadByCategory.all,
+                unreadByCategory,
+                category,
                 status,
                 limit: pagination.limit,
                 offset: pagination.offset,

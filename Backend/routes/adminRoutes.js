@@ -6,6 +6,7 @@ import adminAiController from '../controllers/adminAiController.js'
 import { requireAdmin } from '../middleware/admin.js'
 import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
+import { getReminderTickMetrics } from '../utils/reminderTickMetrics.js'
 
 const router = Router()
 
@@ -51,6 +52,15 @@ router.get('/audit', adminManageController.listAudit)
 
 router.get('/ai/metrics', adminAiController.getMetrics)
 router.get('/ai/logs', adminAiController.getLogs)
+
+router.get('/reminder-metrics', (req, res) => {
+    try {
+        return res.json(getReminderTickMetrics())
+    } catch (error) {
+        console.error('❌ Ошибка метрик тиков напоминаний:', error)
+        return res.status(500).json({ message: 'Не удалось собрать метрики напоминаний' })
+    }
+})
 
 router.get('/users', adminManageController.listUsers)
 router.get('/users/:id', adminManageController.getUser)

@@ -1,0 +1,283 @@
+.careSheetOverlay {
+    position: fixed;
+    z-index: 1400;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgb(20 24 22 / 58%);
+}
+
+.careSheet {
+    width: min(100%, 540px);
+    max-height: min(90dvh, 780px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 22px;
+    border: 1px solid var(--theme-border);
+    border-radius: 20px;
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
+    font-family: 'Inter', sans-serif;
+    overscroll-behavior: contain;
+}
+
+.careSheetHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.careSheetHeading {
+    min-width: 0;
+}
+
+.careSheetHeading h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.careSheetHeading p {
+    margin: 4px 0 0;
+    color: var(--theme-muted);
+    font-size: 13px;
+    line-height: 1.4;
+}
+
+.careSheetClose {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.careSheetForm {
+    display: grid;
+    gap: 14px;
+}
+
+.careSheetField {
+    display: grid;
+    gap: 7px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.careSheetField input,
+.careSheetField select,
+.careSheetField textarea {
+    width: 100%;
+    min-height: 44px;
+    box-sizing: border-box;
+    border: 1px solid var(--theme-border);
+    border-radius: 10px;
+    padding: 9px 12px;
+    background: var(--theme-surface);
+    color: inherit;
+    font: inherit;
+    font-weight: 400;
+}
+
+.careSheetField textarea {
+    min-height: 88px;
+    resize: vertical;
+}
+
+.careSheetTabs {
+    display: flex;
+    gap: 6px;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--theme-raised);
+}
+
+.careSheetTabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 38px;
+    padding: 6px 8px;
+    border: 0;
+    border-radius: 9px;
+    background: transparent;
+    color: var(--theme-muted);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.careSheetTabs button.is-active {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+}
+
+.careSheetChips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: -6px;
+}
+
+.careSheetChips button {
+    padding: 6px 11px;
+    border: 1px solid var(--theme-border);
+    border-radius: 999px;
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.careSheetChips button.is-active {
+    border-color: var(--theme-accent);
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+}
+
+.careSheetCheckbox {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 14px;
+}
+
+.careSheetCheckbox input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--theme-accent);
+}
+
+.careSheetError {
+    margin: 0;
+    color: var(--theme-danger);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.careSheetActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 4px;
+}
+
+.careSheetActions button {
+    min-height: 42px;
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 16px;
+    background: var(--theme-raised);
+    color: var(--theme-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.careSheetActions .careSheetSubmit {
+    background: #5C7463;
+    color: #FFFFFF;
+}
+
+.careSheetActions button:disabled {
+    cursor: wait;
+    opacity: 0.7;
+}
+
+.careSheetStatus {
+    display: grid;
+    gap: 10px;
+    justify-items: start;
+    margin: 8px 0;
+    color: var(--theme-muted);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.careSheetStatus p {
+    margin: 0;
+}
+
+.careSheetStatus button {
+    border: 0;
+    border-radius: 10px;
+    padding: 9px 14px;
+    background: #5C7463;
+    color: #FFFFFF;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.careSheetEmpty {
+    display: grid;
+    gap: 12px;
+    justify-items: center;
+    padding: 20px 14px;
+    border: 1px dashed var(--theme-border);
+    border-radius: 16px;
+    color: var(--theme-muted);
+    font-size: 14px;
+    line-height: 1.4;
+    text-align: center;
+}
+
+.careSheetEmpty p {
+    margin: 0;
+}
+
+.careSheetEmpty a {
+    display: inline-block;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: #5C7463;
+    color: #FFFFFF;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.careSheetClose:focus-visible,
+.careSheetTabs button:focus-visible,
+.careSheetChips button:focus-visible,
+.careSheetActions button:focus-visible,
+.careSheetStatus button:focus-visible,
+.careSheetEmpty a:focus-visible,
+.careSheetField input:focus-visible,
+.careSheetField select:focus-visible,
+.careSheetField textarea:focus-visible,
+.careSheetCheckbox input:focus-visible {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+    .careSheetOverlay {
+        align-items: flex-end;
+        padding: 0;
+    }
+
+    .careSheet {
+        width: 100%;
+        max-height: 92dvh;
+        padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+        border-right: 0;
+        border-bottom: 0;
+        border-left: 0;
+        border-radius: 20px 20px 0 0;
+    }
+}

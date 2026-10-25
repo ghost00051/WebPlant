@@ -34,7 +34,17 @@ const Plant = sequelize.define("plant", {
     indexes: [
         { name: 'idx_plants_user', fields: ['user_id'] },
         { name: 'idx_plants_active', fields: ['user_id', 'is_active'] },
-        { name: 'idx_plants_next_watering', fields: ['next_watering_at'] }
+        { name: 'idx_plants_next_watering', fields: ['next_watering_at'] },
+        {
+            name: 'idx_plants_active_next_watering',
+            fields: ['next_watering_at'],
+            where: { is_active: true }
+        },
+        {
+            name: 'idx_plants_user_active_next_watering',
+            fields: ['user_id', 'next_watering_at'],
+            where: { is_active: true }
+        }
     ]
 })
 

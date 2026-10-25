@@ -1,5 +1,6 @@
 import { Op } from 'sequelize'
 import Plant from '../models/Plant.js'
+import PlantCareLog from '../models/PlantCareLog.js'
 import Notification from '../models/Notification.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import {
@@ -52,7 +53,7 @@ class CareAdviceService {
         const weeklyLimit = parseLimit(process.env.CARE_ADVICE_WEEKLY_LIMIT, 5)
         const since = new Date(now.getTime() - HISTORY_DAYS * DAY_MS)
 
-        const [plants, notifications] = await Promise.all([
+        const [plants, notifications, careLogs] = await Promise.all([
             Plant.findAll({
                 where: { user_id: userId, is_active: true },
                 order: [['id', 'ASC']],
@@ -67,15 +68,32 @@ class CareAdviceService {
                 attributes: ['id', 'plant_id', 'type', 'payload', 'created_at'],
                 order: [['created_at', 'DESC'], ['id', 'DESC']],
                 limit: MAX_HISTORY_ROWS
+            }),
+            PlantCareLog.findAll({
+                where: {
+                    user_id: userId,
+                    performed_at: { [Op.gte]: since }
+                },
+                attributes: ['plant_id', 'action_code', 'performed_at'],
+                order: [['performed_at', 'DESC'], ['id', 'DESC']],
+                limit: MAX_HISTORY_ROWS,
+                raw: true
             })
         ])
 
-        const history = notifications.map(item => ({
-            plantId: item.plant_id,
-            actionCode: typeof item.payload?.action_code === 'string' ? item.payload.action_code : null,
-            title: typeof item.payload?.action_title === 'string' ? item.payload.action_title : null,
-            createdAt: item.created_at
-        }))
+        const history = [
+            ...notifications.map(item => ({
+                plantId: item.plant_id,
+                actionCode: typeof item.payload?.action_code === 'string' ? item.payload.action_code : null,
+                title: typeof item.payload?.action_title === 'string' ? item.payload.action_title : null,
+                createdAt: item.created_at
+            })),
+            ...careLogs.map(item => ({
+                plantId: item.plant_id,
+                actionCode: item.action_code,
+                createdAt: item.performed_at
+            }))
+        ].sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt))
 
         const weekBoundary = now.getTime() - 7 * DAY_MS
         const weekCount = history.filter(
@@ -175,7 +193,7 @@ class CareAdviceService {
                 type: action.notificationType || 'care_reminder',
                 title: advice.title,
                 body: advice.body,
-                url: '/home',
+                url: `/my-plants?plant=${plant.id}`,
                 dedupeKey,
                 scheduledFor: now,
                 payload: {
@@ -208,7 +226,7 @@ class CareAdviceService {
                 body: advice.body,
                 data: {
                     plantId: plant.id,
-                    url: '/home',
+                    url: `/my-plants?plant=${plant.id}`,
                     tag: `care_${action.code}`,
                     notificationId: notification.id
                 }

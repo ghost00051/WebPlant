@@ -32,6 +32,7 @@ import "./models/Plant.js"
 import "./models/PlantCarePlan.js"
 import "./models/PlantPhoto.js"
 import "./models/WateringLog.js"
+import "./models/PlantCareLog.js"
 import "./models/ChatLog.js"
 import "./models/AiAdviceLog.js"
 import "./models/SiteVisit.js"
@@ -94,6 +95,7 @@ const MIGRATION_FILES_BY_TABLE = {
     password_reset_tokens: 'Backend/migrations/20261012_create_password_reset_tokens.sql',
     ai_advice_logs: 'Backend/migrations/20261016_create_ai_advice_logs.sql',
     plant_care_plans: 'Backend/migrations/20261021_create_plant_care_plans.sql',
+    plant_care_logs: 'Backend/migrations/20261031_create_plant_care_logs.sql',
     chat_logs: 'Backend/migrations/20261017_add_chat_logs_guest_index.sql',
     'users.welcome_email_sent_at': 'Backend/migrations/20261012_add_welcome_email_sent_at.sql',
     'users.timezone': 'Backend/migrations/20261013_add_user_timezone.sql',

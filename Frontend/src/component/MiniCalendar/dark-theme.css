@@ -15,6 +15,22 @@ html[data-theme='dark'] .mini-calendar__day.is-selected {
     color: var(--theme-text);
 }
 
+html[data-theme='dark'] .care-dot--feed {
+    background: #6fae83;
+}
+
+html[data-theme='dark'] .care-dot--spray {
+    background: #6aa5de;
+}
+
+html[data-theme='dark'] .care-dot--other {
+    background: #b0b6bb;
+}
+
+html[data-theme='dark'] .care-dot--planned {
+    opacity: 0.5;
+}
+
 @media (min-width: 1024px) {
     html[data-theme='dark'] .mini-calendar__month-day {
         color: var(--theme-text);
