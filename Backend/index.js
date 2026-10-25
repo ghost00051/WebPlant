@@ -39,6 +39,9 @@ import "./models/SiteVisit.js"
 import "./models/ProductEvent.js"
 import "./models/GardenShare.js"
 import "./models/GardenShareSignup.js"
+import "./models/BotLink.js"
+import "./models/BotLinkCode.js"
+import "./models/BotMessage.js"
 
 
 import "./models/associations.js"
@@ -47,19 +50,26 @@ import pushRouter from "./routes/pushRoutes.js"
 import adminPushRouter from './routes/adminPushRoutes.js'
 import adminMailRouter from './routes/adminMailRoutes.js'
 import adminRouter from './routes/adminRoutes.js'
+import adminBotsRouter from './routes/adminBotsRoutes.js'
+import botRouter from './routes/botRoutes.js'
 import notificationRouter from './routes/notificationRoutes.js'
 import eventRouter from './routes/eventRoutes.js'
 import { startCleanupJob } from './jobs/cleanExpiredTokens.js'
 import { startPushBroadcastJob } from './jobs/pushBroadcastJob.js'
 import { startMailBroadcastJob } from './jobs/mailBroadcastJob.js'
 import userRouter from "./routes/userRoutes.js"
+import careStreakRouter from './routes/careStreakRoutes.js'
 import userCookieConsentRouter from "./routes/userCookieConsentRoutes.js"
 import plantRouter from "./routes/plantRoutes.js"
 import systemRouter from "./routes/systemRoutes.js"
 import uploadRouter from "./routes/uploadRoutes.js"
 import reminderService from './jobs/reminderService.js'
+import weeklyRecapJob from './jobs/weeklyRecapJob.js'
+import botPollingJob from './jobs/botPollingJob.js'
 import chatRouter from './routes/chatRoutes.js'
 import gardenShareRouter from './routes/gardenShareRoutes.js'
+import { getWebhookState } from './services/botChannelService.js'
+import { describeBotConfigProblems } from './utils/botConfig.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 5000)
@@ -105,6 +115,11 @@ const MIGRATION_FILES_BY_TABLE = {
     'users.marketing_email_opt_in_source': 'Backend/migrations/20261026_add_marketing_consent.sql',
     'users.marketing_email_opt_out_at': 'Backend/migrations/20261026_add_marketing_consent.sql',
     admin_audit_logs: 'Backend/migrations/20261025_create_admin_audit_logs.sql',
+    bot_links: 'Backend/migrations/20261101_create_bot_channels.sql',
+    bot_link_codes: 'Backend/migrations/20261101_create_bot_channels.sql',
+    bot_messages: 'Backend/migrations/20261101_create_bot_channels.sql',
+    'notification_preferences.weekly_recap_enabled': 'Backend/migrations/20261102_add_weekly_recap.sql',
+    'notification_preferences.last_weekly_recap_date': 'Backend/migrations/20261102_add_weekly_recap.sql',
     product_events: 'Backend/migrations/20261027_create_product_events.sql',
     'notifications.clicked_at': 'Backend/migrations/20261027_add_notification_clicks.sql',
     'notifications.click_count': 'Backend/migrations/20261027_add_notification_clicks.sql',
@@ -251,11 +266,13 @@ app.use('/uploads', express.static(path.resolve('uploads'), {
     setHeaders: res => res.setHeader('X-Content-Type-Options', 'nosniff')
 }))
 
+app.use("/api/users", careStreakRouter)
 app.use("/api/users", userRouter)
 app.use("/api/cookie-consents", getGuestToken, userCookieConsentRouter)
 app.use("/api/push", pushRouter)
 app.use("/api/admin/push", adminPushRouter)
 app.use("/api/admin/mail", adminMailRouter)
+app.use("/api/admin/bots", adminBotsRouter)
 app.use("/api/admin", adminRouter)
 app.use("/api/notifications", notificationRouter)
 app.use("/api/events", eventRouter)
@@ -264,6 +281,7 @@ app.use("/api/system", systemRouter)
 app.use("/api/upload", uploadRouter)
 app.use('/api/chat', getGuestToken, chatRouter)
 app.use('/api/garden', gardenShareRouter)
+app.use('/api/bots', botRouter)
 
 app.get('/livez', (req, res) => {
     return res.json({ status: 'ok', timestamp: new Date().toISOString() })
@@ -280,6 +298,23 @@ function describePushStatus() {
     }
 }
 
+function describeBotsStatus() {
+    try {
+        return {
+            enabled: process.env.BOTS_ENABLED !== 'false',
+            webhookEnabled: process.env.BOT_WEBHOOK_ENABLED === 'true',
+            polling: botPollingJob.getPollingState(),
+            webhooks: getWebhookState()
+        }
+    } catch (error) {
+        return {
+            enabled: process.env.BOTS_ENABLED !== 'false',
+            webhookEnabled: process.env.BOT_WEBHOOK_ENABLED === 'true',
+            error: error?.message || String(error)
+        }
+    }
+}
+
 app.get('/health', async (req, res) => {
     try {
         await sequelize.authenticate()
@@ -290,6 +325,7 @@ app.get('/health', async (req, res) => {
             redis: describeRedisStatus(),
             mail: describeMailStatus(),
             push: describePushStatus(),
+            bots: describeBotsStatus(),
             backgroundJobs: BACKGROUND_JOBS_ENABLED,
             aiCache: getAiCacheStats()
         })
@@ -347,6 +383,17 @@ async function startServer() {
             console.warn("⚠️ SMTP не настроен: восстановление пароля и рассылки писем вернут 503 (см. SMTP_USER/SMTP_PASSWORD)")
         }
 
+        for (const problem of describeBotConfigProblems()) {
+            console.warn(`⚠️ Боты: ${problem}`)
+        }
+        if (process.env.BOTS_ENABLED !== 'false') {
+            console.log(
+                '🤖 Боты: каналы Telegram/MAX, ' +
+                `вебхуки ${process.env.BOT_WEBHOOK_ENABLED === 'true' ? 'включены' : 'выключены'}, ` +
+                `long polling ${process.env.BOT_POLLING_ENABLED === 'true' ? 'включён' : 'выключен'}`
+            )
+        }
+
         if (process.env.NODE_ENV === 'production') {
             const queryInterface = sequelize.getQueryInterface()
             const tables = await queryInterface.showAllTables()
@@ -381,6 +428,8 @@ async function startServer() {
             startCleanupJob()
             console.log("⏰ Запущена очистка истекших согласий и auth-данных")
             reminderService.start()
+            weeklyRecapJob.start()
+            botPollingJob.start()
             startPushBroadcastJob()
             startMailBroadcastJob()
             console.log("📣 Планировщик отложенных рассылок запущен")
@@ -406,6 +455,12 @@ async function startServer() {
             forceExit.unref()
 
             server.close(async () => {
+                try {
+                    weeklyRecapJob.stop()
+                    await botPollingJob.stop()
+                } catch (error) {
+                    console.error('❌ Ошибка остановки ботов и recap:', error)
+                }
                 try {
                     await closeRedis()
                 } catch (error) {

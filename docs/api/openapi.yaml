@@ -89,6 +89,8 @@ tags:
     description: админ-API (только role=ADMIN)
   - name: events
     description: продуктовая аналитика F01 — приём пользовательских событий
+  - name: bots
+    description: боты Telegram/MAX F16 — привязка каналов, вебхуки, доставка напоминаний/recap
 
 security:
   - cookieAuth: []
@@ -4410,6 +4412,283 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/bots:
+    get:
+      tags: [bots]
+      summary: Каналы мессенджеров пользователя
+      description: Статус привязки Telegram/MAX, ник бота и настройки доставки. Требует cookie-сессии.
+      operationId: getBotChannels
+      responses:
+        '200':
+          description: Каналы и их состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotChannelsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/link-code:
+    post:
+      tags: [bots]
+      summary: Одноразовый код привязки мессенджера
+      description: Создаёт код с TTL (по умолчанию 15 минут) и deep link для Telegram/MAX. Лимит — 10 запросов в час на пользователя.
+      operationId: createBotLinkCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+      responses:
+        '200':
+          description: Код и deep link
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinkCodeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: канал не настроен на сервере (нет токена/секрета или бот недоступен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/unlink:
+    post:
+      tags: [bots]
+      summary: Отвязать мессенджер
+      operationId: unlinkBotChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+      responses:
+        '200':
+          description: Канал отвязан
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel, linked]
+                properties:
+                  channel:
+                    type: string
+                    enum: [telegram, max]
+                  linked:
+                    type: boolean
+                    const: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/preferences:
+    patch:
+      tags: [bots]
+      summary: Включить или выключить доставку в канал
+      operationId: updateBotChannelPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, notificationsEnabled]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+                notificationsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Настройка применена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel, notificationsEnabled]
+                properties:
+                  channel:
+                    type: string
+                    enum: [telegram, max]
+                  notificationsEnabled:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/telegram/webhook:
+    post:
+      tags: [bots]
+      summary: Вебхук Telegram Bot API
+      description: Публичный endpoint платформы; авторизация — заголовок `X-Telegram-Bot-Api-Secret-Token`. Всегда быстро возвращает 200, обработка — асинхронно, дедуп по `update_id`.
+      operationId: telegramBotWebhook
+      security: []
+      parameters:
+        - name: X-Telegram-Bot-Api-Secret-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Обновление принято
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '401':
+          description: неверный секрет вебхука
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: вебхук не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/bots/max/webhook:
+    post:
+      tags: [bots]
+      summary: Вебхук MAX Bot API
+      description: Публичный endpoint платформы; авторизация — заголовок `X-Max-Bot-Api-Secret`. Отвечает 200 до обработки (требование MAX ≤30 с), дедуп по `marker`/id события.
+      operationId: maxBotWebhook
+      security: []
+      parameters:
+        - name: X-Max-Bot-Api-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Обновление принято
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '401':
+          description: неверный секрет вебхука
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: вебхук не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/users/me/care-streak:
+    get:
+      tags: [notifications]
+      summary: Серия ухода и статистика недели (F10)
+      description: Текущая серия «поливов вовремя» (вовремя = hours_late ≤ 24), личный рекорд, статистика текущей локальной недели и последний weekly recap.
+      operationId: getCareStreak
+      responses:
+        '200':
+          description: Серия, неделя и последний recap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareStreakResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/bots/analytics:
+    get:
+      tags: [admin, bots]
+      summary: Метрики ботов и recap (только ADMIN)
+      description: Подключения, доставки и ошибки по каналам и дням, конверсия link-кодов, доля напоминаний в мессенджерах, метрики weekly recap и серии. При отсутствии таблиц возвращает `tablesReady:false` и нули.
+      operationId: getAdminBotAnalytics
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        '200':
+          description: Метрики ботов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBotAnalytics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -5226,6 +5505,9 @@ components:
           type: boolean
         care_advice_enabled:
           type: boolean
+        weekly_recap_enabled:
+          type: boolean
+          description: 'F10: присылать недельный recap (по умолчанию true)'
         dark_theme_enabled:
           type: boolean
         theme_mode:
@@ -6032,7 +6314,7 @@ components:
           type: [integer, 'null']
         type:
           type: string
-          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip]
+          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip, weekly_recap]
         title:
           type: string
           maxLength: 120
@@ -6464,4 +6746,258 @@ components:
         reason:
           type: string
           enum: [enabled, disabled, critical_mass, unavailable]
+
+    BotChannelStatus:
+      type: object
+      required: [channel, configured, linked, notificationsEnabled]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, max]
+        title:
+          type: string
+        configured:
+          type: boolean
+          description: задан ли токен бота на сервере
+        botUsername:
+          type: [string, 'null']
+        botName:
+          type: [string, 'null']
+        botUrl:
+          type: [string, 'null']
+          description: 'https://t.me/<bot> или https://max.ru/<bot>'
+        linked:
+          type: boolean
+        externalUsername:
+          type: [string, 'null']
+        linkedAt:
+          type: [string, 'null']
+          format: date-time
+        notificationsEnabled:
+          type: boolean
+        lastDeliveryAt:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+
+    BotChannelsResponse:
+      type: object
+      required: [channels, linkCodeTtlMinutes]
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotChannelStatus'
+        linkCodeTtlMinutes:
+          type: integer
+          minimum: 1
+
+    BotLinkCodeResponse:
+      type: object
+      required: [channel, code, deepLink, expiresAt]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, max]
+        code:
+          type: string
+        deepLink:
+          type: string
+          format: uri
+        botUsername:
+          type: [string, 'null']
+        expiresAt:
+          type: string
+          format: date-time
+
+    CareStreakWeekDay:
+      type: object
+      required: [date, status]
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [watered, late, skipped, none]
+
+    CareStreakWeek:
+      type: object
+      required: [wateredOnTime, wateredLate, skipped, scheduled, photos, careActions, startDate, days]
+      properties:
+        wateredOnTime:
+          type: integer
+        wateredLate:
+          type: integer
+        skipped:
+          type: integer
+        scheduled:
+          type: integer
+        photos:
+          type: integer
+        careActions:
+          type: integer
+        startDate:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/CareStreakWeekDay'
+
+    WeeklyRecapSummary:
+      type: object
+      required: [id, title, body]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+
+    CareStreakResponse:
+      type: object
+      required: [current, best, week, lastWateredAt, latestRecap, updatedAt]
+      properties:
+        current:
+          type: integer
+          minimum: 0
+        best:
+          type: integer
+          minimum: 0
+        lastWateredAt:
+          type: [string, 'null']
+          format: date-time
+        week:
+          $ref: '#/components/schemas/CareStreakWeek'
+        latestRecap:
+          oneOf:
+            - $ref: '#/components/schemas/WeeklyRecapSummary'
+            - type: 'null'
+        updatedAt:
+          type: string
+          format: date-time
+
+    AdminBotChannelMetrics:
+      type: object
+      additionalProperties: true
+      required: [configured, linkedActive, linkedTotal, messagesSent, messagesFailed, deliveryRate, remindersSent]
+      properties:
+        configured:
+          type: boolean
+        botUsername:
+          type: [string, 'null']
+        linkedActive:
+          type: integer
+        linkedTotal:
+          type: integer
+        linkedInRange:
+          type: integer
+        unlinkedInRange:
+          type: integer
+        notificationsDisabled:
+          type: integer
+        codesCreated:
+          type: integer
+        codesUsed:
+          type: integer
+        codeConversion:
+          type: number
+          description: доля 0…1
+        messagesSent:
+          type: integer
+        messagesFailed:
+          type: integer
+        messagesSkipped:
+          type: integer
+        deliveryRate:
+          type: number
+          description: доля 0…1
+        remindersSent:
+          type: integer
+        lastSentAt:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+
+    AdminBotAnalytics:
+      type: object
+      required: [generatedAt, days, timezone, tablesReady, channels, totals, series, linkFunnel, recentErrors, commands, recap, streak]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        days:
+          type: integer
+        timezone:
+          type: string
+        tablesReady:
+          type: boolean
+          description: false — миграции ботов ещё не применены
+        channels:
+          type: object
+          required: [telegram, max]
+          properties:
+            telegram:
+              $ref: '#/components/schemas/AdminBotChannelMetrics'
+            max:
+              $ref: '#/components/schemas/AdminBotChannelMetrics'
+        totals:
+          type: object
+          additionalProperties: true
+        series:
+          type: array
+          items:
+            type: object
+            required: [day]
+            properties:
+              day:
+                type: string
+                format: date
+              telegramSent:
+                type: integer
+              telegramFailed:
+                type: integer
+              maxSent:
+                type: integer
+              maxFailed:
+                type: integer
+        linkFunnel:
+          type: object
+          required: [codesCreated, codesUsed, conversion]
+          properties:
+            codesCreated:
+              type: integer
+            codesUsed:
+              type: integer
+            conversion:
+              type: number
+              description: доля 0…1
+        recentErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        commands:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        recap:
+          type: object
+          additionalProperties: true
+          description: 'F10: notificationsCreated, delivered, failed, users, telegram, max'
+        streak:
+          type: object
+          additionalProperties: true
+          description: 'F10: usersWithStreak, avgCurrentStreak, bestCurrentStreak'
 

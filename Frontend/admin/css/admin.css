@@ -804,6 +804,29 @@ a:hover {
     word-break: break-word;
 }
 
+.funnel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.funnel-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.funnel-rate {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+
+.funnel .meter {
+    margin: 0;
+}
+
 
 
 .state {

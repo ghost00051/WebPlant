@@ -25,7 +25,7 @@ test('parseNotificationCategory: дефолт, валидные значения
 test('categoryWhere: all не фильтрует, категории фильтруют по своим типам', () => {
     assert.deepEqual(categoryWhere('all'), {})
     assert.deepEqual(categoryWhere('watering'), {
-        type: { [Op.in]: ['watering_due', 'watering_day_before', 'morning_summary'] }
+        type: { [Op.in]: ['watering_due', 'watering_day_before', 'morning_summary', 'weekly_recap'] }
     })
     assert.deepEqual(categoryWhere('care'), {
         type: { [Op.in]: ['care_reminder', 'care_tip'] }
@@ -35,6 +35,7 @@ test('categoryWhere: all не фильтрует, категории фильт�
 test('typeToNotificationCategory: сопоставление типов и неизвестные значения', () => {
     assert.equal(typeToNotificationCategory('watering_due'), 'watering')
     assert.equal(typeToNotificationCategory('morning_summary'), 'watering')
+    assert.equal(typeToNotificationCategory('weekly_recap'), 'watering')
     assert.equal(typeToNotificationCategory('care_reminder'), 'care')
     assert.equal(typeToNotificationCategory('care_tip'), 'care')
     assert.equal(typeToNotificationCategory('unknown'), null)

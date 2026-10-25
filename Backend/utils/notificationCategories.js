@@ -1,7 +1,12 @@
 import { Op } from 'sequelize'
 
 export const NOTIFICATION_CATEGORIES = Object.freeze({
-    watering: Object.freeze(['watering_due', 'watering_day_before', 'morning_summary']),
+    watering: Object.freeze([
+        'watering_due',
+        'watering_day_before',
+        'morning_summary',
+        'weekly_recap'
+    ]),
     care: Object.freeze(['care_reminder', 'care_tip'])
 })
 

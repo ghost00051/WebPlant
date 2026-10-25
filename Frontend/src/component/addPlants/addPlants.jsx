@@ -886,6 +886,7 @@ function AddPlants() {
                                 <div
                                     aria-busy={popularSpeciesLoading || undefined}
                                     aria-label='Популярные виды растений'
+                                    className='gridPopular'
                                 >
                                     {popularSpecies.map(item => (
                                         <button

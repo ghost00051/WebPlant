@@ -118,6 +118,10 @@
         font-size: var(--font-size-md);
     }
 
+    .popularTypes {
+        font-size: var(--font-size-md);
+    }
+
     .addNamePlant input {
         font-size: var(--font-size-md);
         padding: 10px 14px;

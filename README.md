@@ -6,6 +6,11 @@
 диагностирует растение по фото. Дополнительно сайт содержит публичные справочники по
 растениям и уходу (SEO-раздел) и отдельную админ-панель.
 
+С версии 1.3.0 напоминания и недельный recap можно получать вторым каналом — в Telegram
+или MAX: аккаунт привязывается в профиле по одноразовому коду, бот присылает напоминания
+о поливе, сводку дня и «Итоги недели». На главной появилась серия ухода («поливов вовремя»,
+личный рекорд, прогресс недели), а в админке — раздел «Боты» с метриками каналов.
+
 Боевые адреса:
 
 | Что | Адрес |
@@ -19,8 +24,8 @@
 
 | Компонент | Версия | Файл |
 | --- | --- | --- |
-| Backend | **1.2.6** | `Backend/package.json` |
-| Frontend | **1.2.28** | `Frontend/package.json` |
+| Backend | **1.3.0** | `Backend/package.json` |
+| Frontend | **1.3.0** | `Frontend/package.json` |
 
 Версии независимы: фронт выкладывается по FTP отдельно от backend, поэтому контракт `/api`
 должен оставаться обратно совместимым (см. `docs/api/openapi.yaml` и `CHANGELOG.md`).
@@ -39,17 +44,26 @@
 * аутентификация: `jsonwebtoken` (JWT в httpOnly cookie) + `auth_sessions` для отзыва,
   `bcrypt`, passkeys через `@simplewebauthn/server`;
 * `web-push` (VAPID), in-app уведомления в БД;
+* боты Telegram и MAX как второй канал доставки (`services/telegramBotService.js`,
+  `maxBotService.js`, `botChannelService.js`): вебхуки (в production) или long polling
+  (локально), привязка аккаунта по одноразовому коду, команды `/start`, `/stop`, `/status`,
+  `/help`, доставка напоминаний и recap; метрики — `GET /api/admin/bots/analytics`;
+* F10: серия ухода и недельный recap — `utils/careStreak.js`, `services/weeklyRecapService.js`,
+  `jobs/weeklyRecapJob.js`; recap сохраняется как уведомление `weekly_recap` и уходит
+  push + в подключённые мессенджеры (e-mail — при согласии на маркетинг);
 * feature flags соцфич (`utils/featureFlags.js`): шаринг сада включён, лента и
   комментарии выключены до критической массы шарингов;
 * `nodemailer` (SMTP) — сброс пароля, приветственные письма, рассылки из админки;
 * `multer` + `sharp` (загрузка фото и миниатюры), `helmet`, `cors`, `express-rate-limit`,
   `node-cron`, `dockerode` (телеметрия контейнеров в админке).
 
-**Frontend 1.2.28**
+**Frontend 1.3.0**
 
 * React 19, `react-router-dom` 7, `react-day-picker`, сборка Vite 8 (rolldown);
 * PWA-манифест, service worker, темы оформления, passkeys в браузере
   (`@simplewebauthn/browser`);
+* привязка Telegram/MAX в профиле (`component/messengerBots/`), карточка серии ухода на
+  главной (`component/careStreak/`), тип уведомления `weekly_recap` в колокольчике;
 * офлайн-режим PWA: кэш расписания в service worker, очередь отметок полива в
   IndexedDB (+ Background Sync, повтор при восстановлении сети), индикатор сети и
   плашка «доступна новая версия»;
@@ -83,11 +97,11 @@ WebPlant/
 │   ├── backup.sh                pg_dump + tar uploads, проверка дампа, шифрование/offsite, retention 14 дней
 │   ├── migrations/              SQL-миграции (применяются по имени, идемпотентны)
 │   ├── models/                  модели Sequelize и associations.js
-│   ├── routes/                  маршруты Express (users, plants, chat, notifications, push, admin…)
-│   ├── controllers/             обработчики (в т.ч. adminAnalytics/Manage/Push/Mail/Ai)
-│   ├── services/                ai, careAdvice/carePlan, push, mail, passwordReset, welcomeEmail
+│   ├── routes/                  маршруты Express (users, plants, chat, notifications, push, bots, admin…)
+│   ├── controllers/             обработчики (в т.ч. adminAnalytics/Manage/Push/Mail/Ai/Bots/bot)
+│   ├── services/                ai, careAdvice/carePlan, push, mail, bots (telegram/max/botChannel), weeklyRecap
 │   ├── middleware/              auth, guestToken, admin, upload, accessLog, validateJsonShape, validateParam
-│   ├── jobs/                    reminderService, cleanExpiredTokens, push/mail broadcast jobs
+│   ├── jobs/                    reminderService, weeklyRecapJob, botPollingJob, cleanExpiredTokens, push/mail broadcast jobs
 │   ├── utils/                   schedule, prediction, locks, cache, audit, marketing consent, валидация
 │   ├── integration/             интеграционные тесты (Postgres + Redis)
 │   ├── scripts/                 apply-migrations.ps1, verify-notifications.ps1, load-test.k6.js, аудит полива
@@ -257,6 +271,19 @@ npm run verify:admin
 | `MAIL_FROM`, `MAIL_REPLY_TO` | адрес отправителя и reply-to |
 | `MAIL_BROADCAST_BATCH_SIZE`, `MAIL_BROADCAST_SYNC_BATCH`, `MAIL_BROADCAST_DELAY_MS`, `MAIL_BROADCAST_DEDUPE_WINDOW_MS` | параметры рассылок писем |
 | `PUSH_CONCURRENCY` | параллелизм отправки push |
+| `BOTS_ENABLED` | включает боты Telegram/MAX (по умолчанию `false`; включайте после того, как заданы реальные токены и секреты) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_BOT_API_BASE` | токен Telegram-бота, ник (можно не задавать — берётся из `getMe`), базовый URL API (default `https://api.telegram.org`) |
+| `MAX_BOT_TOKEN`, `MAX_BOT_USERNAME`, `MAX_BOT_API_BASE` | токен MAX-бота, ник, базовый URL API (default `https://platform-api.max.ru`; `platform-api2.max.ru` требует CA Минцифры) |
+| `TELEGRAM_BOT_WEBHOOK_SECRET`, `MAX_BOT_WEBHOOK_SECRET` | секреты вебхуков: проверяются в заголовках `X-Telegram-Bot-Api-Secret-Token` / `X-Max-Bot-Api-Secret` |
+| `BOT_PUBLIC_BASE_URL` | публичный HTTPS-origin API для регистрации вебхуков (`https://server.checktheplants.ru`) |
+| `BOT_WEBHOOK_ENABLED` | регистрировать вебхуки при старте (production); `false` — для локальной разработки |
+| `BOT_POLLING_ENABLED` | long polling вместо вебхуков (только dev/test; для production не рекомендуется) |
+| `BOT_LINK_CODE_TTL_MINUTES` | срок жизни одноразового кода привязки (default 15) |
+| `BOT_DELIVERY_TIMEOUT_MS` | сколько ждать доставку в мессенджеры внутри push, не задерживая тик напоминаний (default 3000) |
+| `BOT_MESSAGE_RETENTION_DAYS`, `BOT_LINK_CODE_RETENTION_DAYS` | ретенция PII-логов ботов и одноразовых кодов привязки (default 90 и 7 дней) |
+| `WEEKLY_RECAP_ENABLED` | включает недельный recap (default `true`) |
+| `WEEKLY_RECAP_EMAIL_ENABLED` | дублировать recap на e-mail при маркетинговом согласии (default `false`) |
+| `WEEKLY_RECAP_HOUR`, `WEEKLY_RECAP_WEEKDAY` | локальное время recap: час (default 19) и ISO-день недели (7 = воскресенье) |
 | `UNSUBSCRIBE_URL_BASE` | базовый URL страницы отписки от рассылок (по умолчанию `<FRONTEND_URL>/unsubscribe`) |
 | `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | сроки хранения чатов и журнала ИИ (0 — бессрочно) |
 | `NOTIFICATION_RETENTION_DAYS` | срок хранения уведомлений |
@@ -293,7 +320,7 @@ npm run verify:admin
 | `cd Frontend; npm run lint` | ESLint (0 ошибок в CI) |
 | `cd Frontend; npm run build` | сборка + prerender + `dist/build-info.json` |
 | `cd Frontend; npm run verify` | сборка, роутинг, security-заголовки/CSP, манифест |
-| `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (8 разделов) |
+| `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (11 разделов) |
 | `cd Frontend; npm run test:e2e` | E2E через `scripts/run-e2e.mjs` (нужен Chrome; в CI `WEBPLANT_E2E_REQUIRED=1`) |
 | `powershell -File Backend/scripts/verify-notifications.ps1` | проверка уведомлений/идемпотентности на одноразовой БД |
 | `node Backend/scripts/admin-api-integration.mjs seed|verify` | 94 проверки админ-API на отдельной тестовой БД |
@@ -328,7 +355,7 @@ CI не используются (только `GITHUB_TOKEN` и, при нео�
 | [RUNBOOK.md](RUNBOOK.md) | инциденты: 5xx, БД, Redis, диск, TLS, SMTP/ИИ, утечка секретов; восстановление БД и uploads; ротации; RPO/RTO |
 | [INCIDENT-RUNBOOK.md](INCIDENT-RUNBOOK.md) | роли и каналы при инциденте, шаблоны коммуникации, статус-страница, уведомление РКН, постмортем |
 | [SECRETS.md](SECRETS.md) | реестр секретов: где хранится, владелец, ротация, действия при утечке |
-| [CHANGELOG.md](CHANGELOG.md) | версии Backend 1.2.6 и Frontend 1.2.20, раздел Unreleased |
+| [CHANGELOG.md](CHANGELOG.md) | версии Backend 1.3.0 и Frontend 1.3.0, раздел Unreleased |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | лицензии зависимостей, шрифт Inter, иллюстрации |
 | [docs/api/openapi.yaml](docs/api/openapi.yaml) | контракт API (OpenAPI 3.1) |
 | [docs/DATA-RETENTION.md](docs/DATA-RETENTION.md) | сроки хранения данных, удаление и экспорт, публикация изменений документов |

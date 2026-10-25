@@ -216,6 +216,8 @@ export const api = {
     aiMetrics: days => request(`/admin/ai/metrics${query({ days })}`),
     aiLogs: params => request(`/admin/ai/logs${query(params)}`),
 
+    botAnalytics: days => request(`/admin/bots/analytics${query({ days })}`),
+
     health: () => requestServer('/health'),
     dockerStats: () => request('/system/docker-stats'),
     dockerLogs: (id, tail = 100) => request(`/system/docker-stats/${encodeURIComponent(id)}/logs${query({ tail })}`)

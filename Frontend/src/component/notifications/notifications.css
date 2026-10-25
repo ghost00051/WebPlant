@@ -719,3 +719,36 @@ html[data-theme='dark'] .notificationsBottomTab img {
     font-size: 12px;
   }
 }
+
+.notificationsRecapStats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 10px 12px;
+  margin: 14px 0 0;
+  padding: 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 14px;
+  background: var(--theme-raised);
+}
+
+.notificationsRecapStat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+}
+
+.notificationsRecapStat dt {
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.notificationsRecapStat dd {
+  margin: 0;
+  color: var(--theme-text);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}

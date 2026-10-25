@@ -7,6 +7,7 @@ import notificationAdvice from '../../assets/notification-advice.svg'
 import notificationSystem from '../../assets/notification-system.svg'
 import notificationAlert from '../../assets/notification-alert.svg'
 import notificationCheck from '../../assets/notification-check.svg'
+import notificationRecap from '../../assets/notification-recap.svg'
 import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { CARE_ACTION_CODES } from '../../utils/careEvents.js'
@@ -46,9 +47,25 @@ const CATEGORIES = {
 }
 
 const EMPTY_TEXTS = {
-  all: 'Пока нет уведомлений. Здесь появятся напоминания о поливе и утренние сводки.',
+  all: 'Пока нет уведомлений. Здесь появятся напоминания о поливе, утренние сводки и итоги недели.',
   watering: 'Пока нет уведомлений о поливе.',
   care: 'Пока нет уведомлений об уходе.'
+}
+
+const WEEKLY_RECAP_META = {
+  icon: notificationRecap,
+  label: 'Итоги недели'
+}
+
+function isWeeklyRecapNotification (item) {
+  return item?.type === 'weekly_recap'
+}
+
+function visualFor (item) {
+  if (isWeeklyRecapNotification(item)) {
+    return { ...CATEGORIES.watering, ...WEEKLY_RECAP_META }
+  }
+  return CATEGORIES[categoryFor(item)]
 }
 
 function canUsePush () {
@@ -70,6 +87,7 @@ function categoryFor (item) {
   if (item?.type === 'watering_due') return title.includes('пропущ') ? 'alert' : 'watering'
   if (item?.type === 'watering_day_before') return 'watering'
   if (item?.type === 'morning_summary') return 'watering'
+  if (item?.type === 'weekly_recap') return 'watering'
   if (item?.type === 'care_reminder') return 'care'
   if (item?.type === 'care_tip') return 'advice'
   return 'system'
@@ -77,7 +95,7 @@ function categoryFor (item) {
 
 function feedCategoryFor (item) {
   if (item?.type === 'watering_due' || item?.type === 'watering_day_before' ||
-    item?.type === 'morning_summary') {
+    item?.type === 'morning_summary' || item?.type === 'weekly_recap') {
     return 'watering'
   }
   if (item?.type === 'care_reminder' || item?.type === 'care_tip') return 'care'
@@ -85,8 +103,48 @@ function feedCategoryFor (item) {
 }
 
 function actionLabelFor (item, category) {
+  if (item?.type === 'weekly_recap') return 'Итоги недели'
   if (item?.type === 'morning_summary') return 'Сводка'
   return CATEGORIES[category].label
+}
+
+function countFromStats (stats, keys) {
+  if (!stats || typeof stats !== 'object') return null
+  for (const key of keys) {
+    const value = Number(stats[key])
+    if (Number.isFinite(value) && value >= 0) return Math.floor(value)
+  }
+  return null
+}
+
+function recapStatRows (item) {
+  const stats = item?.payload?.stats
+  const streak = item?.payload?.streak
+  const rows = []
+
+  const watered = countFromStats(stats, ['wateredOnTime', 'watered_on_time', 'onTime'])
+  if (watered !== null) rows.push({ key: 'watered', label: 'Поливов вовремя', value: watered })
+
+  const late = countFromStats(stats, ['wateredLate', 'watered_late', 'late'])
+  if (late !== null) rows.push({ key: 'late', label: 'С опозданием', value: late })
+
+  const photos = countFromStats(stats, ['photos', 'photoCount', 'photo_count'])
+  if (photos !== null) rows.push({ key: 'photos', label: 'Фото', value: photos })
+
+  const careActions = countFromStats(stats, ['careActions', 'care_actions', 'careCount'])
+  if (careActions !== null) {
+    rows.push({ key: 'care', label: 'Действий ухода', value: careActions })
+  }
+
+  const skipped = countFromStats(stats, ['skipped', 'skippedCount'])
+  if (skipped !== null) rows.push({ key: 'skipped', label: 'Пропущено', value: skipped })
+
+  const bestStreak = countFromStats(streak, ['best', 'bestStreak'])
+  if (bestStreak !== null) {
+    rows.push({ key: 'best', label: 'Рекорд серии', value: bestStreak })
+  }
+
+  return rows
 }
 
 function newWord (count) {
@@ -584,7 +642,13 @@ function Notifications () {
   }
 
   const detailCategory = selectedNotification ? categoryFor(selectedNotification) : 'system'
-  const detailMeta = CATEGORIES[detailCategory]
+  const detailMeta = selectedNotification
+    ? visualFor(selectedNotification)
+    : CATEGORIES[detailCategory]
+  const detailRecapRows =
+    selectedNotification && isWeeklyRecapNotification(selectedNotification)
+      ? recapStatRows(selectedNotification)
+      : []
 
   return (
     <main className='notificationsPage'>
@@ -712,7 +776,7 @@ function Notifications () {
               <ul className='notificationsList'>
                 {group.items.map(item => {
                   const category = categoryFor(item)
-                  const meta = CATEGORIES[category]
+                  const visual = visualFor(item)
                   const actionLabel = actionLabelFor(item, category)
 
                   return (
@@ -726,7 +790,7 @@ function Notifications () {
                         onClick={() => openNotification(item)}
                       >
                         <span className={`notificationsIcon notificationsIcon--${category}`}>
-                          <img src={meta.icon} alt='' />
+                          <img src={visual.icon} alt='' />
                         </span>
                         <span className='notificationsCardBody'>
                           <span className='notificationsCardTop'>
@@ -808,6 +872,17 @@ function Notifications () {
               {formatCardTime(selectedNotification.created_at)}
             </p>
 
+            {detailRecapRows.length > 0 && (
+              <dl className='notificationsRecapStats'>
+                {detailRecapRows.map(row => (
+                  <div key={row.key} className='notificationsRecapStat'>
+                    <dt>{row.label}</dt>
+                    <dd>{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            )}
+
             <div className='notificationsDetailActions'>
               {isWateringNotification(selectedNotification) && (
                 <button
@@ -844,8 +919,22 @@ function Notifications () {
                 </>
               )}
 
+              {isWeeklyRecapNotification(selectedNotification) && (
+                <button
+                  type='button'
+                  className='notificationsDetailPrimary'
+                  onClick={() => {
+                    closeNotificationDetail()
+                    navigate('/home')
+                  }}
+                >
+                  Смотреть на главной
+                </button>
+              )}
+
               {!isWateringNotification(selectedNotification) &&
-                !isCareNotification(selectedNotification) && (
+                !isCareNotification(selectedNotification) &&
+                !isWeeklyRecapNotification(selectedNotification) && (
                   <button
                     type='button'
                     className='notificationsDetailPrimary'

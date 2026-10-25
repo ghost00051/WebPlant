@@ -90,6 +90,60 @@ export async function hasGardenShareSignups() {
     )
 }
 
+export async function hasBotLinks() {
+    const columns = await describe('bot_links')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.user_id &&
+        columns.channel &&
+        columns.external_user_id &&
+        columns.is_active &&
+        columns.notifications_enabled &&
+        columns.created_at
+    )
+}
+
+export async function hasBotLinkCodes() {
+    const columns = await describe('bot_link_codes')
+    return Boolean(
+        columns &&
+        columns.code &&
+        columns.user_id &&
+        columns.channel &&
+        columns.expires_at &&
+        columns.used_at
+    )
+}
+
+export async function hasBotMessages() {
+    const columns = await describe('bot_messages')
+    return Boolean(
+        columns &&
+        columns.channel &&
+        columns.direction &&
+        columns.status &&
+        columns.created_at
+    )
+}
+
+export async function hasBotChannelTables() {
+    const [links, codes, messages] = await Promise.all([
+        hasBotLinks(),
+        hasBotLinkCodes(),
+        hasBotMessages()
+    ])
+    return Boolean(links && codes && messages)
+}
+
+export async function hasWeeklyRecap() {
+    const [weeklyRecapEnabled, lastRecapDate] = await Promise.all([
+        hasColumn('notification_preferences', 'weekly_recap_enabled'),
+        hasColumn('notification_preferences', 'last_weekly_recap_date')
+    ])
+    return Boolean(weeklyRecapEnabled || lastRecapDate)
+}
+
 export function resetAdminSchemaCache() {
     cache.clear()
 }

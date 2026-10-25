@@ -30,7 +30,8 @@ const Notification = sequelize.define('notification', {
                 'watering_day_before',
                 'morning_summary',
                 'care_reminder',
-                'care_tip'
+                'care_tip',
+                'weekly_recap'
             ]]
         }
     },

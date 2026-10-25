@@ -9,6 +9,10 @@ import AdminAuditLog from './AdminAuditLog.js'
 import ProductEvent from './ProductEvent.js'
 import GardenShare from './GardenShare.js'
 import GardenShareSignup from './GardenShareSignup.js'
+import BotLink from './BotLink.js'
+import BotLinkCode from './BotLinkCode.js'
+import BotMessage from './BotMessage.js'
+import Notification from './Notification.js'
 import './Passkey.js'
 import './PasskeyChallenge.js'
 
@@ -98,6 +102,46 @@ GardenShareSignup.belongsTo(User, {
     as: 'user'
 })
 
+User.hasMany(BotLink, {
+    foreignKey: 'user_id',
+    as: 'botLinks',
+    onDelete: 'CASCADE'
+})
+BotLink.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+})
+
+User.hasMany(BotLinkCode, {
+    foreignKey: 'user_id',
+    as: 'botLinkCodes',
+    onDelete: 'CASCADE'
+})
+BotLinkCode.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+})
+
+BotLink.hasMany(BotMessage, {
+    foreignKey: 'bot_link_id',
+    as: 'messages',
+    onDelete: 'SET NULL'
+})
+BotMessage.belongsTo(BotLink, {
+    foreignKey: 'bot_link_id',
+    as: 'link'
+})
+
+BotMessage.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user'
+})
+
+BotMessage.belongsTo(Notification, {
+    foreignKey: 'notification_id',
+    as: 'notification'
+})
+
 export {
     User,
     Plant,
@@ -105,5 +149,8 @@ export {
     AdminAuditLog,
     ProductEvent,
     GardenShare,
-    GardenShareSignup
+    GardenShareSignup,
+    BotLink,
+    BotLinkCode,
+    BotMessage
 }

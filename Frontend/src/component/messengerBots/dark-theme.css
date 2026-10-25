@@ -1,0 +1,79 @@
+html[data-theme='dark'] .messengerBots {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .messengerBots .messengerBotsNotice {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .messengerBots .messengerCard {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .messengerBots .messengerCard.is-linked {
+  border-color: rgba(127, 209, 160, 0.4);
+}
+
+html[data-theme='dark'] .messengerBots .messengerCardIcon {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .messengerBots .messengerBadge {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .messengerBots .messengerButton--primary {
+  background: var(--theme-accent);
+  color: var(--theme-on-accent);
+}
+
+html[data-theme='dark'] .messengerBots .messengerButton--primary:hover {
+  background: #95ddb2;
+}
+
+html[data-theme='dark'] .messengerBots .messengerButton--secondary,
+html[data-theme='dark'] .messengerBots .messengerButton--ghost {
+  border-color: var(--theme-border);
+  background: transparent;
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .messengerBots .messengerButton--secondary:hover,
+html[data-theme='dark'] .messengerBots .messengerButton--ghost:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .messengerBots .messengerButton--danger {
+  border-color: var(--theme-danger);
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .messengerBots .messengerCode,
+html[data-theme='dark'] .messengerBots .messengerToggleRow,
+html[data-theme='dark'] .messengerBots .messengerConfirm {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .messengerBots .messengerSwitchTrack {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+html[data-theme='dark'] .messengerBots .messengerSwitch input:checked + .messengerSwitchTrack {
+  background: var(--theme-accent);
+}
+
+html[data-theme='dark'] .messengerBots .messengerSwitchTrack::after {
+  background: #f4f5f4;
+}
+
+html[data-theme='dark'] .messengerBots .messengerCardText--warning,
+html[data-theme='dark'] .messengerBots .messengerCardMessage--error {
+  color: var(--theme-danger);
+}

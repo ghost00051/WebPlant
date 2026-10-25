@@ -15,7 +15,6 @@ import MobileNav from '../tools/MobileNav.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
 import { useChatSessions } from '../chat/useChatSessions.js'
-import AiTicker from '../aiTicker/aiTicker.jsx'
 import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
@@ -323,7 +322,6 @@ function Home() {
         <div className="gofOfMain">
             <AppHeader user={user} onProfileClick={() => setActiveTab('profile')} />
             <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
-            {activeTab === 'home' && <AiTicker />}
             <main key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}

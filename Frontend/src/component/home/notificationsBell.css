@@ -10,6 +10,7 @@
     border-radius: 50%;
     background: #f5f4f1;
     cursor: pointer;
+    display: none;
 }
 
 .notificationsBell > img {

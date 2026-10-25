@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 [CmdletBinding()]
 param(
     [string]$Tag,
@@ -189,7 +189,6 @@ function Connect-DockerProxyToKind {
         return
     }
     if ($current) {
-        # Адрес мог сместиться после перезапуска Docker Desktop: перевешиваем на статический.
         Invoke-Native -Action { docker network disconnect $KindNetworkName $DockerProxyName } | Out-Null
     }
 
@@ -362,7 +361,9 @@ $overriddenKeys = @(
 )
 $secretKeys = @(
     'DB_PASSWORD', 'SECRET_KEY', 'YANDEX_CLOUD_API_KEY', 'VAPID_PRIVATE_KEY',
-    'SMTP_PASSWORD'
+    'SMTP_PASSWORD',
+    'TELEGRAM_BOT_TOKEN', 'TELEGRAM_BOT_WEBHOOK_SECRET',
+    'MAX_BOT_TOKEN', 'MAX_BOT_WEBHOOK_SECRET'
 )
 
 $namespaceCreated = Invoke-Native -Action { kubectl create namespace $Namespace --dry-run=client -o yaml | kubectl apply -f - } -Capture
@@ -371,8 +372,6 @@ if ($namespaceCreated.ExitCode -ne 0) {
     throw 'Не удалось создать namespace webplant'
 }
 
-# Запоминаем env до правок: если переменные изменились, поды нужно перезапустить —
-# контейнер читает окружение только при старте (иначе «включил, а не работает»).
 $envHashBefore = Get-NativeText -AllowFailure { kubectl get configmap webplant-env -n $Namespace -o jsonpath='{.data}' }
 $secretHashBefore = Get-NativeText -AllowFailure { kubectl get secret webplant-secrets -n $Namespace -o jsonpath='{.data}' }
 $configHashBefore = Get-NativeText -AllowFailure { kubectl get configmap webplant-config -n $Namespace -o jsonpath='{.data}' }

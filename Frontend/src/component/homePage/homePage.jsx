@@ -6,6 +6,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import check from '../../assets/check.svg'
 import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
+import CareStreakCard from '../careStreak/CareStreakCard.jsx'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
@@ -213,6 +214,7 @@ function HomePage ({
   const [onboarding, setOnboarding] = useState(null)
   const [reminderState, setReminderState] = useState('default')
   const [wateringNotice, setWateringNotice] = useState('')
+  const [careRefreshKey, setCareRefreshKey] = useState(0)
 
   const calendarRef = useRef(null)
   const wateringTabRefs = useRef(new Map())
@@ -457,6 +459,7 @@ function HomePage ({
       } else {
         setDataError('')
       }
+      setCareRefreshKey(value => value + 1)
       setIsLoading(false)
     },
     [
@@ -1423,6 +1426,7 @@ function HomePage ({
             )}
           </div>
         </section>
+        <CareStreakCard refreshSignal={careRefreshKey} />
         <section className='offScheduleWatering'>
           <div className='descriptioOfoffScheduleWatering'>
             <ThemedIcon src={IconTile} alt='' />

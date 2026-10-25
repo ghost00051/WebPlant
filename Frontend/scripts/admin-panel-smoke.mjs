@@ -363,6 +363,135 @@ const productPayload = {
     }
 }
 
+function botsSeries(days = 30) {
+    const points = []
+    for (let index = days - 1; index >= 0; index--) {
+        points.push({
+            day: day(index),
+            telegramSent: (index % 5) + 3,
+            telegramFailed: index % 3,
+            maxSent: (index % 4) + 1,
+            maxFailed: index % 2
+        })
+    }
+    return points
+}
+
+const botsPayload = {
+    generatedAt: new Date().toISOString(),
+    days: 30,
+    timezone: 'Europe/Moscow',
+    tablesReady: true,
+    channels: {
+        telegram: {
+            configured: true,
+            botUsername: 'lejka_bot',
+            linkedActive: 34,
+            linkedTotal: 40,
+            linkedInRange: 9,
+            unlinkedInRange: 3,
+            notificationsDisabled: 2,
+            codesCreated: 20,
+            codesUsed: 12,
+            codeConversion: 60,
+            messagesSent: 180,
+            messagesFailed: 7,
+            messagesSkipped: 2,
+            deliveryRate: 96.3,
+            remindersSent: 120,
+            lastSentAt: new Date(now - 3600000).toISOString(),
+            lastError: 'chat not found'
+        },
+        max: {
+            configured: true,
+            botUsername: 'se14772813_bot',
+            linkedActive: 11,
+            linkedTotal: 14,
+            linkedInRange: 3,
+            unlinkedInRange: 1,
+            notificationsDisabled: 0,
+            codesCreated: 10,
+            codesUsed: 6,
+            codeConversion: 60,
+            messagesSent: 60,
+            messagesFailed: 4,
+            messagesSkipped: 0,
+            deliveryRate: 93.8,
+            remindersSent: 40,
+            lastSentAt: new Date(now - 7200000).toISOString(),
+            lastError: null
+        }
+    },
+    totals: {
+        linkedActive: 45,
+        linkedNew: 12,
+        messagesSent: 240,
+        messagesFailed: 11,
+        deliveryRate: 95.6,
+        reminderShare: 38.4
+    },
+    series: botsSeries(30),
+    linkFunnel: { codesCreated: 30, codesUsed: 18, conversion: 60 },
+    recentErrors: [
+        {
+            channel: 'telegram',
+            kind: 'reminder',
+            error: 'chat not found',
+            createdAt: new Date(now - 1800000).toISOString()
+        },
+        {
+            channel: 'max',
+            kind: 'weekly_recap',
+            error: '429 Too Many Requests',
+            createdAt: new Date(now - 5400000).toISOString()
+        }
+    ],
+    commands: [
+        { channel: 'telegram', command: '/start', count: 22 },
+        { channel: 'telegram', command: '/status', count: 8 },
+        { channel: 'max', command: '/start', count: 5 }
+    ],
+    recap: { notificationsCreated: 40, delivered: 34, failed: 2, users: 38, telegram: 21, max: 13 },
+    streak: { usersWithStreak: 27, avgCurrentStreak: 3.4, bestCurrentStreak: 21 }
+}
+
+function emptyBotsPayload(tablesReady = true) {
+    const channel = {
+        configured: false,
+        botUsername: null,
+        linkedActive: 0,
+        linkedTotal: 0,
+        linkedInRange: 0,
+        unlinkedInRange: 0,
+        notificationsDisabled: 0,
+        codesCreated: 0,
+        codesUsed: 0,
+        codeConversion: 0,
+        messagesSent: 0,
+        messagesFailed: 0,
+        messagesSkipped: 0,
+        deliveryRate: 0,
+        remindersSent: 0,
+        lastSentAt: null,
+        lastError: null
+    }
+
+    return {
+        generatedAt: new Date().toISOString(),
+        days: 30,
+        timezone: 'Europe/Moscow',
+        tablesReady,
+        channels: { telegram: { ...channel }, max: { ...channel } },
+        totals: { linkedActive: 0, linkedNew: 0, messagesSent: 0, messagesFailed: 0, deliveryRate: 0, reminderShare: 0 },
+        series: [],
+        linkFunnel: { codesCreated: 0, codesUsed: 0, conversion: 0 },
+        recentErrors: [],
+        commands: [],
+        recap: { notificationsCreated: 0, delivered: 0, failed: 0, users: 0, telegram: 0, max: 0 },
+        streak: { usersWithStreak: 0, avgCurrentStreak: 0, bestCurrentStreak: 0 }
+    }
+}
+
 const visitsPayload = {
     tracked: true,
     from: day(29),
@@ -741,6 +870,12 @@ function route(url) {
                 : mailPayload
         }
     }
+    if (path.includes('/admin/bots/analytics')) {
+        if (mode === 'bots-error') return { status: 500, data: { message: 'Внутренняя ошибка сервера' } }
+        if (mode === 'bots-404') return { status: 404, data: { message: 'Маршрут не найден' } }
+        if (mode === 'bots-missing-tables') return { status: 200, data: emptyBotsPayload(false) }
+        return { status: 200, data: empty ? emptyBotsPayload() : botsPayload }
+    }
     if (path.includes('/system/docker-stats/') && path.endsWith('/logs')) {
         if (empty) {
             return {
@@ -837,11 +972,13 @@ const visitors = await import(new URL('../admin/js/views/visitors.js', import.me
 const users = await import(new URL('../admin/js/views/users.js', import.meta.url).href)
 const resources = await import(new URL('../admin/js/views/resources.js', import.meta.url).href)
 const ai = await import(new URL('../admin/js/views/ai.js', import.meta.url).href)
+const bots = await import(new URL('../admin/js/views/bots.js', import.meta.url).href)
 const system = await import(new URL('../admin/js/views/system.js', import.meta.url).href)
 
 const allViews = [
     views.overviewView,
     product.productView,
+    bots.botsView,
     visitors.visitorsView,
     users.usersView,
     resources.plantsView,
@@ -852,7 +989,7 @@ const allViews = [
     system.systemView
 ]
 
-check('десять разделов объявлены', allViews.length === 10)
+check('одиннадцать разделов объявлены', allViews.length === 11)
 check('у всех разделов есть id, заголовок и render', allViews.every(view =>
     typeof view.id === 'string' && typeof view.title === 'string' && typeof view.render === 'function'))
 check('идентификаторы уникальны', new Set(allViews.map(view => view.id)).size === allViews.length)
@@ -1181,6 +1318,94 @@ const emptySystemRoot = makeEl('div')
 await system.systemView.render(emptySystemRoot, makeCtx())
 check('при недоступном Docker показывается объяснение причины',
     Boolean(findNode(emptySystemRoot, node => node.textContent?.includes('DOCKER_STATS_ENABLED=false'))))
+mode = 'full'
+
+console.log('\n== Боты: Telegram/MAX, recap и серия')
+mode = 'full'
+const botsRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsRoot, makeCtx())
+    check('боты: запрос /admin/bots/analytics ушёл',
+        requests.some(entry => entry.includes('/admin/bots/analytics?days=30')))
+    check('боты: KPI подключений, доставки и доли напоминаний',
+        hasText(botsRoot, 'Подключено аккаунтов') &&
+        hasText(botsRoot, 'Доставлено сообщений') &&
+        hasText(botsRoot, 'Доля напоминаний в мессенджерах') &&
+        hasText(botsRoot, '38,4%'))
+    check('боты: recap-доставки и серия ухода (F10)',
+        hasText(botsRoot, 'Recap-доставки') &&
+        hasText(botsRoot, 'Weekly recap') &&
+        hasText(botsRoot, 'Серия ухода') &&
+        hasText(botsRoot, 'Пользователей с серией'))
+    check('боты: графики доставки и ошибок по каналам',
+        hasText(botsRoot, 'Доставлено сообщений по каналам') &&
+        hasText(botsRoot, 'Ошибки доставки по каналам') &&
+        hasText(botsRoot, 'MAX'))
+    check('боты: таблица каналов с именами ботов',
+        hasText(botsRoot, 'lejka_bot') &&
+        hasText(botsRoot, 'se14772813_bot') &&
+        hasText(botsRoot, 'всего 40'))
+    check('боты: воронка link-кодов',
+        hasText(botsRoot, 'Воронка link-кодов') &&
+        hasText(botsRoot, 'Кодов создано') &&
+        hasText(botsRoot, 'Кодов использовано') &&
+        hasText(botsRoot, '60%'))
+    check('боты: таблица последних ошибок',
+        hasText(botsRoot, 'Последние ошибки') &&
+        hasText(botsRoot, 'chat not found') &&
+        hasText(botsRoot, '429 Too Many Requests'))
+    check('боты: таблица команд',
+        hasText(botsRoot, 'Команды ботов') &&
+        hasText(botsRoot, '/start') &&
+        hasText(botsRoot, '/status'))
+} catch (error) {
+    check('боты: раздел отрисован', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'empty'
+const emptyBotsRoot = makeEl('div')
+try {
+    await bots.botsView.render(emptyBotsRoot, makeCtx())
+    check('боты: пустые данные показывают нули без падения',
+        emptyBotsRoot.children.length >= 1 &&
+        hasText(emptyBotsRoot, 'Подключено аккаунтов') &&
+        hasText(emptyBotsRoot, 'Ошибок доставки не было'))
+} catch (error) {
+    check('боты: пустые данные показывают нули без падения', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-missing-tables'
+const noTablesRoot = makeEl('div')
+try {
+    await bots.botsView.render(noTablesRoot, makeCtx())
+    check('боты: без таблиц объяснение про миграции и нули',
+        hasText(noTablesRoot, 'миграции ботов не применены') &&
+        hasText(noTablesRoot, 'Подключено аккаунтов'))
+} catch (error) {
+    check('боты: без таблиц объяснение про миграции и нули', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-error'
+const botsErrorRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsErrorRoot, makeCtx())
+    check('боты: ошибка API показана с кнопкой повтора',
+        hasText(botsErrorRoot, 'Внутренняя ошибка сервера') &&
+        Boolean(findButton(botsErrorRoot, 'Повторить')))
+} catch (error) {
+    check('боты: ошибка API показана с кнопкой повтора', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-404'
+const botsMissingRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsMissingRoot, makeCtx())
+    check('боты: 404 объясняет неподключённый endpoint',
+        hasText(botsMissingRoot, 'endpoint /api/admin/bots/analytics не найден') &&
+        Boolean(findButton(botsMissingRoot, 'Повторить')))
+} catch (error) {
+    check('боты: 404 объясняет неподключённый endpoint', false, `${error?.name}: ${error?.message}`)
+}
 mode = 'full'
 
 console.log('\n== Оболочка приложения')

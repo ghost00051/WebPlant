@@ -26,6 +26,7 @@ import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
 import { useTheme } from '../../context/useTheme.js'
 import GardenShareCard from '../gardenShare/GardenShareCard.jsx'
+import MessengerBots from '../messengerBots/MessengerBots.jsx'
 import { clearOfflineApiCache } from '../../utils/offlineQueue.js'
 import './dark-theme.css'
 
@@ -817,6 +818,7 @@ function Profile () {
           </label>
         </div>
       </div>
+      <MessengerBots />
       <div className='visualTheme'>
         <p>Тема оформления</p>
         {themeError && (

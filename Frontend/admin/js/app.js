@@ -55,6 +55,13 @@ const VIEWS = [
         load: () => import('./views/resources.js').then(module => module.chatView)
     },
     {
+        id: 'bots',
+        title: 'Боты',
+        subtitle: 'Telegram и MAX: подключения, доставки, ошибки, recap и серия',
+        needsRange: true,
+        load: () => import('./views/bots.js').then(module => module.botsView)
+    },
+    {
         id: 'system',
         title: 'Рассылки и сервер',
         subtitle: 'Push-уведомления, состояние API, Redis и Docker',
