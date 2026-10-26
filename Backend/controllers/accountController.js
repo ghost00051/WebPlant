@@ -160,7 +160,11 @@ export function buildAccountExport({
     }
     const carePlanByPlant = new Map()
     for (const plan of carePlans) {
-        carePlanByPlant.set(Number(plan.plant_id), plan.plan ?? null)
+        const rawPlan = plan.plan ?? null
+        const cleanedPlan = rawPlan && typeof rawPlan === 'object' && !Array.isArray(rawPlan)
+            ? Object.fromEntries(Object.entries(rawPlan).filter(([key]) => key !== '_version'))
+            : rawPlan
+        carePlanByPlant.set(Number(plan.plant_id), cleanedPlan)
     }
 
     return {

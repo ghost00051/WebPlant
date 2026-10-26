@@ -243,6 +243,32 @@ test('buildChatRequest: прошлые фото помечаются, чтобы
     assert.match(request.instructions, /ПАМЯТЬ ДИАЛОГА/)
 })
 
+test('buildChatRequest: план ухода попадает в контекст растения', () => {
+    const request = buildChatRequest({
+        message: 'можно ли опрыскивать монстеру?',
+        history: [],
+        timeZone: 'Europe/Moscow',
+        context: {
+            isAuthorized: true,
+            plantsCount: 1,
+            today: new Date('2026-10-17T09:00:00Z').toISOString(),
+            plants: [{
+                name: 'Монстера',
+                nextWatering: '2026-10-20T05:00:00Z',
+                carePlan: {
+                    recommended: ['Осмотр на вредителей', 'Протирание листьев'],
+                    avoided: ['Опрыскивание']
+                }
+            }]
+        }
+    })
+
+    const contextText = request.input[0].content
+    assert.match(contextText, /план ухода: Осмотр на вредителей, Протирание листьев/)
+    assert.match(contextText, /не рекомендуется планом: Опрыскивание/)
+    assert.match(request.instructions, /ПЛАН УХОДА/)
+})
+
 test('detectPlantGroup: группы определяются по названию и виду', () => {
     assert.equal(detectPlantGroup({ name: 'Опунция', species: 'Opuntia' }).id, 'cactus_succulent')
     assert.equal(detectPlantGroup({ name: 'Орхидея', species: 'Phalaenopsis' }).id, 'orchid')
@@ -408,6 +434,7 @@ test('buildVisionRequest: фото и вопрос попадают в запр�
     assert.match(instructions, /ботанический/i)
     assert.match(instructions, /JSON/)
     assert.match(instructions, /продолжение/i)
+    assert.match(instructions, /план ухода/)
 
     const parts = input[0].content
     assert.equal(parts[0].type, 'input_text')

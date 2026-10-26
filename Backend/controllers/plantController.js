@@ -58,8 +58,7 @@ import { recalculatePrediction, resetPrediction } from '../services/wateringLear
 import { buildPredictionMetadata } from '../utils/wateringPrediction.js'
 import { careTitleFor, normalizeCareActionPayload, serializeCareLog } from '../utils/careLogs.js'
 import { buildCareSchedule } from '../utils/careSchedule.js'
-import { buildDefaultCarePlan } from '../utils/careKnowledge.js'
-import { detectPlantGroup } from '../utils/wateringKnowledge.js'
+import { detectPlantGroup, getSeasonInfo } from '../utils/wateringKnowledge.js'
 import carePlanService from '../services/carePlanService.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
@@ -1876,14 +1875,16 @@ class PlantController {
                 raw: true
             })
 
+            const seasonInfo = getSeasonInfo(now, timeZone)
             const schedulePlants = plants.map(plant => {
-                const storedPlan = planRows.get(plant.id)?.plan
-                const plan = isPlainObject(storedPlan)
-                    ? storedPlan
-                    : buildDefaultCarePlan({
-                        plant,
-                        group: detectPlantGroup({ name: plant.name, species: plant.species })
-                    })
+                const group = detectPlantGroup({ name: plant.name, species: plant.species })
+                const plan = carePlanService.resolvePlan({
+                    plant,
+                    group,
+                    row: planRows.get(plant.id),
+                    season: seasonInfo.season,
+                    now
+                })
                 return { id: plant.id, name: plant.name, plan }
             })
 

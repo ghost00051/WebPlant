@@ -2,6 +2,8 @@ import { diffLocalDays, localDayKey } from './localDay.js'
 import { detectPlantGroup, getSeasonInfo } from './wateringKnowledge.js'
 
 const ALL_SEASONS = ['winter', 'spring', 'summer', 'autumn']
+export const CARE_KNOWLEDGE_VERSION = 2
+export const SAFE_CARE_ACTION_CODES = ['pest_check', 'humidity_support', 'leaf_clean', 'rotate']
 const FUZZY_LEAF_PATTERN = /сенполи|фиалк|глоксини|бегони|пеларгони|герань|калате|марант|стромант|опуш|бархат|пушист/i
 const MAX_TITLE_LENGTH = 80
 const MAX_BODY_LENGTH = 300
@@ -151,11 +153,12 @@ export const CARE_PLAN_INSTRUCTIONS = [
     'ТРЕБОВАНИЯ:',
     '• Не превышай hardMaxPerMonth и не опускай minIntervalDays ниже hardMinIntervalDays.',
     '• Учитывай вид растения, его группу, сезон, возраст и careHints. Если действие не нужно или противопоказано — maxPerMonth: 0.',
+    '• Действие по умолчанию не рекомендуется: включай его, только если оценил(а) пользу для этого вида. Если есть сомнения или риск вреда — maxPerMonth: 0.',
     '• Учитывай биологию конкретного вида: для влаголюбивых растений опрыскивание может быть частым, для засухоустойчивых — редким или ненужным.',
     '• Для суккулентов, кактусов и растений с опушёнными листьями опрыскивание не рекомендуется.',
     '• Не выдумывай факты; если данных мало, используй типичные для вида значения.',
     '• Верни ровно один JSON-объект без Markdown:',
-    '{"actions":{"spray":{"minIntervalDays":3,"maxPerMonth":8,"seasons":["winter","spring","summer","autumn"]},"fertilize":{"minIntervalDays":14,"maxPerMonth":2,"seasons":["spring","summer"]}}}'
+    '{"actions":{"spray":{"minIntervalDays":14,"maxPerMonth":2,"seasons":["autumn","winter"]},"fertilize":{"minIntervalDays":14,"maxPerMonth":2,"seasons":["spring","summer"]}}}'
 ].join('\n')
 
 function parseInteger(value, fallback = null) {
@@ -171,6 +174,7 @@ export function buildDefaultCarePlan({ plant, group } = {}) {
     const plan = {}
 
     for (const action of CARE_ACTIONS) {
+        if (!SAFE_CARE_ACTION_CODES.includes(action.code)) continue
         if (action.blockedGroups.includes(group?.id)) continue
         if (action.blockedPattern && action.blockedPattern.test(plantHaystack(plant))) continue
 
@@ -182,6 +186,43 @@ export function buildDefaultCarePlan({ plant, group } = {}) {
     }
 
     return plan
+}
+
+export function sanitizeCarePlan(plan, { plant, group } = {}) {
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return {}
+
+    const sanitized = {}
+    for (const action of CARE_ACTIONS) {
+        const entry = plan[action.code]
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+        if (action.blockedGroups.includes(group?.id)) continue
+        if (action.blockedPattern && action.blockedPattern.test(plantHaystack(plant))) continue
+        sanitized[action.code] = entry
+    }
+
+    return sanitized
+}
+
+export function summarizeCarePlan(plan, { season } = {}) {
+    const recommended = []
+    const avoided = []
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) return { recommended, avoided }
+
+    for (const action of CARE_ACTIONS) {
+        const entry = plan[action.code]
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+        if (entry.maxPerMonth === 0) {
+            avoided.push(action.title)
+            continue
+        }
+        const seasons = Array.isArray(entry.seasons) && entry.seasons.length
+            ? entry.seasons
+            : action.seasons
+        if (season && !seasons.includes(season)) continue
+        recommended.push(action.title)
+    }
+
+    return { recommended, avoided }
 }
 
 export function buildCarePlanContext({
@@ -372,7 +413,8 @@ export function getCareCandidates({
 
     for (const action of CARE_ACTIONS) {
         const planAction = carePlan?.[action.code]
-        if (planAction && planAction.maxPerMonth === 0) continue
+        if (!planAction) continue
+        if (planAction.maxPerMonth === 0) continue
 
         const seasons = Array.isArray(planAction?.seasons) && planAction.seasons.length
             ? planAction.seasons
