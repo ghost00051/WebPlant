@@ -7,6 +7,7 @@ import WateringLog from '../models/WateringLog.js'
 import Notification from '../models/Notification.js'
 import {
     computeCareStreak,
+    resolveFreezesPerWeek,
     summarizeWeek,
     weekWindow,
     DAY_MS,
@@ -76,7 +77,11 @@ export class CareStreakController {
         const window = weekWindow(now, timeZone)
 
         const { events, photos, careActions } = await this.loadActivity(userId, now, window)
-        const streak = computeCareStreak(events, { now })
+        const streak = computeCareStreak(events, {
+            now,
+            timeZone,
+            freezesPerWeek: resolveFreezesPerWeek()
+        })
         const week = summarizeWeek(events, { now, timeZone, photos, careActions })
         const latestRecap = await this.loadLatestRecap(userId)
 
@@ -86,6 +91,8 @@ export class CareStreakController {
             lastWateredAt: streak.lastWateredAt,
             week,
             latestRecap,
+            freeze: streak.freeze,
+            streakBreak: streak.streakBreak,
             updatedAt: now.toISOString()
         }
     }

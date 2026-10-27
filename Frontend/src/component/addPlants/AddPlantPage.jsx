@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import AddPlants from './addPlants.jsx'
+import MultiAddPlants from './MultiAddPlants.jsx'
 import BackBtn from '../../assets/BackBtn.svg'
+import plus from '../../assets/plus.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { API_URL } from '../../utils/api.js'
 import './AddPlantPage.css'
@@ -11,8 +13,12 @@ import './dark-theme.css'
 
 function AddPlantPage() {
     const navigate = useNavigate()
+    const [searchParams] = useSearchParams()
     const [isAuthorized, setIsAuthorized] = useState(false)
     const [hasAuthError, setHasAuthError] = useState(false)
+    const [isMultiAddOpen, setIsMultiAddOpen] = useState(
+        () => searchParams.get('multi') === '1'
+    )
 
     useEffect(() => {
         let isMounted = true
@@ -60,16 +66,27 @@ function AddPlantPage() {
     return (
         <main className='addPlantPage'>
             <header className='addPlantPageHeader'>
+                <div className='addPlantPageHeaderTop'>
+                    <button
+                        type='button'
+                        onClick={() => navigate('/home')}
+                        aria-label='Вернуться на главную'
+                    >
+                        <ThemedIcon src={BackBtn} alt='' />
+                    </button>
+                    <h1 className='addPlantPageTitle'>Добавить растение</h1>
+                </div>
                 <button
                     type='button'
-                    onClick={() => navigate('/home')}
-                    aria-label='Вернуться на главную'
+                    className='addPlantPageMultiButton'
+                    onClick={() => setIsMultiAddOpen(true)}
                 >
-                    <ThemedIcon src={BackBtn} alt='' />
+                    <img src={plus} alt='' aria-hidden='true' />
+                    <span>Добавить сразу несколько</span>
                 </button>
-                <h1 className='addPlantPageTitle'>Добавить растение</h1>
             </header>
-            <AddPlants />
+            <AddPlants key={searchParams.toString()} />
+            <MultiAddPlants open={isMultiAddOpen} onClose={() => setIsMultiAddOpen(false)} />
         </main>
     )
 }

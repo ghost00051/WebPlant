@@ -365,13 +365,22 @@ class PasskeyController {
                     counter: verification.authenticationInfo.newCounter,
                     last_used_at: new Date()
                 }, { transaction })
-                await linkGuestDataToUser(
-                    user.id,
-                    guestToken,
-                    'login_linked',
-                    transaction
-                )
             })
+
+            if (guestToken) {
+                try {
+                    const linked = await linkGuestDataToUser(user.id, guestToken, 'login_linked')
+                    console.log(
+                        `🔗 Гостевые данные → аккаунт #${user.id} (passkey): ` +
+                        `согласий ${linked.consentCount}, сообщений ${linked.chatMessageCount}`
+                    )
+                } catch (error) {
+                    console.error(
+                        '⚠️ Перенос гостевых данных после входа по ключу не удался:',
+                        error?.message || error
+                    )
+                }
+            }
 
             await revokeAuthTokens(req.cookies)
             if (rememberMe === true) {

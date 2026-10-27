@@ -7,8 +7,10 @@ import {
   getMessengerChannels,
   isApiUnavailable,
   normalizeCareStreakPayload,
+  normalizeChatAnswerPayload,
   normalizeMessengerChannelsPayload,
   safeExternalUrl,
+  sendGuestChatMessage,
   unlinkMessenger,
   updateMessengerPreferences
 } from './api.js'
@@ -330,3 +332,104 @@ test('normalizeMessengerChannelsPayload: добавляет отсутствую
   assert.equal(data.channels[1].configured, false)
   assert.equal(data.linkCodeTtlMinutes, 15)
 })
+
+test('normalizeChatAnswerPayload: возвращает текст, сессию и признаки деградации', () => {
+  const answer = normalizeChatAnswerPayload({
+    text: '  Поливайте монстеру раз в 7–10 дней.  ',
+    sessionId: '11111111-1111-4111-8111-111111111111',
+    usage: { input_tokens: 12, output_tokens: 30 },
+    local: true
+  })
+
+  assert.equal(answer.text, 'Поливайте монстеру раз в 7–10 дней.')
+  assert.equal(answer.sessionId, '11111111-1111-4111-8111-111111111111')
+  assert.deepEqual(answer.usage, { input_tokens: 12, output_tokens: 30 })
+  assert.equal(answer.local, true)
+  assert.equal(answer.degraded, false)
+})
+
+test('normalizeChatAnswerPayload: без текста и с мусором — понятная ошибка', () => {
+  assert.throws(
+    () => normalizeChatAnswerPayload(null),
+    error => error instanceof ApiError && error.code === 'invalid-response'
+  )
+  assert.throws(
+    () => normalizeChatAnswerPayload({ text: '   ' }),
+    error => error instanceof ApiError && error.code === 'invalid-response'
+  )
+
+  const answer = normalizeChatAnswerPayload({ text: 'Ответ', sessionId: 's1' })
+  assert.equal(answer.sessionId, null)
+  assert.equal(answer.degraded, false)
+})
+
+test('sendGuestChatMessage: постит вопрос в гостевой чат и передаёт sessionId', async () => {
+  let capturedUrl = ''
+  let capturedOptions = null
+
+  await withFetchMock((url, options) => {
+    capturedUrl = String(url)
+    capturedOptions = options
+    return jsonResponse({
+      text: 'Судя по описанию, растению не хватает света.',
+      sessionId: '33333333-3333-4333-8333-333333333333',
+      usage: null
+    })
+  }, async () => {
+    const answer = await sendGuestChatMessage({
+      message: '  Почему желтеют листья?  ',
+      sessionId: '22222222-2222-4222-8222-222222222222'
+    })
+
+    assert.equal(answer.text, 'Судя по описанию, растению не хватает света.')
+    assert.equal(answer.sessionId, '33333333-3333-4333-8333-333333333333')
+  })
+
+  assert.match(capturedUrl, /\/chat\/chat$/)
+  assert.equal(capturedOptions.method, 'POST')
+  assert.equal(capturedOptions.credentials, 'include')
+  assert.deepEqual(JSON.parse(capturedOptions.body), {
+    message: 'Почему желтеют листья?',
+    sessionId: '22222222-2222-4222-8222-222222222222'
+  })
+})
+
+test('sendGuestChatMessage: пустой и слишком длинный вопрос не уходят на сервер', async () => {
+  let calls = 0
+  await withFetchMock(() => {
+    calls += 1
+    return jsonResponse({ text: 'ok' })
+  }, async () => {
+    await expectApiError(sendGuestChatMessage({ message: '   ' }), error => {
+      assert.equal(error.code, 'empty-message')
+      assert.equal(error.status, 400)
+    })
+    await expectApiError(sendGuestChatMessage({ message: 'а'.repeat(1001) }), error => {
+      assert.equal(error.code, 'message-too-long')
+      assert.equal(error.status, 400)
+    })
+  })
+  assert.equal(calls, 0)
+})
+
+test('sendGuestChatMessage: 429 и 503 приходят как ApiError с сообщением сервера', async () => {
+  await withFetchMock(
+    () => jsonResponse({ message: 'На сегодня лимит сообщений исчерпан.' }, 429),
+    async () => {
+      await expectApiError(sendGuestChatMessage({ message: 'Полив?' }), error => {
+        assert.equal(error.status, 429)
+        assert.match(error.message, /лимит/)
+      })
+    }
+  )
+
+  await withFetchMock(
+    () => jsonResponse({ message: 'Сервис временно недоступен.' }, 503),
+    async () => {
+      await expectApiError(sendGuestChatMessage({ message: 'Полив?' }), error => {
+        assert.equal(error.status, 503)
+      })
+    }
+  )
+})
+

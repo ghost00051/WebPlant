@@ -13,7 +13,8 @@ import './gardenShare.css'
 
 const SHARE_INTRO =
   'Создайте публичную ссылку на сад: друзья увидят список растений и частоту ' +
-  'полива, но не смогут ничего изменить.'
+  'полива, но не смогут ничего изменить. А здесь будет видно, сколько человек ' +
+  'открыли ссылку и сколько пришли по ней в «Лейку».'
 
 function sharedGardenUrl (share) {
   if (!share) return ''
@@ -206,6 +207,16 @@ function GardenShareCard () {
                   Ссылка активна. Каждый, у кого она есть, может посмотреть
                   растения и частоту полива — без права что-то изменить.
                 </p>
+                <dl className='gardenShareStatsGrid'>
+                  <div className='gardenShareStat'>
+                    <dt>Просмотры</dt>
+                    <dd>{share.viewCount}</dd>
+                  </div>
+                  <div className='gardenShareStat'>
+                    <dt>Пришли по ссылке</dt>
+                    <dd>{share.signupCount}</dd>
+                  </div>
+                </dl>
                 <div className='gardenShareLinkRow'>
                   <input
                     className='gardenShareLinkInput'
@@ -224,11 +235,7 @@ function GardenShareCard () {
                     {busy === 'copy' ? 'Копируем…' : 'Скопировать'}
                   </button>
                 </div>
-                <p className='gardenShareStats'>
-                  Просмотров: {share.viewCount} · Пришло по ссылке:{' '}
-                  {share.signupCount}
-                </p>
-                <div className='accountDataActions'>
+                <div className='accountDataActions' aria-busy={Boolean(busy)}>
                   <button
                     type='button'
                     className='accountDataExport'

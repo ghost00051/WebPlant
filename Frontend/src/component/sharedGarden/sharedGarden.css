@@ -64,6 +64,85 @@
     outline-offset: 2px;
 }
 
+.sharedGardenButton--secondary {
+    border: 1px solid var(--theme-border, #e5e5df);
+    background: var(--theme-surface, #ffffff);
+    color: var(--theme-text, #2d2d2d);
+}
+
+.sharedGardenButton--secondary:hover {
+    border-color: var(--theme-focus-ring, #52705c);
+}
+
+.sharedGardenCtaActions .sharedGardenButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+}
+
+.sharedGardenCtaActions .sharedGardenButton:hover {
+    text-decoration: none;
+}
+
+.sharedGardenWantedButton {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    margin-top: 14px;
+    padding: 10px 16px;
+    border: 1px solid var(--theme-border, #e5e5df);
+    border-radius: 12px;
+    background: var(--theme-raised, #f5f3ef);
+    color: var(--theme-accent-text, #2f6b47);
+    font-family: inherit;
+    font-size: var(--font-size-sm, 0.875rem);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.sharedGardenWantedButton:hover {
+    border-color: var(--theme-accent, #7fd1a0);
+}
+
+.sharedGardenWantedButton:focus-visible {
+    outline: 3px solid var(--theme-focus-ring, #52705c);
+    outline-offset: 2px;
+}
+
+.sharedGardenWantedList {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.sharedGardenWantedList li {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--theme-accent-soft, #e9efea);
+    color: var(--theme-accent-text, #2f6b47);
+    font-size: var(--font-size-xs, 0.75rem);
+    font-weight: 600;
+}
+
+html[data-theme='dark'] .sharedGardenWantedButton {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .sharedGardenButton--secondary {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
 @media (max-width: 600px) {
     .sharedGardenCtaActions {
         width: 100%;
@@ -71,5 +150,11 @@
 
     .sharedGardenButton {
         width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .sharedGardenWantedButton {
+        transition: none;
     }
 }

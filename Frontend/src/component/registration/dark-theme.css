@@ -28,3 +28,78 @@ html[data-theme='dark'] .formError {
 html[data-theme='dark'] .consentOption input[aria-invalid='true'] {
     outline-color: var(--theme-danger);
 }
+
+html[data-theme='dark'] .registrationOnboardingOverlay {
+  background: rgba(0, 0, 0, 0.62);
+}
+
+html[data-theme='dark'] .registrationOnboardingCard {
+  border-color: var(--auth-border);
+  background: var(--auth-surface);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme='dark'] .registrationOnboardingEyebrow,
+html[data-theme='dark'] .registrationOnboardingCard > p,
+html[data-theme='dark'] .registrationOnboardingPresetHint,
+html[data-theme='dark'] .registrationOnboardingSkip {
+  color: var(--auth-muted);
+}
+
+html[data-theme='dark'] .registrationOnboardingCarry,
+html[data-theme='dark'] .registrationOnboardingGarden {
+  background: var(--auth-panel);
+  color: var(--auth-text) !important;
+}
+
+html[data-theme='dark'] .registrationOnboardingCarry > span:first-child {
+  color: var(--auth-accent);
+}
+
+html[data-theme='dark'] .registrationOnboardingPreset {
+  border-color: var(--auth-border);
+  background: var(--auth-panel);
+  color: var(--auth-text);
+}
+
+html[data-theme='dark'] .registrationOnboardingPreset:hover {
+  border-color: var(--auth-accent);
+  background: #2a2c33;
+}
+
+html[data-theme='dark'] .registrationOnboardingChat {
+  border-color: var(--auth-border);
+  background: var(--auth-panel);
+  color: var(--auth-accent-strong);
+}
+
+html[data-theme='dark'] .registrationOnboardingChat:hover {
+  border-color: var(--auth-accent);
+  background: #2a2c33;
+}
+
+html[data-theme='dark'] .marketingConsent {
+  border-color: var(--auth-border);
+  background: var(--auth-panel);
+}
+
+html[data-theme='dark'] .marketingConsentHead strong,
+html[data-theme='dark'] .marketingConsentOption span {
+  color: var(--auth-text);
+}
+
+html[data-theme='dark'] .marketingConsentBenefit {
+  color: var(--auth-muted);
+}
+
+html[data-theme='dark'] .registrationCarryNotice {
+  background: var(--auth-panel);
+}
+
+html[data-theme='dark'] .registrationCarryNotice strong {
+  color: var(--auth-text);
+}
+
+html[data-theme='dark'] .registrationCarryNotice p {
+  color: var(--auth-muted);
+}

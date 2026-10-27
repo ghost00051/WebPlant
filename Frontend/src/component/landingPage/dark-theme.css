@@ -4,6 +4,224 @@ html[data-theme='dark'] .landingPage {
 }
 
 html[data-theme='dark'] .landingHeader,
-html[data-theme='dark'] .landingFooter {
+html[data-theme='dark'] .landingFooter,
+html[data-theme='dark'] .landingGuestChat,
+html[data-theme='dark'] .landingFacts {
     border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .landingGuestChatFacts li {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingGuestChatFacts li::before,
+html[data-theme='dark'] .landingDemoDot {
+    background: var(--theme-accent);
+}
+
+html[data-theme='dark'] .landingChatPanel {
+    border-color: var(--theme-border);
+    background: var(--theme-surface);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .landingChatAvatar {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .landingChatHeaderText strong {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingChatHeaderText small,
+html[data-theme='dark'] .landingChatPolicy {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingChatCounter {
+    background: var(--theme-raised);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingChatLog {
+    background: var(--theme-page);
+}
+
+html[data-theme='dark'] .landingChatMessage-assistant {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingChatMessage-user {
+    background: #789080;
+    color: #101612;
+}
+
+html[data-theme='dark'] .landingChatSuggestion {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingChatSuggestion:hover {
+    background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .landingChatError {
+    border-color: #5a3a3a;
+    background: var(--theme-danger-soft);
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .landingChatError p {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .landingChatRetry {
+    border-color: #5a3a3a;
+    background: var(--theme-raised);
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .landingChatInput {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingChatInput::placeholder {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingChatSend {
+    border-color: #789080;
+    background: #789080;
+    color: #101612;
+}
+
+html[data-theme='dark'] .landingChatSend:disabled {
+    border-color: #3a4a41;
+    background: #3a4a41;
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingChatSave {
+    background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .landingChatSave p {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingChatSaveAction {
+    background: #789080;
+    color: #101612;
+}
+
+html[data-theme='dark'] .landingDemoCalendar {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .landingDemoCalendar .isToday {
+    background: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .landingDemoTodayLabel {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingDemoPlant {
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .landingDemoPlantText small {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingDemoWater {
+    border-color: #789080;
+    background: #789080;
+    color: #101612;
+}
+
+html[data-theme='dark'] .landingDemoRecap {
+    background: var(--theme-accent-soft);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingDemoReset {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingReminderScenario {
+    border-color: var(--theme-border);
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .landingReminderIcon {
+    background: var(--theme-surface);
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .landingReminderTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingReminderText {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingReminderButton {
+    border-color: var(--theme-border);
+    background: var(--theme-surface);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingReminderStatus {
+    background: var(--theme-accent-soft);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingFactCard {
+    border-color: var(--theme-border);
+    background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .landingFactValue {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingFactValue strong {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingFactCard h3 {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .landingFactText,
+html[data-theme='dark'] .landingFactsNote {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .landingPreviewLogo,
+html[data-theme='dark'] .landingPlantGlyph,
+html[data-theme='dark'] .landingPlantCheck {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .landingPlantGlyphLight {
+    background: #3a3428;
+    color: #d8c08a;
+}
+
+html[data-theme='dark'] .landingPreviewCount {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent);
 }

@@ -7,6 +7,7 @@ import PlantCareLog from '../models/PlantCareLog.js'
 import User from '../models/userModels.js'
 import { sendNotificationPush, storeNotification } from './notificationService.js'
 import { isMailConfigured, sendMail } from './mailService.js'
+import { isQuietTimeForPreference } from '../utils/quietHours.js'
 import { withDistributedLock } from '../utils/distributedLock.js'
 import { resolveTimeZone } from '../utils/timeZone.js'
 import {
@@ -212,7 +213,13 @@ class WeeklyRecapService {
             where: { weekly_recap_enabled: true },
             batchSize,
             maxBatches,
-            attributes: ['user_id', 'last_weekly_recap_date'],
+            attributes: [
+                'user_id',
+                'last_weekly_recap_date',
+                'quiet_hours_enabled',
+                'quiet_hours_start',
+                'quiet_hours_end'
+            ],
             onBatch: async preferences => {
                 counters.batches += 1
                 counters.usersProcessed += preferences.length
@@ -289,6 +296,7 @@ class WeeklyRecapService {
 
             const streak = computeCareStreak(activity.events, { now })
             const recap = buildWeeklyRecap({ week, streak })
+            const quietNow = isQuietTimeForPreference(preference, { now, timeZone })
 
             const { notification, created } = await this.notifications.storeNotification({
                 userId,
@@ -311,24 +319,32 @@ class WeeklyRecapService {
 
             counters.recapsCreated += 1
 
-            await this.notifications.sendNotificationPush({
-                userId,
-                title: recap.title || WEEKLY_RECAP_TITLE,
-                body: recap.body,
-                data: {
-                    url: WEEKLY_RECAP_URL,
-                    tag: WEEKLY_RECAP_TYPE,
-                    notificationId: notification?.id ?? null
-                }
-            })
-            counters.pushesAttempted += 1
+            if (quietNow) {
+                console.log(
+                    `🌙 weekly-recap: у пользователя ${userId} тихие часы — ` +
+                    'recap сохранён в приложении без push и письма'
+                )
+            } else {
+                await this.notifications.sendNotificationPush({
+                    userId,
+                    title: recap.title || WEEKLY_RECAP_TITLE,
+                    body: recap.body,
+                    data: {
+                        url: WEEKLY_RECAP_URL,
+                        tag: WEEKLY_RECAP_TYPE,
+                        notificationId: notification?.id ?? null
+                    }
+                })
+                counters.pushesAttempted += 1
+            }
 
             await this.maybeSendEmail(user, {
                 userId,
                 recap,
                 weekStartDate: window.startDate,
                 config,
-                counters
+                counters,
+                skip: quietNow
             })
         } catch (error) {
             counters.errors += 1
@@ -336,7 +352,11 @@ class WeeklyRecapService {
         }
     }
 
-    async maybeSendEmail(user, { userId, recap, weekStartDate, config, counters }) {
+    async maybeSendEmail(user, { userId, recap, weekStartDate, config, counters, skip = false }) {
+        if (skip) {
+            console.log(`🌙 weekly-recap: у пользователя ${userId} тихие часы — письмо не отправляем`)
+            return
+        }
         if (!shouldSendRecapEmail(user, config, {
             env: this.env,
             isMailReady: env => this.mail.isMailConfigured(env)

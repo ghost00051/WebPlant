@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
 import {
@@ -11,6 +11,18 @@ import {
   rememberShareToken,
   shareGardenLink
 } from '../../utils/gardenShare.js'
+import {
+  VIEWER_SESSION,
+  fetchViewerSessionState,
+  isViewerAuthenticated
+} from '../../utils/gardenExtraApi.js'
+import {
+  buildGardenHandoffPath,
+  normalizeWantedPlant,
+  pickWantedPlants,
+  rememberAddPlantDraft,
+  rememberWantedPlants
+} from '../../utils/gardenHandoff.js'
 import { trackEvent } from '../../utils/productEvents.js'
 import './sharedGarden.css'
 
@@ -40,12 +52,14 @@ function plantsWord (count) {
 }
 
 function SharedGardenContent ({ token }) {
+  const navigate = useNavigate()
   const [requestId, setRequestId] = useState(0)
   const [state, setState] = useState(() => (
     isValidShareToken(token)
       ? { status: 'loading', garden: null }
       : { status: 'notfound', garden: null }
   ))
+  const [viewerSession, setViewerSession] = useState(VIEWER_SESSION.unknown)
   const [shareStatus, setShareStatus] = useState('')
   const [shareBusy, setShareBusy] = useState(false)
 
@@ -75,6 +89,22 @@ function SharedGardenContent ({ token }) {
     }
   }, [token, requestId])
 
+  useEffect(() => {
+    let active = true
+
+    fetchViewerSessionState()
+      .then(session => {
+        if (active) setViewerSession(session)
+      })
+      .catch(() => {
+        if (active) setViewerSession(VIEWER_SESSION.unknown)
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
   const handleRetry = useCallback(() => {
     setState({ status: 'loading', garden: null })
     setRequestId(value => value + 1)
@@ -103,6 +133,44 @@ function SharedGardenContent ({ token }) {
 
     setShareBusy(false)
   }, [shareBusy, state.garden])
+
+  const handleWantedPlant = useCallback(plant => {
+    if (!state.garden) return
+
+    const wantedPlant = normalizeWantedPlant(plant)
+    if (!wantedPlant) return
+
+    rememberWantedPlants([wantedPlant])
+    rememberAddPlantDraft(wantedPlant)
+
+    if (isViewerAuthenticated(viewerSession)) {
+      navigate('/add-plant')
+      return
+    }
+
+    navigate(buildGardenHandoffPath(
+      buildRegistrationPath(state.garden.token),
+      [wantedPlant]
+    ))
+  }, [navigate, state.garden, viewerSession])
+
+  const handleCreateGarden = useCallback(() => {
+    if (state.status !== 'ready' || !state.garden) return
+
+    const wantedPlants = pickWantedPlants(state.garden.plants)
+    rememberWantedPlants(wantedPlants)
+    if (wantedPlants.length) rememberAddPlantDraft(wantedPlants[0])
+
+    if (isViewerAuthenticated(viewerSession)) {
+      navigate(wantedPlants.length ? '/add-plant' : '/home')
+      return
+    }
+
+    navigate(buildGardenHandoffPath(
+      buildRegistrationPath(state.garden.token),
+      wantedPlants
+    ))
+  }, [navigate, state, viewerSession])
 
   if (state.status === 'loading') {
     return (
@@ -158,7 +226,12 @@ function SharedGardenContent ({ token }) {
   const plantCount = Number.isFinite(garden.plantCount)
     ? garden.plantCount
     : garden.plants.length
-  const registrationPath = buildRegistrationPath(garden.token)
+  const wantedPlants = pickWantedPlants(garden.plants)
+  const registrationPath = buildGardenHandoffPath(
+    buildRegistrationPath(garden.token),
+    wantedPlants
+  )
+  const viewerAuthenticated = isViewerAuthenticated(viewerSession)
 
   return (
     <ContentPage>
@@ -200,6 +273,14 @@ function SharedGardenContent ({ token }) {
                         </li>
                       </ul>
                     )}
+                    <button
+                      type='button'
+                      className='sharedGardenWantedButton'
+                      onClick={() => handleWantedPlant(plant)}
+                      aria-label={`Хочу такое же: ${plant.name}`}
+                    >
+                      Хочу такое же
+                    </button>
                   </li>
                 )
               })}
@@ -213,19 +294,53 @@ function SharedGardenContent ({ token }) {
 
       <div className='contentCta sharedGardenCta'>
         <p>
-          Хотите такой же календарь полива? Добавьте свои растения в «Лейку» —
-          приложение подскажет, когда пора поливать.
+          {wantedPlants.length > 0
+            ? 'Понравились растения? Перенесём до трёх из них в ваш сад — останется добавить название и интервал полива.'
+            : 'Хотите такой же календарь полива? Добавьте свои растения в «Лейку» — приложение подскажет, когда пора поливать.'}
         </p>
+        {wantedPlants.length > 0 && (
+          <ul
+            className='sharedGardenWantedList'
+            aria-label='Растения, которые перенесём в ваш сад'
+          >
+            {wantedPlants.map(plant => (
+              <li key={plant.name}>{plant.name}</li>
+            ))}
+          </ul>
+        )}
         <div className='sharedGardenCtaActions'>
           <button
             type='button'
-            className='sharedGardenButton'
+            className='sharedGardenButton sharedGardenButton--secondary'
             onClick={handleShare}
             disabled={shareBusy}
           >
             {shareBusy ? 'Готовим ссылку…' : 'Поделиться этим садом'}
           </button>
-          <Link to={registrationPath}>Создать свой сад</Link>
+          {viewerAuthenticated
+            ? (
+              <button
+                type='button'
+                className='sharedGardenButton'
+                onClick={handleCreateGarden}
+              >
+                {wantedPlants.length > 0
+                  ? 'Добавить эти растения к себе'
+                  : 'Перейти в мой сад'}
+              </button>
+              )
+            : (
+              <Link
+                className='sharedGardenButton sharedGardenCtaPrimary'
+                to={registrationPath}
+                onClick={() => {
+                  rememberWantedPlants(wantedPlants)
+                  if (wantedPlants.length) rememberAddPlantDraft(wantedPlants[0])
+                }}
+              >
+                Создать свой сад
+              </Link>
+              )}
         </div>
       </div>
 

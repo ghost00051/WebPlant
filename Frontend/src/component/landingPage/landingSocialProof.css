@@ -1,0 +1,101 @@
+.landingFacts {
+    padding: 66px 0 8px;
+    border-top: 1px solid #EAE6E0;
+    margin-top: 66px;
+}
+
+.landingFactsHeading h2 {
+    max-width: 620px;
+    margin: 0;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 620;
+    letter-spacing: -0.04em;
+    line-height: 1.2;
+}
+
+.landingFactsLead {
+    max-width: 640px;
+    margin: 14px 0 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-base);
+    line-height: 1.65;
+}
+
+.landingFactsGrid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 28px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.landingFactCard {
+    display: flex;
+    min-height: 168px;
+    box-sizing: border-box;
+    flex-direction: column;
+    padding: 20px;
+    border: 1px solid #EAE6E0;
+    border-radius: 18px;
+    background: #FFFFFF;
+}
+
+.landingFactValue {
+    margin: 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.landingFactValue strong {
+    color: var(--theme-text);
+    font-size: var(--font-size-2xl);
+    font-weight: 650;
+    letter-spacing: -0.03em;
+}
+
+.landingFactCard h3 {
+    margin: 12px 0 0;
+    font-size: var(--font-size-base);
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.landingFactText {
+    margin: 8px 0 0;
+    color: #777771;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+.landingFactsNote {
+    max-width: 640px;
+    margin: 18px 0 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+@media (max-width: 980px) {
+    .landingFactsGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 620px) {
+    .landingFacts {
+        padding-top: 44px;
+        margin-top: 44px;
+    }
+
+    .landingFactsGrid {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .landingFactCard {
+        min-height: auto;
+        padding: 17px;
+    }
+}

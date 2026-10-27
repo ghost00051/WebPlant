@@ -8,13 +8,31 @@ import notificationSystem from '../../assets/notification-system.svg'
 import notificationAlert from '../../assets/notification-alert.svg'
 import notificationCheck from '../../assets/notification-check.svg'
 import notificationRecap from '../../assets/notification-recap.svg'
-import { API_URL } from '../../utils/api.js'
+import { API_URL, getMessengerChannels } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { CARE_ACTION_CODES } from '../../utils/careEvents.js'
 import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
 import { publishUnreadCount } from '../../utils/appBadge.js'
 import { diffInDays } from '../../utils/date.js'
+import { markWateredWithQueue, classifyWateringResponse } from '../../utils/offlineQueue.js'
+import { trackEvent } from '../../utils/productEvents.js'
+import {
+  DELIVERY_MODE_DIGEST,
+  loadNotificationPreferences,
+  readLocalNotificationPreferences,
+  saveNotificationPreferences,
+  validateQuietHours
+} from '../../utils/notificationsExtraApi.js'
+import {
+  buildDigestSummary,
+  buildPlantSections,
+  describeQuietWindow,
+  notificationPlantId
+} from '../../utils/notificationDigest.js'
 import CareActionSheet from '../careActions/CareActionSheet.jsx'
+import NotificationSettingsBar from './NotificationSettingsBar.jsx'
+import NotificationChannelsDialog from './NotificationChannelsDialog.jsx'
+import NotificationQuietHoursDialog from './NotificationQuietHoursDialog.jsx'
 import { TABS } from '../tools/tabs.js'
 import {
   isPushSupported,
@@ -26,6 +44,8 @@ import {
 } from '../../utils/pushNotifications.js'
 import './notifications.css'
 import './dark-theme.css'
+import './notificationSettings.css'
+import './notificationSettings.dark-theme.css'
 
 const PAGE_SIZE = 20
 
@@ -64,6 +84,9 @@ function isWeeklyRecapNotification (item) {
 function visualFor (item) {
   if (isWeeklyRecapNotification(item)) {
     return { ...CATEGORIES.watering, ...WEEKLY_RECAP_META }
+  }
+  if (item?.type === 'garden_view') {
+    return { ...CATEGORIES.system, label: 'Сад' }
   }
   return CATEGORIES[categoryFor(item)]
 }
@@ -105,6 +128,7 @@ function feedCategoryFor (item) {
 function actionLabelFor (item, category) {
   if (item?.type === 'weekly_recap') return 'Итоги недели'
   if (item?.type === 'morning_summary') return 'Сводка'
+  if (item?.type === 'garden_view') return 'Сад'
   return CATEGORIES[category].label
 }
 
@@ -152,6 +176,25 @@ function newWord (count) {
   const mod100 = count % 100
   if (mod10 === 1 && mod100 !== 11) return 'новое'
   return 'новых'
+}
+
+function notificationWord (count) {
+  const mod10 = count % 10
+  const mod100 = count % 100
+  if (mod10 === 1 && mod100 !== 11) return 'напоминание'
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'напоминания'
+  return 'напоминаний'
+}
+
+function digestTitleFor (section) {
+  const labels = []
+  if (section.wateringCount > 0) labels.push('Полив')
+  if (section.careCount > 0) labels.push('уход')
+  const combined = labels.join(' и ')
+  const label = combined
+    ? `${combined.charAt(0).toUpperCase()}${combined.slice(1)}`
+    : 'Напоминания'
+  return `${label}: ${section.items.length} ${notificationWord(section.items.length)}`
 }
 
 function formatClock (value) {
@@ -218,11 +261,25 @@ function Notifications () {
   const [pushSuccess, setPushSuccess] = useState('')
   const [selectedNotification, setSelectedNotification] = useState(null)
   const [careSheet, setCareSheet] = useState(null)
+  const [preferences, setPreferences] = useState(() => readLocalNotificationPreferences())
+  const [prefsStatus, setPrefsStatus] = useState(null)
+  const [prefsSaving, setPrefsSaving] = useState('')
+  const [channelsOpen, setChannelsOpen] = useState(false)
+  const [quietOpen, setQuietOpen] = useState(false)
+  const [channelsSummary, setChannelsSummary] = useState('')
+  const [plantNames, setPlantNames] = useState({})
+  const [quickBusyKey, setQuickBusyKey] = useState('')
+  const [quickStatuses, setQuickStatuses] = useState({})
+  const [expandedDigestKey, setExpandedDigestKey] = useState('')
   const filterRefs = useRef(new Map())
   const detailRef = useRef(null)
   const lastSyncRef = useRef(0)
   const feedRequestIdRef = useRef(0)
   const activeFilterRef = useRef('all')
+
+  const deliveryMode = preferences.deliveryMode
+  const quietHours = preferences.quietHours
+  const quietSummary = describeQuietWindow(quietHours)
 
   const setFilterRef = tabId => node => {
     if (node) {
@@ -252,6 +309,249 @@ function Notifications () {
       FILTER_TABS[(nextIndex + FILTER_TABS.length) % FILTER_TABS.length]
     filterRefs.current.get(nextTab.id)?.focus()
     setFilter(nextTab.id)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+
+    loadNotificationPreferences()
+      .then(result => {
+        if (cancelled) return
+        setPreferences(result.preferences)
+        if (!result.ok) {
+          setPrefsStatus({
+            tone: result.unavailable ? 'warning' : 'error',
+            text: result.unavailable
+              ? 'Сервер настроек уведомлений пока не обновлён — настройки сохраняются на этом устройстве.'
+              : 'Не удалось загрузить настройки уведомлений. Показаны сохранённые на этом устройстве.'
+          })
+        }
+      })
+      .catch(loadError => {
+        if (!cancelled) console.warn('Не удалось загрузить настройки уведомлений:', loadError)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), 12000)
+
+    const loadPlants = async () => {
+      try {
+        const response = await fetch(`${API_URL}/plants`, {
+          credentials: 'include',
+          signal: controller.signal
+        })
+        if (!response.ok) return
+        const data = await response.json().catch(() => null)
+        if (cancelled || !Array.isArray(data)) return
+        const map = {}
+        data.forEach(plant => {
+          if (plant && plant.id !== undefined && plant.name) map[plant.id] = plant.name
+        })
+        setPlantNames(map)
+      } catch (loadError) {
+        if (loadError?.name !== 'AbortError') {
+          console.warn('Не удалось загрузить растения для группировки уведомлений:', loadError)
+        }
+      } finally {
+        window.clearTimeout(timer)
+      }
+    }
+
+    loadPlants()
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [])
+
+  useEffect(() => {
+    if (channelsOpen) return undefined
+    let cancelled = false
+
+    getMessengerChannels()
+      .then(data => {
+        if (cancelled) return
+        const linked = data.channels.filter(channel => channel.linked)
+        setChannelsSummary(linked.map(channel => channel.title).join(', '))
+      })
+      .catch(() => {
+        if (!cancelled) setChannelsSummary('')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [channelsOpen])
+
+  const changeDeliveryMode = async nextMode => {
+    if (!nextMode || nextMode === deliveryMode || prefsSaving) return
+    const previous = preferences
+    setPreferences({ ...previous, deliveryMode: nextMode })
+    setPrefsSaving('delivery')
+    setPrefsStatus(null)
+
+    try {
+      const result = await saveNotificationPreferences({ deliveryMode: nextMode }, previous)
+      if (result.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+      setPreferences(result.preferences)
+      if (result.ok) {
+        setPrefsStatus({
+          tone: 'success',
+          text: nextMode === DELIVERY_MODE_DIGEST
+            ? 'Готово: одна сводка вместо сообщений по каждому растению.'
+            : 'Готово: отдельные напоминания по каждому растению.'
+        })
+        return
+      }
+      setPrefsStatus({
+        tone: 'warning',
+        text: 'Режим сохранён на этом устройстве — сервер настроек ещё не обновлён.'
+      })
+    } catch (saveError) {
+      console.warn('Не удалось сохранить режим уведомлений:', saveError)
+      setPreferences(previous)
+      setPrefsStatus({ tone: 'error', text: 'Не удалось сохранить режим. Попробуйте ещё раз.' })
+    } finally {
+      setPrefsSaving('')
+    }
+  }
+
+  const saveQuietHours = async next => {
+    const validation = validateQuietHours(next)
+    if (validation) return { tone: 'error', text: validation }
+
+    const previous = preferences
+    setPrefsSaving('quiet')
+
+    try {
+      const result = await saveNotificationPreferences({ quietHours: next }, previous)
+      if (result.status === 401) {
+        navigate('/login', { replace: true })
+        return { tone: 'error', text: 'Нужно снова войти в аккаунт.' }
+      }
+      setPreferences(result.preferences)
+      if (result.ok) {
+        return {
+          tone: 'success',
+          text: next.enabled
+            ? `Тихие часы включены: ${next.start}–${next.end}.`
+            : 'Тихие часы выключены.'
+        }
+      }
+      return {
+        tone: 'warning',
+        text: 'Сохранено на этом устройстве — сервер настроек ещё не обновлён.'
+      }
+    } catch (saveError) {
+      console.warn('Не удалось сохранить тихие часы:', saveError)
+      setPreferences(previous)
+      return { tone: 'error', text: 'Не удалось сохранить тихие часы. Попробуйте ещё раз.' }
+    } finally {
+      setPrefsSaving('')
+    }
+  }
+
+  const applyReadLocally = (item, serverUnread) => {
+    const readAt = new Date().toISOString()
+    setItems(current => current.map(entry => (
+      entry.id === item.id && !entry.read_at ? { ...entry, read_at: readAt } : entry
+    )))
+    setUnreadCount(current => {
+      const next = Number.isInteger(serverUnread) ? serverUnread : Math.max(0, current - 1)
+      publishUnreadCount(next)
+      return next
+    })
+    const feedCategory = feedCategoryFor(item)
+    if (feedCategory) {
+      setUnreadByCategory(current => ({
+        ...current,
+        all: Math.max(0, current.all - 1),
+        [feedCategory]: Math.max(0, current[feedCategory] - 1)
+      }))
+    }
+  }
+
+  const markItemsReadSilently = async itemsToRead => {
+    for (const item of itemsToRead) {
+      try {
+        const response = await fetchWithTimeout(
+          `${API_URL}/notifications/${item.id}/read`,
+          { method: 'PATCH', credentials: 'include' }
+        )
+        if (response.status === 401) return
+        if (!response.ok) continue
+        const data = await response.json().catch(() => ({}))
+        applyReadLocally(item, data.unreadCount)
+      } catch (readError) {
+        console.warn('Не удалось отметить уведомление прочитанным:', readError)
+      }
+    }
+  }
+
+  const markWateredInRow = async section => {
+    const plantId = section?.plantId
+    const key = section?.key
+    if (!plantId || !key || quickBusyKey) return
+
+    setQuickBusyKey(key)
+    setQuickStatuses(current => ({ ...current, [key]: null }))
+
+    try {
+      const result = await markWateredWithQueue(plantId)
+      if (!result.ok) {
+        const conflict = classifyWateringResponse(result.status) === 'conflict'
+        setQuickStatuses(current => ({
+          ...current,
+          [key]: {
+            tone: conflict ? 'info' : 'error',
+            text: conflict
+              ? 'Полив за эту дату уже отмечен.'
+              : (result.data?.message || 'Не удалось отметить полив. Попробуйте ещё раз.')
+          }
+        }))
+        return
+      }
+
+      trackEvent('watering_marked', { queued: Boolean(result.queued) })
+      setQuickStatuses(current => ({
+        ...current,
+        [key]: {
+          tone: 'success',
+          text: result.queued
+            ? 'Нет связи — сохранил отметку, отправим при восстановлении.'
+            : 'Полив отмечен.'
+        }
+      }))
+
+      const unreadItems = (section.items || []).filter(item => !item.read_at)
+      if (unreadItems.length) await markItemsReadSilently(unreadItems)
+    } catch (waterError) {
+      console.warn('Не удалось отметить полив из уведомления:', waterError)
+      setQuickStatuses(current => ({
+        ...current,
+        [key]: { tone: 'error', text: 'Не удалось отметить полив. Попробуйте ещё раз.' }
+      }))
+    } finally {
+      setQuickBusyKey('')
+    }
+  }
+
+  const markWateredItem = item => {
+    const plantId = notificationPlantId(item)
+    if (!plantId) return undefined
+    return markWateredInRow({ key: `item-${item.id}`, plantId, items: [item] })
   }
 
   const loadPage = useCallback(async (offset, category = 'all') => {
@@ -641,6 +941,197 @@ function Notifications () {
     navigate('/home', { state: { activeTab: tabId } })
   }
 
+  const todayDigestSummary = useMemo(() => {
+    if (deliveryMode !== DELIVERY_MODE_DIGEST) return ''
+    const today = items.filter(item => diffInDays(item.created_at, new Date()) === 0)
+    if (!today.length) return ''
+    const sections = buildPlantSections(today, { plantNames, mode: 'digest' }).plants
+    return buildDigestSummary(sections).text
+  }, [items, plantNames, deliveryMode])
+
+  const renderNotificationRow = item => {
+    const category = categoryFor(item)
+    const visual = visualFor(item)
+    const actionLabel = actionLabelFor(item, category)
+    const key = `item-${item.id}`
+    const quickStatus = quickStatuses[key]
+    const busy = quickBusyKey === key
+    const canWater = Boolean(notificationPlantId(item)) &&
+      isWateringNotification(item) &&
+      !isWeeklyRecapNotification(item)
+
+    return (
+      <li
+        key={item.id}
+        className={`notificationsCard${item.read_at ? '' : ' is-unread'}${canWater ? ' has-actions' : ''}`}
+      >
+        <button
+          type='button'
+          className='notificationsCardButton'
+          onClick={() => openNotification(item)}
+        >
+          <span className={`notificationsIcon notificationsIcon--${category}`}>
+            <img src={visual.icon} alt='' />
+          </span>
+          <span className='notificationsCardBody'>
+            <span className='notificationsCardTop'>
+              <span className='notificationsCardTitle'>{item.title}</span>
+              {!item.read_at && (
+                <span className='notificationsUnreadLabel'>
+                  Новое
+                  <span className='notificationsVisuallyHidden'>
+                    {' '}(не прочитано)
+                  </span>
+                </span>
+              )}
+            </span>
+            <span className='notificationsCardText'>{item.body}</span>
+            <span className='notificationsCardFooter'>
+              <span className='notificationsTime'>
+                {formatCardTime(item.created_at)}
+              </span>
+              <span className={`notificationsAction notificationsAction--${category}`}>
+                {actionLabel}
+              </span>
+            </span>
+          </span>
+        </button>
+        {canWater && (
+          <div className='notificationsCardActions'>
+            <button
+              type='button'
+              className='notificationsQuickWater'
+              onClick={() => markWateredItem(item)}
+              disabled={Boolean(quickBusyKey)}
+              aria-label={`Отметить полив: ${item.title}`}
+            >
+              {busy ? 'Отмечаю…' : 'Полил'}
+            </button>
+          </div>
+        )}
+        {quickStatus && (
+          <p
+            className={`notificationsQuickStatus notificationsQuickStatus--${quickStatus.tone}`}
+            role={quickStatus.tone === 'error' ? 'alert' : 'status'}
+          >
+            {quickStatus.text}
+          </p>
+        )}
+      </li>
+    )
+  }
+
+  const renderPlantSection = section => {
+    const digestRow = deliveryMode === DELIVERY_MODE_DIGEST && section.items.length > 1
+    const quickStatus = quickStatuses[section.key]
+    const busy = quickBusyKey === section.key
+    const expanded = expandedDigestKey === section.key
+    const canWater = section.wateringCount > 0 && Boolean(section.plantId)
+
+    return (
+      <div className='notificationsPlantGroup' key={section.key}>
+        <div className='notificationsPlantHeader'>
+          <h3>{section.plantName}</h3>
+          <span className='notificationsPlantHeaderCount'>
+            {section.items.length} {notificationWord(section.items.length)}
+          </span>
+        </div>
+
+        {digestRow ? (
+          <div className={`notificationsDigestCard${section.unreadCount ? ' is-unread' : ''}`}>
+            <div className='notificationsDigestTop'>
+              <button
+                type='button'
+                className='notificationsDigestButton'
+                onClick={() => setSelectedNotification(section.latestItem)}
+              >
+                <span className='notificationsDigestTitle'>{digestTitleFor(section)}</span>
+                <span className='notificationsDigestMeta'>
+                  {formatCardTime(section.latestItem?.created_at)}
+                </span>
+              </button>
+              <button
+                type='button'
+                className='notificationsDigestExpand'
+                aria-expanded={expanded}
+                aria-controls={`notificationsDigest-${section.key}`}
+                onClick={() => setExpandedDigestKey(current => (
+                  current === section.key ? '' : section.key
+                ))}
+              >
+                {expanded ? 'Скрыть' : 'Показать'}
+              </button>
+            </div>
+
+            {canWater && (
+              <div className='notificationsCardActions'>
+                <button
+                  type='button'
+                  className='notificationsQuickWater'
+                  onClick={() => markWateredInRow(section)}
+                  disabled={Boolean(quickBusyKey)}
+                  aria-label={`Отметить полив: ${section.plantName}`}
+                >
+                  {busy ? 'Отмечаю…' : 'Полил'}
+                </button>
+              </div>
+            )}
+
+            {quickStatus && (
+              <p
+                className={`notificationsQuickStatus notificationsQuickStatus--${quickStatus.tone}`}
+                role={quickStatus.tone === 'error' ? 'alert' : 'status'}
+              >
+                {quickStatus.text}
+              </p>
+            )}
+
+            {expanded && (
+              <ul
+                className='notificationsDigestItems'
+                id={`notificationsDigest-${section.key}`}
+              >
+                {section.items.map(item => (
+                  <li key={item.id}>
+                    <button
+                      type='button'
+                      className='notificationsDigestItem'
+                      onClick={() => openNotification(item)}
+                    >
+                      <span className='notificationsDigestItemTitle'>{item.title}</span>
+                      <span className='notificationsDigestItemMeta'>
+                        {formatCardTime(item.created_at)}
+                        {item.read_at ? '' : ' · новое'}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <ul className='notificationsList'>
+            {section.items.map(item => renderNotificationRow(item))}
+          </ul>
+        )}
+      </div>
+    )
+  }
+
+  const renderMiscSection = section => (
+    <div className='notificationsPlantGroup' key={section.key}>
+      <div className='notificationsPlantHeader'>
+        <h3>Прочее</h3>
+        <span className='notificationsPlantHeaderCount'>
+          {section.items.length} {notificationWord(section.items.length)}
+        </span>
+      </div>
+      <ul className='notificationsList'>
+        {section.items.map(item => renderNotificationRow(item))}
+      </ul>
+    </div>
+  )
+
   const detailCategory = selectedNotification ? categoryFor(selectedNotification) : 'system'
   const detailMeta = selectedNotification
     ? visualFor(selectedNotification)
@@ -675,6 +1166,17 @@ function Notifications () {
           <img src={notificationCheck} alt='' />
         </button>
       </header>
+
+      <NotificationSettingsBar
+        deliveryMode={deliveryMode}
+        onDeliveryModeChange={changeDeliveryMode}
+        quietSummary={quietSummary}
+        channelsSummary={channelsSummary}
+        saving={prefsSaving === 'delivery'}
+        status={prefsStatus}
+        onOpenChannels={() => setChannelsOpen(true)}
+        onOpenQuiet={() => setQuietOpen(true)}
+      />
 
       {(pushNotice || pushError || pushSuccess) && (
         <section className={`notificationsPush${pushNotice?.tone === 'warning' ? ' is-warning' : ''}`}>
@@ -760,6 +1262,10 @@ function Notifications () {
           </div>
         )}
 
+        {todayDigestSummary && !isLoading && (
+          <p className='notificationsDigestSummary' role='status'>{todayDigestSummary}</p>
+        )}
+
         {isLoading ? (
           <p className='notificationsStatus' role='status'>Загружаем уведомления…</p>
         ) : groups.length === 0 && !error ? (
@@ -767,60 +1273,22 @@ function Notifications () {
             <p>{EMPTY_TEXTS[filter]}</p>
           </div>
         ) : (
-          groups.map(group => (
-            <section key={group.id} className='notificationsGroup'>
-              <div className='notificationsGroupHeader'>
-                <h2>{group.title}</h2>
-                {group.meta && <span>{group.meta}</span>}
-              </div>
-              <ul className='notificationsList'>
-                {group.items.map(item => {
-                  const category = categoryFor(item)
-                  const visual = visualFor(item)
-                  const actionLabel = actionLabelFor(item, category)
-
-                  return (
-                    <li
-                      key={item.id}
-                      className={`notificationsCard${item.read_at ? '' : ' is-unread'}`}
-                    >
-                      <button
-                        type='button'
-                        className='notificationsCardButton'
-                        onClick={() => openNotification(item)}
-                      >
-                        <span className={`notificationsIcon notificationsIcon--${category}`}>
-                          <img src={visual.icon} alt='' />
-                        </span>
-                        <span className='notificationsCardBody'>
-                          <span className='notificationsCardTop'>
-                            <span className='notificationsCardTitle'>{item.title}</span>
-                            {!item.read_at && (
-                              <span className='notificationsUnreadLabel'>
-                                Новое
-                                <span className='notificationsVisuallyHidden'>
-                                  {' '}(не прочитано)
-                                </span>
-                              </span>
-                            )}
-                          </span>
-                          <span className='notificationsCardText'>{item.body}</span>
-                          <span className='notificationsCardFooter'>
-                            <span className='notificationsTime'>
-                              {formatCardTime(item.created_at)}
-                            </span>
-                            <span className={`notificationsAction notificationsAction--${category}`}>
-                              {actionLabel}
-                            </span>
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  )
-                })}
-              </ul>
-            </section>
-          ))
+          groups.map(group => {
+            const layout = buildPlantSections(group.items, {
+              plantNames,
+              mode: deliveryMode
+            })
+            return (
+              <section key={group.id} className='notificationsGroup'>
+                <div className='notificationsGroupHeader'>
+                  <h2>{group.title}</h2>
+                  {group.meta && <span>{group.meta}</span>}
+                </div>
+                {layout.plants.map(section => renderPlantSection(section))}
+                {layout.misc.map(section => renderMiscSection(section))}
+              </section>
+            )
+          })
         )}
 
         {nextOffset !== null && !isLoading && (
@@ -889,11 +1357,11 @@ function Notifications () {
                   type='button'
                   className='notificationsDetailPrimary'
                   onClick={() => {
+                    markWateredItem(selectedNotification)
                     closeNotificationDetail()
-                    navigate('/home')
                   }}
                 >
-                  Полить
+                  Полил
                 </button>
               )}
 
@@ -957,6 +1425,20 @@ function Notifications () {
             </div>
           </section>
         </div>
+      )}
+
+      {channelsOpen && (
+        <NotificationChannelsDialog onClose={() => setChannelsOpen(false)} />
+      )}
+
+      {quietOpen && (
+        <NotificationQuietHoursDialog
+          quietHours={quietHours}
+          timezone={quietHours.timezone}
+          saving={prefsSaving === 'quiet'}
+          onSave={saveQuietHours}
+          onClose={() => setQuietOpen(false)}
+        />
       )}
 
       <CareActionSheet

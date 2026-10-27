@@ -1784,3 +1784,185 @@ export async function analyzePlantPhoto({
         deadline.dispose()
     }
 }
+
+export const SPECIES_SUGGESTION_MAX_ITEMS = 3
+
+export const SPECIES_SUGGESTION_INSTRUCTIONS = `Ты — ботаник приложения «Лейка» по уходу за комнатными растениями.
+По одному фото определи, что это за растение, и верни СТРОГО один JSON-объект без markdown и без пояснений:
+{"isPlant":true,"suggestions":[{"name":"русское название","latin":"Monstera deliciosa","species":"Monstera deliciosa","confidence":0.0}]}
+Правила:
+- suggestions отсортированы от самого вероятного варианта, максимум 3;
+- name — короткое русское название без сорта, до 120 символов;
+- latin — латинское название вида, до 160 символов;
+- species — то же латинское название вида (его сохранит клиент в карточке растения);
+- confidence — число от 0 до 1, насколько уверен;
+- если на фото не растение или его невозможно узнать: {"isPlant":false,"suggestions":[]};
+- не добавляй уход, советы и любые другие поля.`
+
+function cleanSuggestionText(value, maxLength) {
+    if (typeof value !== 'string') return null
+    const text = value.replace(/\s+/g, ' ').trim()
+    if (!text) return null
+    return text.slice(0, maxLength)
+}
+
+function normalizeSuggestionConfidence(value) {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed)) return null
+    return Math.min(1, Math.max(0, Math.round(parsed * 100) / 100))
+}
+
+export function parseSpeciesPhotoSuggestion(value) {
+    if (typeof value !== 'string' || !value.trim()) return null
+
+    const jsonText = value
+        .trim()
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```$/, '')
+
+    let raw
+    try {
+        raw = JSON.parse(jsonText)
+    } catch {
+        return null
+    }
+
+    const source = Array.isArray(raw)
+        ? { isPlant: true, suggestions: raw }
+        : (raw && typeof raw === 'object' ? raw : null)
+    if (!source) return null
+
+    const isPlant = source.isPlant !== false
+    const suggestions = []
+    const seen = new Set()
+
+    for (const item of (Array.isArray(source.suggestions) ? source.suggestions : [])) {
+        if (!item || typeof item !== 'object') continue
+        const name = cleanSuggestionText(item.name, 120)
+        const latin = cleanSuggestionText(item.latin, 160)
+        const species = cleanSuggestionText(item.species, 160) || latin
+        if (!name && !species) continue
+        if (species && seen.has(species.toLowerCase())) continue
+        if (species) seen.add(species.toLowerCase())
+        suggestions.push({
+            name: name || species,
+            latin,
+            species,
+            confidence: normalizeSuggestionConfidence(item.confidence)
+        })
+        if (suggestions.length >= SPECIES_SUGGESTION_MAX_ITEMS) break
+    }
+
+    if (!isPlant) return { isPlant: false, suggestions: [] }
+    if (!suggestions.length) return null
+    return { isPlant: true, suggestions }
+}
+
+export async function suggestSpeciesFromPhoto({ imageBuffer, imageBuffers = [] } = {}) {
+    const buffers = (Array.isArray(imageBuffers) ? imageBuffers : [])
+        .filter(buffer => Buffer.isBuffer(buffer) && buffer.length > 0)
+        .slice(0, 1)
+    if (!buffers.length && Buffer.isBuffer(imageBuffer) && imageBuffer.length > 0) {
+        buffers.push(imageBuffer)
+    }
+    if (!buffers.length) {
+        const error = new Error('Фото не получено')
+        error.code = 'AI_VISION_NO_IMAGE'
+        throw error
+    }
+    if (!visionClient) {
+        const error = new Error('AI service is not configured')
+        error.code = 'AI_VISION_NOT_CONFIGURED'
+        throw error
+    }
+
+    const prepared = await prepareVisionImage(buffers[0])
+    const startedAt = Date.now()
+    const deadline = createDeadline(AI_VISION_DEADLINE_MS)
+    let usage = null
+
+    try {
+        const { value: parsed, cached } = await withAiCache({
+            namespace: 'vision-species',
+            payload: {
+                model: VISION_MODEL,
+                imageHash: prepared.imageHash,
+                instructions: SPECIES_SUGGESTION_INSTRUCTIONS
+            },
+            ttlSeconds: Math.min(getAiCacheTtlSeconds(), 30 * 24 * 60 * 60),
+            call: async () => {
+                await assertAiBudget('vision')
+
+                const request = {
+                    model: `gpt://${FOLDER}/${VISION_MODEL}`,
+                    instructions: SPECIES_SUGGESTION_INSTRUCTIONS,
+                    input: [{
+                        role: 'user',
+                        content: [
+                            { type: 'input_text', text: 'Определи вид растения на фото и верни JSON по схеме.' },
+                            { type: 'input_image', image_url: prepared.imageDataUrl }
+                        ]
+                    }],
+                    temperature: 0.1,
+                    store: false,
+                    max_output_tokens: 500
+                }
+
+                let response = await createVisionResponse(visionClient, request, {
+                    signal: deadline.signal
+                })
+                usage = response.usage || null
+                let result = parseSpeciesPhotoSuggestion(extractResponseText(response))
+
+                if (!result && !deadline.expired()) {
+                    console.warn('⚠️ Подсказка вида по фото: модель вернула невалидный JSON, повторяю')
+                    response = await createVisionResponse(visionClient, request, {
+                        signal: deadline.signal
+                    })
+                    usage = response.usage || null
+                    result = parseSpeciesPhotoSuggestion(extractResponseText(response))
+                }
+
+                if (!result) throw new Error('AI returned an invalid species suggestion')
+                return result
+            }
+        })
+
+        recordAiCall(cached
+            ? { scope: 'vision', cached: true }
+            : { scope: 'vision', latencyMs: Date.now() - startedAt, usage })
+
+        return {
+            isPlant: parsed.isPlant !== false,
+            suggestions: parsed.suggestions,
+            source: cached ? 'cache' : 'ai',
+            cached,
+            latencyMs: Date.now() - startedAt,
+            imageHash: prepared.imageHash
+        }
+    } catch (error) {
+        if (error?.code !== 'AI_BUDGET_EXCEEDED') {
+            recordAiCall({ scope: 'vision', latencyMs: Date.now() - startedAt, error })
+        }
+        console.error('❌ Ошибка подсказки вида по фото:', {
+            name: error.name,
+            code: error.code,
+            message: error.message || String(error)
+        })
+
+        const knownCodes = [
+            'AI_BUDGET_EXCEEDED',
+            'AI_VISION_UNAVAILABLE',
+            'AI_VISION_UNSUPPORTED_IMAGE',
+            'AI_VISION_NO_IMAGE',
+            'AI_VISION_NOT_CONFIGURED'
+        ]
+        if (knownCodes.includes(error?.code)) throw error
+
+        const wrapped = new Error('Не удалось определить вид растения по фото')
+        wrapped.code = 'AI_VISION_FAILED'
+        throw wrapped
+    } finally {
+        deadline.dispose()
+    }
+}

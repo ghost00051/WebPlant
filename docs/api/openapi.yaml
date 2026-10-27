@@ -519,7 +519,13 @@ paths:
     get:
       tags: [notifications]
       operationId: getNotificationPreferences
-      summary: Настройки уведомлений и темы
+      summary: Настройки уведомлений, режим доставки (F41) и тихие часы (F43)
+      description: |
+        delivery_mode — digest (одна сводка в день, значение по умолчанию) или per_plant
+        (отдельное напоминание на растение). quiet_hours_* — локальное окно, в котором не
+        отправляются push, боты и письма (in-app уведомление при этом сохраняется); окно
+        может переходить через полночь (22:00–08:00). quiet_hours_timezone — read-only:
+        часовой пояс пользователя, в нём считаются границы тихих часов.
       responses:
         '200':
           description: настройки
@@ -547,11 +553,26 @@ paths:
                   type: boolean
                 care_advice_enabled:
                   type: boolean
+                weekly_recap_enabled:
+                  type: boolean
                 dark_theme_enabled:
                   type: boolean
                 theme_mode:
                   type: string
                   enum: [system, light, dark]
+                delivery_mode:
+                  type: string
+                  enum: [digest, per_plant]
+                  description: 'F41: digest — одна сводка в день, per_plant — напоминание на растение'
+                quiet_hours_enabled:
+                  type: boolean
+                  description: 'F43: включить тихие часы'
+                quiet_hours_start:
+                  type: string
+                  example: '22:00'
+                quiet_hours_end:
+                  type: string
+                  example: '08:00'
       responses:
         '200':
           description: сохранённые настройки
@@ -1276,6 +1297,77 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/suggest-species-photo:
+    post:
+      tags: [plants]
+      operationId: suggestSpeciesFromPhoto
+      summary: 'F25: подсказка вида растения по фото'
+      description: |
+        multipart/form-data, одно фото в поле photo (до 5 МБ, JPEG/PNG/WebP/HEIC).
+        Использует vision-сервис ИИ; при недоступности ИИ — 503, и клиент прячет блок
+        «Похоже на...». Лимит — 20 запросов в час на пользователя.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 'подсказки вида (может быть пустым списком)'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions, isPlant, source, generatedAt]
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, species]
+                      properties:
+                        name:
+                          type: string
+                        latin:
+                          type: [string, 'null']
+                        species:
+                          type: [string, 'null']
+                        confidence:
+                          type: [number, 'null']
+                          minimum: 0
+                          maximum: 1
+                  isPlant:
+                    type: boolean
+                  source:
+                    type: string
+                    enum: [ai, cache]
+                  generatedAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          description: 'ИИ недоступен — фичу нужно скрыть/деградировать'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /api/plants/watering-advice:
     post:
       tags: [plants]
@@ -1538,6 +1630,34 @@ paths:
   /api/plants/{id}/photos:
     parameters:
       - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: listPlantPhotos
+      summary: 'F30: галерея фото роста'
+      description: |
+        Сортировка: главное фото, затем taken_at (новые выше), затем sort_order/id.
+        У каждого фото есть thumb_url; у старых записей taken_at = null — клиент берёт created_at.
+      responses:
+        '200':
+          description: 'объект {plant_id, items: PlantPhoto[]}'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plant_id, items]
+                properties:
+                  plant_id:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantPhoto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
     post:
       tags: [plants]
       operationId: addPlantPhotos
@@ -1565,6 +1685,44 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/PlantPhoto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/photos/{photoId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: photoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    delete:
+      tags: [plants]
+      operationId: deletePlantPhoto
+      summary: 'F30: удалить фото роста'
+      description: Удаляет запись, файл и миниатюру; если удалено главное фото — главным становится следующее.
+      responses:
+        '200':
+          description: '{deleted: true, id}'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted, id]
+                properties:
+                  deleted:
+                    type: boolean
+                  id:
+                    type: integer
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -5513,6 +5671,73 @@ components:
         theme_mode:
           type: string
           enum: [system, light, dark]
+        delivery_mode:
+          type: string
+          enum: [digest, per_plant]
+          description: 'F41: digest по умолчанию — одна сводка вместо N сообщений'
+        quiet_hours_enabled:
+          type: boolean
+          description: 'F43: тихие часы включены'
+        quiet_hours_start:
+          type: string
+          example: '22:00'
+        quiet_hours_end:
+          type: string
+          example: '08:00'
+        quiet_hours_timezone:
+          type: string
+          description: read-only; часовой пояс пользователя для границ тихих часов
+
+    PlantWateringState:
+      type: object
+      description: |
+        F14: объяснимое состояние полива. missed=true — слот пропущен и ждёт решения
+        пользователя (полить позже или пропустить); в режиме preserve план не сдвигается
+        автоматически.
+      required: [status, policy, missed, can_backfill]
+      properties:
+        status:
+          type: string
+          enum: [scheduled, due_today, missed, paused]
+        policy:
+          type: string
+          enum: [preserve, auto_skip]
+        scheduled_for:
+          type: [string, 'null']
+          format: date-time
+          description: текущий запланированный слот (next_watering_at)
+        missed:
+          type: boolean
+        missed_since:
+          type: [string, 'null']
+          format: date-time
+          description: первый неполитый слот
+        missed_slots:
+          type: integer
+          minimum: 0
+        hours_late:
+          type: integer
+          minimum: 0
+        days_late:
+          type: integer
+          minimum: 0
+        can_backfill:
+          type: boolean
+          description: можно ли ещё отметить пропуск как «полил позже»
+        backfill_until:
+          type: [string, 'null']
+          format: date-time
+          description: до какого момента доступен backfill (30 дней от слота)
+        reason:
+          type: [string, 'null']
+          enum: [missed_slot, auto_skipped, reminders_paused, null]
+        consecutive_skips:
+          type: integer
+          minimum: 0
+        reminders_paused:
+          type: boolean
+        timezone:
+          type: string
 
     PasskeyCreationOptions:
       type: object
@@ -5611,6 +5836,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlantPhoto'
+        watering_state:
+          $ref: '#/components/schemas/PlantWateringState'
+          description: 'F14: пропущен ли полив и что можно сделать (аддитивное поле)'
 
     PlantPhoto:
       type: object
@@ -5631,6 +5859,17 @@ components:
         metadata:
           type: object
           additionalProperties: true
+        thumb_url:
+          type: [string, 'null']
+          description: 'F30: миниатюра 160x160 (если sharp доступен)'
+        taken_at:
+          type: [string, 'null']
+          format: date-time
+          description: 'F30: дата съёмки роста; у старых фото null — клиент берёт created_at'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+          description: 'F30: заметка к фото роста'
         created_at:
           type: string
           format: date-time
@@ -5657,6 +5896,14 @@ components:
             metadata:
               type: object
               additionalProperties: true
+            taken_at:
+              type: string
+              format: date-time
+              description: 'F30: когда сделан снимок (необязательно)'
+            note:
+              type: string
+              maxLength: 500
+              description: 'F30: заметка к фото роста'
 
     PopularPlantSpecies:
       type: object
@@ -5863,6 +6110,29 @@ components:
                       type: [string, 'null']
                     is_missed:
                       type: boolean
+                    scheduled_for:
+                      type: string
+                      format: date-time
+                    missed_since:
+                      type: [string, 'null']
+                      format: date-time
+                    missed_slots:
+                      type: integer
+                      minimum: 0
+                    can_backfill:
+                      type: boolean
+                    backfill_until:
+                      type: [string, 'null']
+                      format: date-time
+                    days_late:
+                      type: integer
+                      minimum: 0
+                    reason:
+                      type: [string, 'null']
+                      enum: [missed_slot, auto_skipped, reminders_paused, null]
+                    missed_policy:
+                      type: string
+                      enum: [preserve, auto_skip]
 
     HistoryAllResponse:
       type: object
@@ -6314,7 +6584,8 @@ components:
           type: [integer, 'null']
         type:
           type: string
-          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip, weekly_recap]
+          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip, weekly_recap, garden_view]
+          description: 'garden_view (F50) — владельцу о просмотрах публичного сада, не чаще 1 раза в 24 ч.'
         title:
           type: string
           maxLength: 120
@@ -6360,7 +6631,7 @@ components:
           type: integer
         unreadByCategory:
           type: object
-          required: [all, watering, care]
+          required: [all, watering, care, garden]
           properties:
             all:
               type: integer
@@ -6368,10 +6639,12 @@ components:
               type: integer
             care:
               type: integer
-          description: 'Непрочитанные по категориям ленты: care включает care_reminder и care_tip.'
+            garden:
+              type: integer
+          description: 'Непрочитанные по категориям ленты: care включает care_reminder/care_tip, garden — garden_view (F50).'
         category:
           type: string
-          enum: [all, watering, care]
+          enum: [all, watering, care, garden]
         status:
           type: string
           enum: [all, unread, read]
@@ -6885,6 +7158,79 @@ components:
         updatedAt:
           type: string
           format: date-time
+        freeze:
+          $ref: '#/components/schemas/CareStreakFreeze'
+        streakBreak:
+          oneOf:
+            - $ref: '#/components/schemas/CareStreakBreak'
+            - type: 'null'
+
+    CareStreakFreeze:
+      type: object
+      description: 'F16: заморозка серии — 1 день в неделю не обрывает серию.'
+      required: [enabled, perWeek, weekStart, usedThisWeek, availableThisWeek, usedTotal, used]
+      properties:
+        enabled:
+          type: boolean
+        perWeek:
+          type: integer
+          minimum: 0
+        weekStart:
+          type: string
+          format: date
+        usedThisWeek:
+          type: integer
+          minimum: 0
+        availableThisWeek:
+          type: integer
+          minimum: 0
+        usedTotal:
+          type: integer
+          minimum: 0
+        used:
+          type: array
+          items:
+            type: object
+            required: [at, localDate, weekStart, kind]
+            properties:
+              at:
+                type: string
+                format: date-time
+              localDate:
+                type: string
+                format: date
+              weekStart:
+                type: string
+                format: date
+              kind:
+                type: string
+                enum: [skipped, late_watering]
+              hoursLate:
+                type: integer
+                minimum: 0
+
+    CareStreakBreak:
+      type: object
+      description: 'F16: почему серия оборвалась (пропуск или поздний полив исчерпали заморозку).'
+      required: [reason, at, localDate]
+      properties:
+        reason:
+          type: string
+          enum: [skipped, late_watering]
+        at:
+          type: string
+          format: date-time
+        localDate:
+          type: string
+          format: date
+        hoursLate:
+          type: integer
+          minimum: 0
+        weekStart:
+          type: string
+          format: date
+        freezeAvailable:
+          type: boolean
 
     AdminBotChannelMetrics:
       type: object

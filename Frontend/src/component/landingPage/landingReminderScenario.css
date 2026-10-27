@@ -1,0 +1,93 @@
+.landingReminderScenario {
+    max-width: 540px;
+    box-sizing: border-box;
+    margin-top: 18px;
+    padding: 14px 16px;
+    border: 1px dashed #C9D4CB;
+    border-radius: 16px;
+    background: #F5F7F3;
+}
+
+.landingReminderHeading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.landingReminderIcon {
+    display: grid;
+    width: 26px;
+    height: 26px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 50%;
+    background: #FFFFFF;
+    color: #AD9262;
+    font-size: var(--font-size-base);
+}
+
+.landingReminderTitle {
+    margin: 0;
+    color: var(--theme-text);
+    font-size: var(--font-size-base);
+    font-weight: 650;
+}
+
+.landingReminderText {
+    margin: 8px 0 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+.landingReminderButton {
+    min-height: 44px;
+    box-sizing: border-box;
+    margin-top: 12px;
+    padding: 0 16px;
+    border: 1px solid #C9D4CB;
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: #3F4F44;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.landingReminderButton:hover {
+    border-color: #A9BBAF;
+    background: #EAF0E9;
+}
+
+.landingReminderButton:focus-visible,
+.landingReminderStatus a:focus-visible {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 3px;
+}
+
+.landingReminderStatus {
+    margin: 8px 0 0;
+    padding: 9px 12px;
+    border-radius: 12px;
+    background: #E9EFEA;
+    color: #3F4F44;
+    font-size: var(--font-size-sm);
+    line-height: 1.55;
+}
+
+.landingReminderStatus a {
+    color: var(--theme-accent-text);
+    font-weight: 650;
+}
+
+@media (max-width: 620px) {
+    .landingReminderScenario {
+        max-width: 100%;
+        padding: 13px 14px;
+    }
+
+    .landingReminderButton {
+        width: 100%;
+    }
+}

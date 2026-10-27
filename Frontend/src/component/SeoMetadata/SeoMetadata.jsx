@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { getArticleMeta, getPlantMeta } from '../../data/seoMeta.js'
-import { CARE_PATH, PLANTS_PATH } from '../../data/siteMap.js'
+import { CARE_PATH, PLANTS_PATH, SECTION_META } from '../../data/siteMap.js'
 import {
     INDEXABLE_ROBOTS,
     NOINDEX_ROBOTS,
@@ -12,9 +12,8 @@ import {
 
 
 const HOME_META = {
-    title: 'Лейка — календарь полива и уход за комнатными растениями',
-    description:
-        'Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».',
+    title: SECTION_META.home.title,
+    description: SECTION_META.home.description,
     indexable: true,
 }
 
@@ -78,16 +77,14 @@ const GARDEN_META = {
 }
 
 const PLANTS_INDEX_META = {
-    title: 'Комнатные растения: справочник по поливу и уходу — Лейка',
-    description:
-        'Частота полива, требования к свету и влажности, типичные проблемы популярных комнатных растений. Справочник «Лейки».',
+    title: SECTION_META.plants.title,
+    description: SECTION_META.plants.description,
     indexable: true,
 }
 
 const CARE_INDEX_META = {
-    title: 'Уход за комнатными растениями: статьи и руководства — Лейка',
-    description:
-        'Как понять, пора ли поливать, что делать при переливе, как подготовить растения к отпуску и другие руководства по уходу.',
+    title: SECTION_META.care.title,
+    description: SECTION_META.care.description,
     indexable: true,
 }
 

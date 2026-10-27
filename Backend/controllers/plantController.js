@@ -15,6 +15,7 @@ import {
 import {
     getMaxAdviceQuestions,
     suggestPlantSpeciesWithMeta,
+    suggestSpeciesFromPhoto,
     suggestWateringAdvice,
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
@@ -60,6 +61,19 @@ import { careTitleFor, normalizeCareActionPayload, serializeCareLog } from '../u
 import { buildCareSchedule } from '../utils/careSchedule.js'
 import { detectPlantGroup, getSeasonInfo } from '../utils/wateringKnowledge.js'
 import carePlanService from '../services/carePlanService.js'
+import {
+    MISSED_BACKFILL_WINDOW_DAYS,
+    buildWateringState,
+    resolveMissedPolicy
+} from '../utils/missedWatering.js'
+import { plantThumbUrl } from '../utils/plantPhotoThumb.js'
+import {
+    buildPlantPhotoRow,
+    isValidPhotoInput,
+    pickNextMainPhoto,
+    serializePlantPhoto,
+    sortPlantPhotosForGallery
+} from '../utils/plantPhotos.js'
 const TIME_OF_DAY_HOURS = WATERING_TIME_OF_DAY_HOURS
 const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
@@ -145,24 +159,6 @@ function withoutReservedMetadata(metadata) {
     return next
 }
 
-function isValidPhotoInput(photo) {
-    if (typeof photo === 'string') return Boolean(photo.trim()) && photo.length <= 2048
-    if (!photo || typeof photo !== 'object' || Array.isArray(photo) ||
-        typeof photo.url !== 'string' || !photo.url.trim() || photo.url.length > 2048) {
-        return false
-    }
-    if (photo.sort_order !== undefined &&
-        (!Number.isInteger(photo.sort_order) || photo.sort_order < 0)) {
-        return false
-    }
-    if (photo.is_main !== undefined && typeof photo.is_main !== 'boolean') return false
-    if (photo.metadata !== undefined &&
-        (!photo.metadata || typeof photo.metadata !== 'object' || Array.isArray(photo.metadata))) {
-        return false
-    }
-    return true
-}
-
 async function getUserTimeZone(userId) {
     const user = await User.findByPk(userId, { attributes: ['timezone'] })
     return resolveTimeZone(user?.timezone)
@@ -176,6 +172,63 @@ function getUserAiLocale(req) {
     return {
         timeZone: resolveTimeZone(req.user?.timezone),
         hemisphere: resolveHemisphere(req.user)
+    }
+}
+
+function serializePhoto(photo) {
+    if (!photo || typeof photo !== 'object') return photo
+    const source = typeof photo.toJSON === 'function' ? photo.toJSON() : photo
+    return {
+        ...source,
+        thumb_url: plantThumbUrl(source.url)
+    }
+}
+
+function serializePlantWithWateringState(plant, { now, timeZone, policy }) {
+    const source = plant && typeof plant.toJSON === 'function' ? plant.toJSON() : { ...plant }
+    if (Array.isArray(source.photos)) {
+        source.photos = source.photos.map(serializePhoto)
+    }
+    source.watering_state = buildWateringState({
+        plant: source,
+        now,
+        timeZone,
+        policy
+    })
+    return source
+}
+
+function missedScheduleFields({ state, slot, now, policy, missed }) {
+    if (!missed) {
+        return {
+            missed_since: null,
+            missed_slots: 0,
+            can_backfill: false,
+            backfill_until: null,
+            days_late: 0,
+            reason: null,
+            missed_policy: policy
+        }
+    }
+
+    const slotDate = new Date(slot)
+    const backfillUntil = Number.isFinite(slotDate.getTime())
+        ? new Date(slotDate.getTime() + MISSED_BACKFILL_WINDOW_DAYS * DAY_MS)
+        : null
+    const canBackfill = Boolean(backfillUntil && now.getTime() <= backfillUntil.getTime())
+
+    return {
+        missed_since: state?.missed_since ?? (Number.isFinite(slotDate.getTime())
+            ? slotDate.toISOString()
+            : null),
+        missed_slots: state?.missed_slots ?? 1,
+        can_backfill: canBackfill,
+        backfill_until: canBackfill ? backfillUntil.toISOString() : null,
+        days_late: Number.isFinite(slotDate.getTime())
+            ? Math.max(0, Math.floor((now.getTime() - slotDate.getTime()) / DAY_MS))
+            : 0,
+        reason: state?.reason ?? 'missed_slot',
+        missed_policy: policy
     }
 }
 
@@ -203,6 +256,37 @@ class PlantController {
             console.error('❌ Ошибка подсказки вида растения:', error)
             return res.status(503).json({
                 message: error.message || 'Сервис подсказок временно недоступен'
+            })
+        }
+    }
+
+    async suggestSpeciesFromPhoto(req, res) {
+        const file = Array.isArray(req.files) ? req.files[0] : req.file
+        if (!file?.buffer?.length) {
+            return res.status(400).json({ message: 'Загрузите фото растения' })
+        }
+
+        try {
+            const result = await suggestSpeciesFromPhoto({ imageBuffer: file.buffer })
+            const top = Array.isArray(result.suggestions) ? result.suggestions[0] : null
+            logAiAdvice({
+                userId: getUserId(req),
+                kind: 'species',
+                plantName: top?.name,
+                species: top?.species,
+                source: result.source,
+                latencyMs: result.latencyMs
+            })
+            return res.json({
+                suggestions: result.suggestions,
+                isPlant: result.isPlant !== false,
+                source: result.source,
+                generatedAt: new Date().toISOString()
+            })
+        } catch (error) {
+            console.error('❌ Ошибка подсказки вида по фото:', error?.message || error)
+            return res.status(503).json({
+                message: 'Сервис подсказки вида по фото временно недоступен'
             })
         }
     }
@@ -420,8 +504,13 @@ class PlantController {
                     [{ model: PlantPhoto, as: 'photos' }, 'sort_order', 'ASC']
                 ]
             })
+            const timeZone = await getUserTimeZone(userId)
+            const now = new Date()
+            const policy = resolveMissedPolicy()
 
-            return res.json(plants)
+            return res.json(plants.map(plant =>
+                serializePlantWithWateringState(plant, { now, timeZone, policy })
+            ))
         } catch (error) {
             console.error('❌ Ошибка получения растений:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
@@ -528,6 +617,7 @@ class PlantController {
             })
 
             const timeZone = await getUserTimeZone(userId)
+            const policy = resolveMissedPolicy()
             const groups = {}
             const nowKey = zonedDayKey(now, timeZone)
 
@@ -549,6 +639,12 @@ class PlantController {
                     intervalDays,
                     { now, daysAhead: SCHEDULE_DAYS_AHEAD, timeZone }
                 )
+                const wateringState = buildWateringState({
+                    plant: p,
+                    now,
+                    timeZone,
+                    policy
+                })
 
                 for (const dt of occurrences) {
                     const dateKey = zonedDayKey(dt, timeZone)
@@ -571,9 +667,17 @@ class PlantController {
                         description: p.description,
                         photo_url: mainPhoto,
                         next_watering_at: dt,
+                        scheduled_for: dt,
                         watering_interval_days: intervalDays,
                         watering_time_of_day: p.watering_time_of_day,
-                        is_missed: missed
+                        is_missed: missed,
+                        ...missedScheduleFields({
+                            state: wateringState,
+                            slot: dt,
+                            now,
+                            policy,
+                            missed
+                        })
                     })
                 }
             }
@@ -615,7 +719,12 @@ class PlantController {
                 return res.status(404).json({ message: 'Растение не найдено' })
             }
 
-            return res.json(plant)
+            const timeZone = await getUserTimeZone(userId)
+            return res.json(serializePlantWithWateringState(plant, {
+                now: new Date(),
+                timeZone,
+                policy: resolveMissedPolicy()
+            }))
         } catch (error) {
             console.error('❌ Ошибка:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
@@ -759,16 +868,11 @@ class PlantController {
             }, { transaction: t })
 
             if (photos.length) {
-                const rows = normalizedPhotos.map((p, i) => {
-                    const url = typeof p === 'string' ? p : p.url
-                    return {
-                        plant_id: plant.id,
-                        url,
-                        sort_order: typeof p === 'object' && p.sort_order != null ? p.sort_order : i,
-                        is_main: typeof p === 'object' ? !!p.is_main : i === 0,
-                        metadata: typeof p === 'object' && p.metadata ? p.metadata : {}
-                    }
-                }).filter(r => r.url)
+                const rows = normalizedPhotos.map((p, i) => buildPlantPhotoRow(p, {
+                    plantId: plant.id,
+                    index: i,
+                    url: typeof p === 'string' ? p : p.url
+                })).filter(row => row.url)
 
                 await PlantPhoto.bulkCreate(rows, { transaction: t })
             }
@@ -847,20 +951,93 @@ class PlantController {
                 )
             }
 
-            const rows = normalizedPhotos.map((p, i) => ({
-                plant_id: plant.id,
-                url: p.url,
-                sort_order: p.sort_order != null ? p.sort_order : i,
-                is_main: !!p.is_main,
-                metadata: p.metadata && typeof p.metadata === 'object' ? p.metadata : {}
+            const rows = normalizedPhotos.map((p, i) => buildPlantPhotoRow(p, {
+                plantId: plant.id,
+                index: i,
+                url: p.url
             }))
 
             const created = await PlantPhoto.bulkCreate(rows, { transaction })
             await transaction.commit()
-            return res.status(201).json(created)
+            return res.status(201).json(created.map(photo =>
+                serializePlantPhoto(photo, { thumbUrl: plantThumbUrl(photo.url) })
+            ))
         } catch (error) {
             if (transaction && !transaction.finished) await transaction.rollback()
             console.error('❌ Ошибка добавления фото:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async getPhotos(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId },
+                attributes: ['id']
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const photos = await PlantPhoto.findAll({
+                where: { plant_id: plant.id },
+                order: [
+                    ['is_main', 'DESC'],
+                    ['taken_at', 'DESC'],
+                    ['sort_order', 'ASC'],
+                    ['id', 'ASC']
+                ]
+            })
+
+            return res.json({
+                plant_id: plant.id,
+                items: sortPlantPhotosForGallery(photos).map(photo =>
+                    serializePlantPhoto(photo, { thumbUrl: plantThumbUrl(photo.url) })
+                )
+            })
+        } catch (error) {
+            console.error('❌ Ошибка галереи фото растения:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
+    async deletePhoto(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await Plant.findOne({
+                where: { id: req.params.id, user_id: userId },
+                attributes: ['id']
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const photoId = Number(req.params.photoId)
+            const photo = await PlantPhoto.findOne({
+                where: { id: photoId, plant_id: plant.id }
+            })
+            if (!photo) return res.status(404).json({ message: 'Фотография не найдена' })
+
+            const wasMain = photo.is_main === true
+            const photoUrl = photo.url
+            await photo.destroy()
+
+            if (wasMain) {
+                const rest = await PlantPhoto.findAll({ where: { plant_id: plant.id } })
+                const next = pickNextMainPhoto(rest)
+                if (next) await next.update({ is_main: true })
+            }
+
+            try {
+                await removePlantPhotoFiles([photoUrl])
+            } catch (error) {
+                console.warn('⚠️ Не удалось удалить файлы фото растения:', error?.message || error)
+            }
+
+            return res.json({ deleted: true, id: photoId })
+        } catch (error) {
+            console.error('❌ Ошибка удаления фото растения:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })
         }
     }
@@ -1166,7 +1343,10 @@ class PlantController {
                     species: p.species,
                     location: p.location,
                     photo_url: mainPhoto,
-                    next_watering_at: p.next_watering_at
+                    next_watering_at: p.next_watering_at,
+                    watering_interval_days: p.watering_interval_days,
+                    watering_time_of_day: p.watering_time_of_day,
+                    metadata: p.metadata
                 })
             }
 
@@ -1210,6 +1390,12 @@ class PlantController {
                     now,
                     wateredAt: missResolution(plant.id, plant.next_watering_at)
                 }) ?? { hoursLate: 0, daysLate: 0 }
+                const wateringState = buildWateringState({
+                    plant,
+                    now,
+                    timeZone,
+                    policy: resolveMissedPolicy()
+                })
 
                 pushEvent(iso, {
                     kind: 'overdue',
@@ -1222,7 +1408,12 @@ class PlantController {
                     },
                     scheduled_for: plant.next_watering_at,
                     hours_late: lateness.hoursLate,
-                    days_late: lateness.daysLate
+                    days_late: lateness.daysLate,
+                    missed_since: wateringState.missed_since,
+                    missed_slots: wateringState.missed_slots,
+                    can_backfill: wateringState.can_backfill,
+                    backfill_until: wateringState.backfill_until,
+                    reason: wateringState.reason
                 })
             }
 
@@ -2035,8 +2226,12 @@ class PlantController {
                 },
                 order: [['next_watering_at', 'ASC']]
             })
+            const now = new Date()
+            const policy = resolveMissedPolicy()
 
-            return res.json(plants)
+            return res.json(plants.map(plant =>
+                serializePlantWithWateringState(plant, { now, timeZone, policy })
+            ))
         } catch (error) {
             console.error('❌ Ошибка получения нуждающихся в поливе:', error)
             return res.status(500).json({ message: 'Ошибка сервера' })

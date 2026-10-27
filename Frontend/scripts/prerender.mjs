@@ -292,7 +292,8 @@ try {
     vite.ssrLoadModule('/src/data/seoMeta.js'),
   ])
 
-  const { HOME_PATH, PLANTS_PATH, CARE_PATH, plantPath, articlePath } = siteMapModule
+  const { HOME_PATH, PLANTS_PATH, CARE_PATH, plantPath, articlePath, SECTION_META } =
+    siteMapModule
   const { getPlantMeta, getArticleMeta } = seoMetaModule
 
   const template = await readFile(resolve(outputDirectory, 'index.html'), 'utf8')
@@ -317,31 +318,60 @@ try {
 
   const sitemapEntries = []
 
+  function latestContentDate(items) {
+    const dates = items
+      .map(item => (item && typeof item.updated === 'string' ? item.updated : null))
+      .filter(Boolean)
+      .sort()
+    return dates.length ? dates[dates.length - 1] : buildDate
+  }
+
   {
     const page = setPageMetadata(renderPage(HOME_PATH), {
-      title: 'Лейка — календарь полива и уход за комнатными растениями',
-      description:
-        'Планируйте полив комнатных растений, ведите коллекцию и получайте напоминания. Календарь ухода и ИИ-подсказки — в приложении «Лейка».',
+      title: SECTION_META.home.title,
+      description: SECTION_META.home.description,
       canonical: `${siteUrl}/`,
       indexable: true,
       keepTemplateStructuredData: true,
-      structuredData: [buildFaqPage([
+      structuredData: [
         {
-          question: 'Как не забывать поливать комнатные растения?',
-          answer:
-            'Добавьте растение, задайте интервал полива и включите уведомления. Календарь покажет, за какими растениями пора ухаживать.'
+          '@context': 'https://schema.org',
+          '@type': 'WebSite',
+          name: 'Лейка',
+          alternateName: 'WebPlant',
+          url: `${siteUrl}/`,
+          inLanguage: 'ru',
+          description: SECTION_META.home.description,
+          publisher: {
+            '@type': 'Organization',
+            name: 'Лейка',
+            url: `${siteUrl}/`,
+            logo: {
+              '@type': 'ImageObject',
+              url: `${siteUrl}/icons/icon-512.png`,
+              width: 512,
+              height: 512
+            }
+          }
         },
-        {
-          question: 'Можно ли вести расписание для разных растений?',
-          answer:
-            'Да. Для каждого растения можно задать собственную частоту полива, время и дни напоминаний.'
-        },
-        {
-          question: 'Как понять, когда поливать незнакомое растение?',
-          answer:
-            'Спросите ИИ-помощника «Лейки»: он подскажет ориентировочный график ухода, который можно настроить под условия дома.'
-        }
-      ])]
+        buildFaqPage([
+          {
+            question: 'Как не забывать поливать комнатные растения?',
+            answer:
+              'Добавьте растение, задайте интервал полива и включите уведомления. Календарь покажет, за какими растениями пора ухаживать.'
+          },
+          {
+            question: 'Можно ли вести расписание для разных растений?',
+            answer:
+              'Да. Для каждого растения можно задать собственную частоту полива, время и дни напоминаний.'
+          },
+          {
+            question: 'Как понять, когда поливать незнакомое растение?',
+            answer:
+              'Спросите ИИ-помощника «Лейки»: он подскажет ориентировочный график ухода, который можно настроить под условия дома.'
+          }
+        ])
+      ]
     })
     await writeFile(resolve(outputDirectory, 'index.html'), page)
     sitemapEntries.push({ path: '/', lastmod: buildDate, changefreq: 'weekly', priority: '1.0' })
@@ -349,9 +379,8 @@ try {
 
   {
     const page = setPageMetadata(renderPage(PLANTS_PATH), {
-      title: 'Комнатные растения: справочник по поливу и уходу — Лейка',
-      description:
-        'Частота полива, требования к свету и влажности, типичные проблемы популярных комнатных растений. Справочник «Лейки».',
+      title: SECTION_META.plants.title,
+      description: SECTION_META.plants.description,
       canonical: `${siteUrl}${PLANTS_PATH}`,
       indexable: true,
       structuredData: [
@@ -372,7 +401,7 @@ try {
     await writeFile(resolve(outputDirectory, 'plants.html'), page)
     sitemapEntries.push({
       path: PLANTS_PATH,
-      lastmod: buildDate,
+      lastmod: latestContentDate(PLANTS),
       changefreq: 'monthly',
       priority: '0.9'
     })
@@ -397,7 +426,9 @@ try {
         headline: `${plant.name}: полив и уход`,
         description: meta.description,
         inLanguage: 'ru',
+        datePublished: plant.updated || buildDate,
         dateModified: plant.updated || buildDate,
+        articleSection: 'Справочник растений',
         image: [plant.image ? `${siteUrl}${plant.image}` : `${siteUrl}/og-image.png`],
         mainEntityOfPage: `${siteUrl}${path}`,
         author: {
@@ -437,9 +468,8 @@ try {
 
   {
     const page = setPageMetadata(renderPage(CARE_PATH), {
-      title: 'Уход за комнатными растениями: статьи и руководства — Лейка',
-      description:
-        'Как понять, пора ли поливать, что делать при переливе, как подготовить растения к отпуску и другие руководства по уходу.',
+      title: SECTION_META.care.title,
+      description: SECTION_META.care.description,
       canonical: `${siteUrl}${CARE_PATH}`,
       indexable: true,
       structuredData: [
@@ -454,13 +484,14 @@ try {
             name: article.title,
             url: `${siteUrl}${articlePath(article.slug)}`
           }))
-        }
+        },
+        buildFaqPage(siteMapModule.CARE_INDEX_FAQ)
       ]
     })
     await writeFile(resolve(outputDirectory, 'care.html'), page)
     sitemapEntries.push({
       path: CARE_PATH,
-      lastmod: buildDate,
+      lastmod: latestContentDate(ARTICLES),
       changefreq: 'weekly',
       priority: '0.9'
     })

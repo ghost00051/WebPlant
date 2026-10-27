@@ -1,5 +1,6 @@
 import LogoMark from '../../assets/LogoMark.svg'
 import Notification from '../../assets/NotifBtn.svg'
+import LeafIcon from '../../assets/leaf.svg'
 import MiniCalendar from '../MiniCalendar/MiniCalendar'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
@@ -7,6 +8,14 @@ import check from '../../assets/check.svg'
 import droplets from '../../assets/droplets.svg'
 import VisionNextPlant from '../visionNextPlant/visionNextPlant'
 import CareStreakCard from '../careStreak/CareStreakCard.jsx'
+import CareActionSheet from '../careActions/CareActionSheet.jsx'
+import DaySummary from './DaySummary.jsx'
+import FirstDayCard from './FirstDayCard.jsx'
+import MissedWateringCard from './MissedWateringCard.jsx'
+import WeekSummary from './WeekSummary.jsx'
+import CareTaskCard from './CareTaskCard.jsx'
+import PlantDaySheet from './PlantDaySheet.jsx'
+import { InsightButton, InsightPanel } from './DailyInsight.jsx'
 import chevronleft from '../../assets/chevron-left.svg'
 import IconTile from '../../assets/IconTile.svg'
 import CalendarIcon from '../../assets/CalendarIcon.svg'
@@ -19,6 +28,18 @@ import { subscribeToNotificationChanges } from '../../utils/notificationSync.js'
 import { setAppBadgeCount } from '../../utils/appBadge.js'
 import { DEFAULT_TIME_ZONE } from '../../utils/timeZone.js'
 import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
+import { getSeasonInfo, seasonBadgeText } from '../../utils/season.js'
+import {
+  buildFirstDayFacts,
+  firstDayDismissKey,
+  selectFirstDayPlant
+} from '../../utils/firstDayFacts.js'
+import { buildWeekSummary } from '../../utils/weekSummary.js'
+import {
+  buildDailyInsight,
+  homeInsightSeenKey
+} from '../../utils/homeInsight.js'
+import { buildPlantDayTasks } from '../../utils/plantDayTasks.js'
 import {
   buildDayView,
   dayOfMonth,
@@ -32,8 +53,8 @@ import {
   weekdayName
 } from '../../utils/date.js'
 import {
-  missedWateringLabel,
-  splitNeedWateringPlants
+  splitNeedWateringPlants,
+  zonedIsoDay
 } from '../../utils/wateringNeeds.js'
 import { isPushSupported } from '../../utils/pushNotifications.js'
 import { PLANTS } from '../../data/plants.js'
@@ -59,6 +80,7 @@ import {
 
 import './homePage.css'
 import './homePage.desktop.css'
+import './homeFeatures.css'
 import './dark-theme.css'
 import './notifications-button.css'
 
@@ -70,12 +92,14 @@ const WATERING_NOTICE_TTL_MS = 8000
 const POPULAR_PLANTS = pickPopularPlants(PLANTS)
 
 const WATERING_TABS = [
-  { id: 'today', label: 'Сегодня нужно полить' },
-  { id: 'missed', label: 'Пропущенные поливы' }
+  { id: 'today', label: 'Полив' },
+  { id: 'care', label: 'Уход' },
+  { id: 'missed', label: 'Пропущено' }
 ]
 
 const WATERING_TAB_ID = tabId => `homePageWateringTab-${tabId}`
 const WATERING_PANEL_ID = 'homePageWateringPanel'
+const DAY_SUMMARY_HINT = 'Одна кнопка отмечает полив всех растений из списка'
 
 function plantWordForm (count) {
   const mod10 = count % 10
@@ -184,6 +208,34 @@ function readReminderState () {
   return isPushSupported() ? 'default' : 'unsupported'
 }
 
+function plantMainPhoto (plant) {
+  return (
+    plant?.photos?.find(photo => photo.is_main)?.url ??
+    plant?.photos?.[0]?.url ??
+    plant?.photo_url ??
+    plant?.photo_thumb_url ??
+    null
+  )
+}
+
+function readStoredFlag (key) {
+  if (!key) return false
+  try {
+    return window.localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+function storeFlag (key) {
+  if (!key) return
+  try {
+    window.localStorage.setItem(key, '1')
+  } catch {
+    return
+  }
+}
+
 function HomePage ({
   user,
   onTabChange,
@@ -217,6 +269,14 @@ function HomePage ({
   const [reminderState, setReminderState] = useState('default')
   const [wateringNotice, setWateringNotice] = useState('')
   const [careRefreshKey, setCareRefreshKey] = useState(0)
+  const [batchWatering, setBatchWatering] = useState(false)
+  const [careMarkingKey, setCareMarkingKey] = useState('')
+  const [plantSheet, setPlantSheet] = useState(null)
+  const [careSheet, setCareSheet] = useState(null)
+  const [sheetNotice, setSheetNotice] = useState('')
+  const [insightOpen, setInsightOpen] = useState(false)
+  const [insightSeen, setInsightSeen] = useState(false)
+  const [firstDayDismissed, setFirstDayDismissed] = useState(false)
 
   const calendarRef = useRef(null)
   const wateringTabRefs = useRef(new Map())
@@ -768,7 +828,7 @@ function HomePage ({
   }, [onboarding, reminderState])
 
   const waterPlant = async (plantId, { onTime = true } = {}) => {
-    if (!plantId || wateringId) return
+    if (!plantId || wateringId) return false
     setWateringId(plantId)
 
     try {
@@ -789,7 +849,7 @@ function HomePage ({
         )
         setPlant(prev => prev.filter(p => p.id !== plantId))
         setWateringId(null)
-        return
+        return true
       }
 
       setRemovingId(plantId)
@@ -800,13 +860,15 @@ function HomePage ({
         setWateringId(null)
       }, EXIT_MS)
 
-      loadHomeData()
+      void loadHomeData()
+      return true
     } catch (error) {
       console.error('Ошибка полива:', error)
       setDataError(
         error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
       )
       setWateringId(null)
+      return false
     }
   }
 
@@ -939,6 +1001,80 @@ function HomePage ({
   const needWateringUnavailable =
     Boolean(dataError) && plant.length === 0 && allPlants.length === 0
   const collectionEmpty = plant.length === 0 && allPlants.length === 0
+
+  const seasonInfo = useMemo(
+    () => getSeasonInfo(now, timeZone),
+    [now, timeZone]
+  )
+  const seasonBadge = seasonBadgeText(seasonInfo)
+  const todayIso = useMemo(() => zonedIsoDay(now, timeZone), [now, timeZone])
+
+  const careToday = useMemo(
+    () =>
+      careScheduleItems.filter(item => {
+        if (!item || typeof item !== 'object') return false
+        if (!item.date || item.date !== todayIso) return false
+        return Boolean(item.action_code)
+      }),
+    [careScheduleItems, todayIso]
+  )
+  const careTodayCount = careToday.length
+
+  const weekSummary = useMemo(
+    () =>
+      buildWeekSummary({
+        schedule,
+        careItems: careScheduleItems,
+        now,
+        timeZone
+      }),
+    [schedule, careScheduleItems, now, timeZone]
+  )
+
+  const dailyInsight = useMemo(
+    () => buildDailyInsight({ plants: allPlants, seasonInfo, now, timeZone }),
+    [allPlants, seasonInfo, now, timeZone]
+  )
+  const insightKey = useMemo(
+    () => homeInsightSeenKey(now, timeZone),
+    [now, timeZone]
+  )
+
+  const firstDayPlant = useMemo(
+    () => selectFirstDayPlant(allPlants, { now }),
+    [allPlants, now]
+  )
+  const firstDayFacts = useMemo(
+    () =>
+      firstDayPlant
+        ? buildFirstDayFacts({ plant: firstDayPlant, now, seasonInfo })
+        : [],
+    [firstDayPlant, now, seasonInfo]
+  )
+
+  const daySummaryText = useMemo(() => {
+    const count = todayPlants.length
+    if (count === 0) return ''
+    const names = todayPlants.map(item => item.name).filter(Boolean)
+    const shown = names.slice(0, 2).map(name => `«${name}»`).join(', ')
+    const rest = names.length > 2 ? ` и ещё ${names.length - 2}` : ''
+    if (count === 1) {
+      return `${shown} ждёт полива — отметьте, когда польёте.`
+    }
+    return `${shown}${rest} — ${count} ${plantWordForm(count)} ждут полива.`
+  }, [todayPlants])
+
+  useEffect(() => {
+    const key = firstDayPlant ? firstDayDismissKey(firstDayPlant.id, now) : ''
+    if (!key) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFirstDayDismissed(readStoredFlag(key))
+  }, [firstDayPlant, now])
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setInsightSeen(readStoredFlag(insightKey))
+  }, [insightKey])
 
   const firstPlantId = onboarding?.plant?.id ?? null
   const firstPlantIsDueToday =
@@ -1129,17 +1265,235 @@ function HomePage ({
     showWateringNotice('Полив отмечен — пропуск обновлён в календаре.')
   }
 
-  const renderWateringCard = (
-    item,
-    { overdue = false, daysLate = 0, scheduledFor = null } = {}
-  ) => {
+  const dismissFirstDay = () => {
+    if (!firstDayPlant) return
+    storeFlag(firstDayDismissKey(firstDayPlant.id, now))
+    setFirstDayDismissed(true)
+  }
+
+  const toggleInsight = () => {
+    if (insightOpen) {
+      setInsightOpen(false)
+      return
+    }
+    storeFlag(insightKey)
+    setInsightSeen(true)
+    setInsightOpen(true)
+  }
+
+  const waterAllToday = async () => {
+    if (batchWatering || todayPlants.length === 0) return
+    const targets = todayPlants.map(item => ({
+      id: item.id,
+      name: item.name || 'растение'
+    }))
+    const count = targets.length
+
+    setBatchWatering(true)
+    setPlant(prev => prev.filter(item => !targets.some(target => target.id === item.id)))
+    showWateringNotice(
+      count === 1
+        ? `Поливаем «${targets[0].name}»…`
+        : `Отмечаем полив: ${count} ${plantWordForm(count)}…`
+    )
+
+    const failed = []
+    for (const target of targets) {
+      try {
+        const result = await markWateredWithQueue(target.id)
+        const alreadyWatered = result?.status === 409
+        if (!alreadyWatered && (!result || !result.ok)) failed.push(target.name)
+      } catch {
+        failed.push(target.name)
+      }
+    }
+
+    setBatchWatering(false)
+    await loadHomeData()
+
+    if (failed.length) {
+      showWateringNotice(
+        `Не удалось отметить: ${failed.join(', ')}. Попробуйте ещё раз.`
+      )
+      return
+    }
+    showWateringNotice(
+      count === 1
+        ? `Полив отмечен: «${targets[0].name}». Хорошего дня!`
+        : `Полито: ${count} ${plantWordForm(count)}. Хорошего дня!`
+    )
+  }
+
+  const wateringStateForPlant = plantId => {
+    if (plantId === null || plantId === undefined) return null
+    if (todayPlants.some(item => item.id === plantId)) return { kind: 'today' }
+    const missedEntry = missedPlants.find(entry => entry.plant?.id === plantId)
+    if (!missedEntry) return null
+    const dueLabel = missedEntry.dueDay
+      ? `${dayOfMonth(missedEntry.dueDay)} ${monthGenitive(missedEntry.dueDay)}`
+      : ''
+    return {
+      kind: 'missed',
+      scheduledFor: missedEntry.dueDay ?? null,
+      description: dueLabel
+        ? `Полив ${dueLabel} не отмечен — он ещё нужен?`
+        : 'Полив не отмечен — он ещё нужен?'
+    }
+  }
+
+  const openPlantSheet = (item, watering = null) => {
+    if (!item || item.id === null || item.id === undefined) return
+    setSheetNotice('')
+    setPlantSheet({ plant: item, watering })
+  }
+
+  const closePlantSheet = () => {
+    setPlantSheet(null)
+    setSheetNotice('')
+  }
+
+  const openCareSheet = (plantId = null, initialAction = 'fertilize') => {
+    setCareSheet({ plantId, initialAction })
+  }
+
+  const closeCareSheet = () => {
+    setCareSheet(null)
+  }
+
+  const openPlantSheetFromCareItem = item => {
+    if (!item) return
+    const plantId = item.plant_id
+    const plantInfo = allPlantsMap.get(plantId) || {
+      id: plantId,
+      name: item.plant_name || 'Растение'
+    }
+    openPlantSheet(plantInfo, wateringStateForPlant(plantId))
+  }
+
+  const markCareTask = async (item, { product = '', dose = '' } = {}) => {
+    if (!item?.plant_id || !item.action_code || careMarkingKey) return
+    const key = `${item.plant_id}:${item.action_code}:${item.date || todayIso}`
+    setCareMarkingKey(key)
+
+    try {
+      const payload = {
+        action_code: item.action_code,
+        plant_id: item.plant_id,
+        performed_at: new Date().toISOString()
+      }
+      const productText = typeof product === 'string' ? product.trim() : ''
+      const doseText = typeof dose === 'string' ? dose.trim() : ''
+      if (productText) payload.product_name = productText
+      if (doseText) payload.dose = doseText
+
+      const response = await fetchWithTimeout(
+        `${API_URL}/plants/${item.plant_id}/care-actions`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+          credentials: 'include'
+        }
+      )
+
+      if (response.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error('Отметка ухода пока недоступна. Попробуйте позже.')
+        }
+        throw new Error(
+          data.message || `Не удалось сохранить уход: HTTP ${response.status}`
+        )
+      }
+
+      setCareScheduleItems(prev => prev.filter(entry => entry !== item))
+      const label = item.title || 'уход'
+      const plantName = item.plant_name || 'растение'
+      showWateringNotice(`Отмечено: ${label} · ${plantName}`)
+      setSheetNotice(`Отмечено: ${label}`)
+      await loadHomeData()
+    } catch (error) {
+      console.error('Ошибка отметки ухода:', error)
+      const message =
+        error?.message || 'Не удалось отметить уход. Попробуйте ещё раз.'
+      setDataError(message)
+      setSheetNotice(message)
+    } finally {
+      setCareMarkingKey('')
+    }
+  }
+
+  const plantSheetPlant = plantSheet?.plant ?? null
+  const plantSheetPhoto = plantSheetPlant
+    ? plantMainPhoto(allPlantsMap.get(plantSheetPlant.id)) ??
+      plantMainPhoto(plantSheetPlant)
+    : null
+  const plantSheetTasks = useMemo(() => {
+    if (!plantSheetPlant || !todayIso) return []
+    return buildPlantDayTasks({
+      plant: plantSheetPlant,
+      iso: todayIso,
+      watering: plantSheet?.watering ?? null,
+      careItems: careScheduleItems
+    }).tasks
+  }, [plantSheetPlant, plantSheet?.watering, todayIso, careScheduleItems])
+
+  const plantSheetWaterBusy =
+    Boolean(plantSheetPlant) &&
+    (wateringId === plantSheetPlant.id || missedWateringId === plantSheetPlant.id)
+
+  const plantSheetCareBusyKey =
+    plantSheetPlant && careMarkingKey
+      ? careMarkingKey
+      : ''
+
+  const handleSheetWater = async plantId => {
+    const ok = await waterPlant(plantId)
+    if (!ok) {
+      setSheetNotice('Не удалось отметить полив. Попробуйте ещё раз.')
+      return
+    }
+    setPlantSheet(current => (current ? { ...current, watering: null } : current))
+    setSheetNotice('Полив отмечен')
+  }
+
+  const handleSheetWaterLater = async (plantId, scheduledFor) => {
+    const result = await waterMissedPlant(plantId, scheduledFor)
+    if (!result || result.ok === false) {
+      setSheetNotice(
+        result?.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
+      )
+      return
+    }
+    setPlantSheet(current => (current ? { ...current, watering: null } : current))
+    setSheetNotice(
+      result.queued
+        ? 'Нет сети — отметка отправится автоматически'
+        : 'Полив отмечен — пропуск обновлён'
+    )
+  }
+
+  const handleSheetMarkCare = task => {
+    if (!plantSheetPlant || !task) return
+    void markCareTask({
+      plant_id: plantSheetPlant.id,
+      plant_name: plantSheetPlant.name,
+      action_code: task.actionCode,
+      title: task.title,
+      date: todayIso
+    })
+  }
+
+  const renderWateringCard = item => {
     const fullInfo = allPlantsMap.get(item.id)
-    const mainPhoto =
-      fullInfo?.photos?.find(photo => photo.is_main)?.url ??
-      fullInfo?.photos?.[0]?.url
+    const mainPhoto = plantMainPhoto(fullInfo) ?? plantMainPhoto(item)
     const isRemoving = removingId === item.id
-    const isWatering =
-      wateringId === item.id || missedWateringId === item.id
+    const isWatering = wateringId === item.id
 
     return (
       <div
@@ -1161,33 +1515,33 @@ function HomePage ({
             <div className='plant-details'>
               <span>{wateringEveryLabel(fullInfo?.watering_interval_days)}</span>
             </div>
-            <div
-              className={`watering-badge${
-                overdue ? ' watering-badge--overdue' : ''
-              }`}
-            >
+            <div className='watering-badge'>
               <img src={droplets} alt='' />
-              {overdue ? missedWateringLabel(daysLate) : 'Полить сегодня'}
+              Полить сегодня
             </div>
           </div>
         </Link>
-        <button
-          type='button'
-          className={`check-button ${isWatering ? 'is-watering' : ''}`}
-          onClick={() => {
-            if (overdue && scheduledFor) {
-              waterMissedCard(item.id, scheduledFor)
-              return
-            }
-            waterPlant(item.id, { onTime: !overdue })
-          }}
-          disabled={Boolean(wateringId || missedWateringId)}
-          aria-busy={isWatering || undefined}
-          aria-label={`Отметить, что «${item.name}» полит`}
-        >
-          <img src={check} alt='' />
-          <span>Полить</span>
-        </button>
+        <div className='plantCardActions'>
+          <button
+            type='button'
+            className='plantCareButton'
+            onClick={() => openPlantSheet(item, { kind: 'today' })}
+            aria-label={`Задачи на сегодня: «${item.name}»`}
+          >
+            Уход
+          </button>
+          <button
+            type='button'
+            className={`check-button ${isWatering ? 'is-watering' : ''}`}
+            onClick={() => waterPlant(item.id, { onTime: true })}
+            disabled={Boolean(wateringId)}
+            aria-busy={isWatering || undefined}
+            aria-label={`Отметить, что «${item.name}» полит`}
+          >
+            <img src={check} alt='' />
+            <span>Полить</span>
+          </button>
+        </div>
       </div>
     )
   }
@@ -1262,12 +1616,26 @@ function HomePage ({
           <img src={LogoMark} alt='' />
           <p>{greeting}</p>
           <h1 className='homePageMobileTitle'>Мои растения</h1>
+          <p className='homePageSeasonBadge'>
+            <ThemedIcon
+              className='homePageSeasonBadgeIcon'
+              src={LeafIcon}
+              alt=''
+            />
+            <span>{seasonBadge}</span>
+          </p>
           {allPlants.length > 0 && (
             <Link to='/my-plants' className='homePageAllPlantsLink'>
               Все растения ({allPlants.length})
             </Link>
           )}
         </div>
+        <InsightButton
+          className='insightButton--mobile'
+          hasNews={!insightSeen}
+          expanded={insightOpen}
+          onClick={toggleInsight}
+        />
         <div
           className='notificationsButtonWrap'
           data-badge={badgeValue(badgeText.unreadCount)}
@@ -1297,6 +1665,19 @@ function HomePage ({
               Все растения ({allPlants.length})
             </Link>
           )}
+          <span className='desktopSeasonBadge'>
+            <ThemedIcon
+              className='desktopSeasonBadgeIcon'
+              src={LeafIcon}
+              alt=''
+            />
+            {seasonBadge}
+          </span>
+          <InsightButton
+            hasNews={!insightSeen}
+            expanded={insightOpen}
+            onClick={toggleInsight}
+          />
           <span className='desktopDateBadge'>
             <img src={CalendarIcon} alt='' />
             {todayLabel}
@@ -1318,17 +1699,30 @@ function HomePage ({
           </button>
         </div>
       </div>
-      <div className='homePageGrid'>
-        <MiniCalendar
-          ref={calendarRef}
-          onSelectDay={handleSelectDay}
-          futureDates={plannedDates}
-          pastDates={pastDatesSet}
-          overdueDates={overdueDatesSet}
-          externalIso={selectedDay?.iso}
-          carePastTypes={carePastTypes}
-          careFutureTypes={careFutureTypes}
+      {insightOpen && (
+        <InsightPanel
+          insight={dailyInsight}
+          onClose={() => setInsightOpen(false)}
         />
+      )}
+      <div className='homePageGrid'>
+        <div className='homePageSidebar'>
+          <MiniCalendar
+            ref={calendarRef}
+            onSelectDay={handleSelectDay}
+            futureDates={plannedDates}
+            pastDates={pastDatesSet}
+            overdueDates={overdueDatesSet}
+            externalIso={selectedDay?.iso}
+            carePastTypes={carePastTypes}
+            careFutureTypes={careFutureTypes}
+          />
+          <WeekSummary
+            summary={weekSummary}
+            loading={isLoading}
+            error={dataError}
+          />
+        </div>
         <section className='homePageWatering'>
           {onboarding && !onboarding.dismissed && onboardingChecklist && (
             <OnboardingChecklist
@@ -1337,8 +1731,16 @@ function HomePage ({
               onDismiss={dismissOnboardingChecklist}
             />
           )}
+          {firstDayPlant && !firstDayDismissed && firstDayFacts.length > 0 && (
+            <FirstDayCard
+              plantName={firstDayPlant.name || 'Новое растение'}
+              photoUrl={plantMainPhoto(firstDayPlant)}
+              facts={firstDayFacts}
+              onDismiss={dismissFirstDay}
+            />
+          )}
           {wateringNotice && (
-            <p className='homePageNotice' role='status'>
+            <p className='homePageNotice' role='status' aria-live='polite'>
               <span>{wateringNotice}</span>
               <button
                 type='button'
@@ -1353,17 +1755,32 @@ function HomePage ({
           <div
             className='wateringTabs'
             role='tablist'
-            aria-label='Полив растений'
+            aria-label='Полив и уход'
           >
             <span
               className={`wateringTabsIndicator${
-                wateringTab === 'missed' ? ' is-missed' : ''
+                wateringTab === 'care'
+                  ? ' is-care'
+                  : wateringTab === 'missed'
+                    ? ' is-missed'
+                    : ''
               }`}
               aria-hidden='true'
             />
             {WATERING_TABS.map((tab, index) => {
               const isActive = wateringTab === tab.id
               const isMissed = tab.id === 'missed'
+              const isCare = tab.id === 'care'
+              const badgeCount = isMissed
+                ? missedCount
+                : isCare
+                  ? careTodayCount
+                  : 0
+              const tabLabel = isMissed
+                ? `Пропущенные поливы, просрочено: ${missedCount}`
+                : isCare
+                  ? `Уход на сегодня, задач: ${careTodayCount}`
+                  : 'Полив на сегодня'
 
               return (
                 <button
@@ -1374,11 +1791,7 @@ function HomePage ({
                   id={WATERING_TAB_ID(tab.id)}
                   aria-selected={isActive}
                   aria-controls={WATERING_PANEL_ID}
-                  aria-label={
-                    isMissed
-                      ? `Пропущенные поливы, просрочено: ${missedCount}`
-                      : undefined
-                  }
+                  aria-label={tabLabel}
                   tabIndex={isActive ? 0 : -1}
                   className={`wateringTab${
                     isMissed ? ' wateringTab--missed' : ''
@@ -1387,14 +1800,14 @@ function HomePage ({
                   onKeyDown={event => handleWateringTabKeyDown(event, index)}
                 >
                   <span className='wateringTabLabel'>{tab.label}</span>
-                  {isMissed && (
+                  {badgeCount > 0 && (
                     <span
                       className={`wateringTabBadge${
-                        missedCount === 0 ? ' wateringTabBadge--empty' : ''
+                        isMissed ? '' : ' wateringTabBadge--care'
                       }`}
                       aria-hidden='true'
                     >
-                      {missedCount > 99 ? '99+' : missedCount}
+                      {badgeCount > 99 ? '99+' : badgeCount}
                     </span>
                   )}
                 </button>
@@ -1437,25 +1850,69 @@ function HomePage ({
                 {wateringTab === 'today' ? (
                   <>
                     {renderFirstWateringCard()}
+                    {todayPlants.length > 0 && (
+                      <DaySummary
+                        title='Сегодня нужно полить'
+                        summaryText={daySummaryText}
+                        hint={todayPlants.length > 1 ? DAY_SUMMARY_HINT : ''}
+                        busy={batchWatering}
+                        disabled={Boolean(wateringId)}
+                        onWaterAll={waterAllToday}
+                      />
+                    )}
                     {todayPlants.length > 0 ? (
                       todayPlants.map(item => renderWateringCard(item))
                     ) : onboarding && !onboarding.firstWateringDone ? null : (
                       <p className='plant-empty'>На сегодня всё полито 💚</p>
                     )}
                   </>
+                ) : wateringTab === 'care' ? (
+                  careTodayCount > 0 ? (
+                    <ul className='careTodayList' aria-label='Уход на сегодня'>
+                      {careToday.map((item, index) => {
+                        const careKey = `${item.plant_id}:${item.action_code}:${item.date}`
+                        return (
+                          <CareTaskCard
+                            key={`${careKey}:${index}`}
+                            item={item}
+                            busy={careMarkingKey === careKey}
+                            onMark={markCareTask}
+                            onOpenSheet={openPlantSheetFromCareItem}
+                          />
+                        )
+                      })}
+                    </ul>
+                  ) : (
+                    <p className='plant-empty'>
+                      На сегодня задач по уходу нет 💚
+                    </p>
+                  )
                 ) : missedCount > 0 ? (
                   <div
                     className='wateringMissedList'
                     role='group'
                     aria-label='Пропущенные поливы'
                   >
-                    {missedPlants.map(({ plant: item, daysLate, dueDay }) =>
-                      renderWateringCard(item, {
-                        overdue: true,
-                        daysLate,
-                        scheduledFor: dueDay
-                      })
-                    )}
+                    {missedPlants.map(({ plant: item, daysLate, dueDay }) => {
+                      const dueLabel = dueDay
+                        ? `${dayOfMonth(dueDay)} ${monthGenitive(dueDay)}`
+                        : ''
+                      const photoUrl =
+                        plantMainPhoto(allPlantsMap.get(item.id)) ??
+                        plantMainPhoto(item)
+                      return (
+                        <MissedWateringCard
+                          key={item.id}
+                          plant={item}
+                          dueLabel={dueLabel}
+                          scheduledFor={dueDay}
+                          daysLate={daysLate}
+                          photoUrl={photoUrl}
+                          busy={missedWateringId === item.id}
+                          onWaterLater={waterMissedCard}
+                        />
+                      )
+                    })}
                   </div>
                 ) : (
                   <p className='plant-empty'>Просроченных поливов нет 💚</p>
@@ -1634,6 +2091,32 @@ function HomePage ({
           />
         </button>
       </div>
+      <PlantDaySheet
+        open={Boolean(plantSheet)}
+        plant={plantSheetPlant}
+        iso={todayIso}
+        photoUrl={plantSheetPhoto}
+        tasks={plantSheetTasks}
+        waterBusy={plantSheetWaterBusy}
+        busyKey={plantSheetCareBusyKey}
+        notice={sheetNotice}
+        onClose={closePlantSheet}
+        onWater={handleSheetWater}
+        onWaterLater={handleSheetWaterLater}
+        onMarkCare={handleSheetMarkCare}
+        onOpenCareSheet={openCareSheet}
+      />
+      <CareActionSheet
+        open={Boolean(careSheet)}
+        plantId={careSheet?.plantId ?? null}
+        plants={allPlants}
+        initialAction={careSheet?.initialAction ?? 'fertilize'}
+        onClose={closeCareSheet}
+        onSaved={() => {
+          showWateringNotice('Уход записан в историю растения')
+          void loadHomeData()
+        }}
+      />
       <VisionNextPlant
         active={!!selectedDay}
         day={selectedDay}

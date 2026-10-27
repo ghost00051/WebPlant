@@ -88,7 +88,8 @@ function describeActionError (error, fallback) {
   return error?.message || fallback
 }
 
-function MessengerBots () {
+function MessengerBots ({ headingLevel = 'h2' }) {
+  const HeadingTag = headingLevel === 'h3' ? 'h3' : 'h2'
   const [channels, setChannels] = useState([])
   const [linkCodeTtlMinutes, setLinkCodeTtlMinutes] = useState(15)
   const [linkCodes, setLinkCodes] = useState({})
@@ -580,7 +581,7 @@ function MessengerBots () {
       aria-labelledby='messengerBotsTitle'
       aria-busy={loading}
     >
-      <h2 id='messengerBotsTitle'>Мессенджеры</h2>
+      <HeadingTag id='messengerBotsTitle'>Мессенджеры</HeadingTag>
       <p className='messengerBotsIntro'>
         Напоминания о поливе и итоги недели могут приходить в Telegram или MAX —
         даже если уведомления в браузере выключены. Подключение займёт меньше

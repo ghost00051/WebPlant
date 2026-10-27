@@ -7,6 +7,10 @@ import { startVisitTracking } from './utils/visits.js';
 import './utils/pwaInstall.js';
 
 
+if (typeof history !== 'undefined' && 'scrollRestoration' in history) {
+    history.scrollRestoration = 'manual'
+}
+
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
         registerServiceWorker()

@@ -144,8 +144,10 @@ test('loadCareStreak: ответ строго по контракту', async ()
     assert.deepEqual(Object.keys(result).sort(), [
         'best',
         'current',
+        'freeze',
         'lastWateredAt',
         'latestRecap',
+        'streakBreak',
         'updatedAt',
         'week'
     ])
@@ -153,6 +155,21 @@ test('loadCareStreak: ответ строго по контракту', async ()
     assert.equal(result.best, 4)
     assert.equal(result.lastWateredAt, '2026-11-01T06:00:00.000Z')
     assert.equal(result.updatedAt, NOW.toISOString())
+    assert.equal(result.streakBreak, null)
+    assert.deepEqual(Object.keys(result.freeze).sort(), [
+        'availableThisWeek',
+        'enabled',
+        'perWeek',
+        'used',
+        'usedThisWeek',
+        'usedTotal',
+        'weekStart'
+    ])
+    assert.equal(result.freeze.enabled, true)
+    assert.equal(result.freeze.weekStart, WEEK_START)
+    assert.equal(result.freeze.perWeek, 1)
+    assert.equal(result.freeze.usedThisWeek, 0)
+    assert.equal(result.freeze.availableThisWeek, 1)
 
     assert.deepEqual(Object.keys(result.week).sort(), [
         'careActions',
@@ -203,9 +220,35 @@ test('loadCareStreak: без растений фото = 0, серия по по
 
     const result = await controller.loadCareStreak(1)
     assert.equal(result.week.photos, 0)
-    assert.equal(result.current, 1)
-    assert.equal(result.best, 1)
+    assert.equal(result.current, 2, 'опоздание защищено заморозкой')
+    assert.equal(result.best, 2)
     assert.equal(result.week.wateredLate, 1)
+    assert.equal(result.freeze.usedThisWeek, 1)
+    assert.equal(result.freeze.availableThisWeek, 0)
+    assert.equal(result.freeze.used[0].kind, 'late_watering')
+})
+
+test('loadCareStreak: STREAK_FREEZES_PER_WEEK=0 отключает заморозки', async () => {
+    const previous = process.env.STREAK_FREEZES_PER_WEEK
+    process.env.STREAK_FREEZES_PER_WEEK = '0'
+    try {
+        const { controller } = createController({
+            plants: [],
+            events: [
+                wateringEvent('2026-10-31T06:00:00Z', 25),
+                wateringEvent('2026-11-01T06:00:00Z')
+            ]
+        })
+        const result = await controller.loadCareStreak(1)
+        assert.equal(result.current, 1)
+        assert.equal(result.best, 1)
+        assert.equal(result.freeze.enabled, false)
+        assert.equal(result.streakBreak.reason, 'late_watering')
+        assert.match(result.streakBreak.at, /^\d{4}-\d{2}-\d{2}T/)
+    } finally {
+        if (previous === undefined) delete process.env.STREAK_FREEZES_PER_WEEK
+        else process.env.STREAK_FREEZES_PER_WEEK = previous
+    }
 })
 
 test('loadCareStreak: старая схема без payload не ломает ответ', async () => {

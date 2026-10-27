@@ -76,3 +76,114 @@ html[data-theme='dark'] .plantEditorAiHint {
     background: var(--theme-accent-soft);
     color: var(--theme-accent-text);
 }
+
+html[data-theme='dark'] .plantListNotice {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantListNotice--error {
+    background: var(--theme-danger-soft);
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .plantCardHealthCheck {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .plantCardHealth--ok {
+    color: #9FD8B8;
+}
+
+html[data-theme='dark'] .plantCardHealth--attention {
+    color: #E5B77A;
+}
+
+html[data-theme='dark'] .plantCardHealth--unknown {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .plantGrowthButton {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantGrowthThumb,
+html[data-theme='dark'] .plantGrowthListPhoto {
+    background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .waterPlantButton {
+    background: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .sharePlantButton,
+html[data-theme='dark'] .addPlantBottomButton,
+html[data-theme='dark'] .plantEmptySecondary {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .addPlantHeaderButton {
+    background: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .plantEmptyState {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .plantEmptyState h2,
+html[data-theme='dark'] .plantEmptyCardName,
+html[data-theme='dark'] .plantHealthPlant,
+html[data-theme='dark'] .plantHealthText {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .plantEmptyCard {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .plantEmptyCardInterval {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .plantEmptyPrimary {
+    background: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .plantEditorLight label {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .plantEditorLight label.active {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .plantHealthDialog .plantDialogError {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .plantGrowthListDate,
+html[data-theme='dark'] .plantGrowthHint,
+html[data-theme='dark'] .plantHealthStatus,
+html[data-theme='dark'] .plantHealthNote,
+html[data-theme='dark'] .plantEmptyLead {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .plantGrowthArrow {
+    color: var(--theme-muted);
+}

@@ -27,12 +27,50 @@
     outline-offset: 2px;
 }
 
-.gardenShareStats {
+.gardenShareStatsGrid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0;
+}
+
+.gardenShareStat {
+    padding: 12px 14px;
+    border: 1px solid var(--theme-border, #e5e5df);
+    border-radius: 14px;
+    background: var(--theme-raised, #f5f3ef);
+}
+
+.gardenShareStat dt {
     margin: 0;
     color: var(--theme-muted, #686c66);
     font-family: inherit;
     font-size: var(--font-size-xs, 0.75rem);
-    line-height: 1.45;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.gardenShareStat dd {
+    margin: 4px 0 0;
+    color: var(--theme-text, #2d2d2d);
+    font-family: inherit;
+    font-size: var(--font-size-xl, 1.5rem);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+}
+
+html[data-theme='dark'] .gardenShareStat {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .gardenShareStat dd {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .gardenShareStat dt {
+    color: var(--theme-muted);
 }
 
 .gardenShareConfirm {

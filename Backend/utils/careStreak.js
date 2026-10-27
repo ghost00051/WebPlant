@@ -6,6 +6,10 @@ export const ON_TIME_GRACE_HOURS = 24
 
 export const STREAK_WINDOW_DAYS = 365
 
+export const FREEZES_PER_WEEK_DEFAULT = 1
+
+export const MAX_FREEZES_PER_WEEK = 7
+
 export const WEEKLY_RECAP_TYPE = 'weekly_recap'
 export const WEEKLY_RECAP_TITLE = '🌿 Итоги недели'
 export const WEEKLY_RECAP_URL = '/home'
@@ -129,14 +133,55 @@ function breaksStreak(event) {
     return event?.action === 'skipped' || isLateWatering(event)
 }
 
+function breakKind(event) {
+    return event?.action === 'skipped' ? 'skipped' : 'late_watering'
+}
+
 function eventTime(event) {
     return toDate(event?.action_at ?? event?.created_at)
 }
 
-export function computeCareStreak(events = [], { now = new Date(), windowDays = STREAK_WINDOW_DAYS } = {}) {
+export function localDateKey(value, timeZone = DEFAULT_TIME_ZONE) {
+    const date = toDate(value)
+    if (!date) return null
+    return dateKeyFromParts(zonedDateParts(date, timeZone))
+}
+
+export function resolveFreezesPerWeek(env = process.env) {
+    const raw = env?.STREAK_FREEZES_PER_WEEK
+    if (raw === undefined || raw === null || raw === '') return FREEZES_PER_WEEK_DEFAULT
+    const parsed = Number.parseInt(String(raw).trim(), 10)
+    if (!Number.isInteger(parsed) || parsed < 0) return FREEZES_PER_WEEK_DEFAULT
+    return Math.min(parsed, MAX_FREEZES_PER_WEEK)
+}
+
+function emptyFreezeState(perWeek, currentWeekStart, enabled) {
+    return {
+        enabled,
+        perWeek,
+        weekStart: currentWeekStart,
+        usedThisWeek: 0,
+        availableThisWeek: enabled ? perWeek : 0,
+        usedTotal: 0,
+        used: []
+    }
+}
+
+export function computeCareStreak(events = [], {
+    now = new Date(),
+    windowDays = STREAK_WINDOW_DAYS,
+    timeZone = DEFAULT_TIME_ZONE,
+    freezesPerWeek = FREEZES_PER_WEEK_DEFAULT
+} = {}) {
     const current = toDate(now) ?? new Date()
+    const zone = resolveTimeZone(timeZone)
     const windowStartMs = current.getTime() - toCount(windowDays || STREAK_WINDOW_DAYS) * DAY_MS
     const nowMs = current.getTime()
+    const perWeek = Number.isInteger(freezesPerWeek) && freezesPerWeek > 0
+        ? Math.min(freezesPerWeek, MAX_FREEZES_PER_WEEK)
+        : 0
+    const freezeEnabled = perWeek > 0
+    const currentWeekStart = weekWindow(current, zone).startDate
 
     const ordered = (Array.isArray(events) ? events : [])
         .map(event => ({ event, at: eventTime(event) }))
@@ -146,21 +191,69 @@ export function computeCareStreak(events = [], { now = new Date(), windowDays = 
     let streak = 0
     let best = 0
     let lastWateredAt = null
+    const freezesByWeek = new Map()
+    const frozenDays = new Set()
+    const usedFreezes = []
+    let streakBreak = null
 
     for (const { event, at } of ordered) {
         if (event?.action === 'watered') lastWateredAt = at
         if (isOnTimeWatering(event)) {
             streak += 1
             if (streak > best) best = streak
-        } else if (breaksStreak(event)) {
-            streak = 0
+            continue
+        }
+        if (!breaksStreak(event)) continue
+
+        const dayKey = localDateKey(at, zone)
+        const weekStart = weekWindow(at, zone).startDate
+        const hoursLate = lateHoursOf(event)
+
+        if (dayKey && frozenDays.has(dayKey)) {
+            continue
+        }
+
+        const usedInWeek = freezesByWeek.get(weekStart) ?? 0
+        const canFreeze = freezeEnabled && dayKey !== null && usedInWeek < perWeek
+
+        if (canFreeze) {
+            freezesByWeek.set(weekStart, usedInWeek + 1)
+            frozenDays.add(dayKey)
+            usedFreezes.push({
+                at: at.toISOString(),
+                localDate: dayKey,
+                weekStart,
+                kind: breakKind(event),
+                hoursLate
+            })
+            continue
+        }
+
+        streak = 0
+        streakBreak = {
+            reason: breakKind(event),
+            at: at.toISOString(),
+            localDate: dayKey,
+            hoursLate,
+            weekStart,
+            freezeAvailable: false
         }
     }
+
+    const usedThisWeek = freezesByWeek.get(currentWeekStart) ?? 0
 
     return {
         current: streak,
         best,
-        lastWateredAt: lastWateredAt ? lastWateredAt.toISOString() : null
+        lastWateredAt: lastWateredAt ? lastWateredAt.toISOString() : null,
+        freeze: {
+            ...emptyFreezeState(perWeek, currentWeekStart, freezeEnabled),
+            usedThisWeek,
+            availableThisWeek: freezeEnabled ? Math.max(0, perWeek - usedThisWeek) : 0,
+            usedTotal: usedFreezes.length,
+            used: usedFreezes.slice(-20)
+        },
+        streakBreak
     }
 }
 

@@ -16,6 +16,7 @@ import {
 } from '../utils/careKnowledge.js'
 import { diffLocalDays, localDayKey } from '../utils/localDay.js'
 import { isRemindersPaused } from '../utils/plantMetadata.js'
+import { isQuietTimeForPreference } from '../utils/quietHours.js'
 import { logAiAdvice } from '../utils/aiAdviceLog.js'
 import { detectPlantGroup, getSeasonInfo } from '../utils/wateringKnowledge.js'
 
@@ -48,6 +49,8 @@ class CareAdviceService {
         if (preference.last_care_advice_date === dayKey) {
             return { generated: 0, skipped: 'already-ran' }
         }
+
+        const skipPush = isQuietTimeForPreference(preference, { now, timeZone })
 
         const dailyLimit = parseLimit(process.env.CARE_ADVICE_DAILY_LIMIT, 2)
         const weeklyLimit = parseLimit(process.env.CARE_ADVICE_WEEKLY_LIMIT, 5)
@@ -220,17 +223,24 @@ class CareAdviceService {
                 latencyMs: advice.latencyMs
             })
 
-            await sendNotificationPush({
-                userId,
-                title: advice.title,
-                body: advice.body,
-                data: {
-                    plantId: plant.id,
-                    url: `/my-plants?plant=${plant.id}`,
-                    tag: `care_${action.code}`,
-                    notificationId: notification.id
-                }
-            })
+            if (skipPush) {
+                console.log(
+                    `🌙 Советы по уходу: у пользователя ${userId} тихие часы — ` +
+                    'уведомление сохранено в приложении без push'
+                )
+            } else {
+                await sendNotificationPush({
+                    userId,
+                    title: advice.title,
+                    body: advice.body,
+                    data: {
+                        plantId: plant.id,
+                        url: `/my-plants?plant=${plant.id}`,
+                        tag: `care_${action.code}`,
+                        notificationId: notification.id
+                    }
+                })
+            }
 
             generated += 1
         }

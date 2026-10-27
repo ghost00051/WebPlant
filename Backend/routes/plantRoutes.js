@@ -2,6 +2,7 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import plantController from '../controllers/plantController.js'
 import { requireAuth } from '../middleware/auth.js'
+import { validateChatPhoto, uploadChatPhoto } from '../middleware/upload.js'
 import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
@@ -10,6 +11,7 @@ const router = Router()
 router.use(requireAuth)
 router.param('id', integerParam)
 router.param('logId', integerParam)
+router.param('photoId', integerParam)
 
 const speciesSuggestionLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
@@ -42,6 +44,13 @@ const wateringWriteLimiter = rateLimit({
 })
 
 router.post('/suggest-species', speciesSuggestionLimiter, plantController.suggestSpecies)
+router.post(
+    '/suggest-species-photo',
+    speciesSuggestionLimiter,
+    uploadChatPhoto.array('photo', 1),
+    validateChatPhoto,
+    plantController.suggestSpeciesFromPhoto
+)
 router.get('/popular-species', plantController.getPopularSpecies)
 router.post('/watering-advice', wateringAdviceLimiter, plantController.suggestWateringAdvice)
 router.post('/watering-time-advice', wateringAdviceLimiter, plantController.suggestWateringTime)
@@ -62,6 +71,8 @@ router.put('/:id', wateringWriteLimiter, plantController.update)
 router.delete('/:id', wateringWriteLimiter, plantController.delete)
 
 router.post('/:id/photos', wateringWriteLimiter, plantController.addPhotos)
+router.get('/:id/photos', plantController.getPhotos)
+router.delete('/:id/photos/:photoId', wateringWriteLimiter, plantController.deletePhoto)
 router.post('/:id/water', wateringWriteLimiter, plantController.water)
 router.delete('/:id/water/:logId', wateringWriteLimiter, plantController.deleteWatering)
 router.get('/:id/care-actions', plantController.listCareActions)

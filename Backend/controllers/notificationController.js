@@ -103,7 +103,7 @@ class NotificationController {
             const category = parseNotificationCategory(req.query.category)
             if (!category) {
                 return res.status(400).json({
-                    message: 'Параметр category должен принимать значение all, watering или care'
+                    message: 'Параметр category должен принимать значение all, watering, care или garden'
                 })
             }
 

@@ -1,0 +1,85 @@
+.plantFollow {
+    display: grid;
+    gap: 24px;
+    margin-top: 48px;
+    padding: 28px;
+    border: 1px solid var(--theme-border, #DCE5DC);
+    border-radius: 18px;
+    background: var(--theme-accent-soft, #E9EFEA);
+    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+}
+
+.plantFollowTitle {
+    margin: 0 0 12px;
+    font-size: clamp(1.25rem, 3vw, 1.5rem);
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.plantFollowLead {
+    max-width: 62ch;
+    margin: 0 0 14px;
+    line-height: 1.65;
+}
+
+.plantFollowList {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--theme-muted, #526A59);
+    line-height: 1.65;
+}
+
+.plantFollowActions {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    justify-content: center;
+}
+
+.plantFollowPrimary {
+    display: inline-block;
+    padding: 14px 24px;
+    border-radius: 12px;
+    background: #319197;
+    color: #FFFFFF;
+    font-size: var(--font-size-md, 0.9375rem);
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.plantFollowPrimary:hover {
+    background: #2a7f84;
+    text-decoration: underline;
+}
+
+.plantFollowPrimary:focus-visible {
+    outline: 3px solid #1f6e73;
+    outline-offset: 2px;
+}
+
+.plantFollowNote {
+    margin: 0;
+    color: var(--theme-muted, #526A59);
+    font-size: var(--font-size-sm, 0.8125rem);
+    line-height: 1.5;
+}
+
+.plantFollowSecondary {
+    color: var(--theme-accent, #1f6e73);
+    font-size: var(--font-size-md, 0.875rem);
+    font-weight: 600;
+    text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+    .plantFollow {
+        padding: 22px;
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .plantFollowPrimary {
+        width: 100%;
+        text-align: center;
+    }
+}

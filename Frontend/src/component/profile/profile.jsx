@@ -20,7 +20,7 @@ import {
   unsubscribeFromPush
 } from '../../utils/pushNotifications.js'
 import { TAB_ELEMENT_ID, TAB_PANEL_ID } from '../tools/tabs.js'
-import { API_URL } from '../../utils/api.js'
+import { API_URL, getCareStreak } from '../../utils/api.js'
 import { openCookieConsentSettings } from '../../utils/cookieConsentSettings.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { FEEDBACK_EMAIL, FEEDBACK_MAILTO } from '../../utils/feedback.js'
@@ -28,7 +28,21 @@ import { useTheme } from '../../context/useTheme.js'
 import GardenShareCard from '../gardenShare/GardenShareCard.jsx'
 import MessengerBots from '../messengerBots/MessengerBots.jsx'
 import { clearOfflineApiCache } from '../../utils/offlineQueue.js'
+import {
+  achievementsSummaryText,
+  buildProfileAchievements
+} from '../../utils/profileAchievements.js'
+import { streakCountLabel } from '../../utils/careStreak.js'
+import CalendarIcon from '../../assets/CalendarIcon.svg'
+import dropletIcon from '../../assets/droplet.svg'
+import leafIcon from '../../assets/leaf.svg'
 import './dark-theme.css'
+
+const ACHIEVEMENT_ICONS = {
+  calendar: CalendarIcon,
+  plants: leafIcon,
+  waterings: dropletIcon
+}
 
 const AdminPushPanel = lazy(() => import('../adminPush/AdminPushPanel.jsx'))
 const AdminMailPanel = lazy(() => import('../adminMail/AdminMailPanel.jsx'))
@@ -39,6 +53,7 @@ function Profile () {
   const [plant, setPlant] = useState()
   const [history, setHistory] = useState()
   const [completion, setCompletion] = useState(null)
+  const [careStreak, setCareStreak] = useState(null)
   const [passkeyCount, setPasskeyCount] = useState(null)
   const [passkeySupported, setPasskeySupported] = useState(false)
   const [isRegisteringPasskey, setIsRegisteringPasskey] = useState(false)
@@ -147,6 +162,22 @@ function Profile () {
 
     loadProfileData()
   }, [getProfile, getAllPlant, getPlantHistory, getCompletion])
+
+  useEffect(() => {
+    let isMounted = true
+
+    getCareStreak()
+      .then(streak => {
+        if (isMounted) setCareStreak(streak)
+      })
+      .catch(error => {
+        console.warn('Не удалось загрузить серию ухода:', error)
+      })
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
 
   useEffect(() => {
     let isMounted = true
@@ -612,6 +643,15 @@ function Profile () {
   const displayName =
     profile.name?.trim() || profile.username || profile.email || '?'
   const isAdmin = profile.role === 'ADMIN'
+  const achievementsReady = Number.isInteger(plant) && Number.isInteger(history)
+  const achievements = buildProfileAchievements({
+    createdAt: profile.createdAt,
+    plantCount: plant,
+    wateringCount: history
+  })
+  const bestStreak = Number(careStreak?.best) > 0
+    ? Math.floor(Number(careStreak.best))
+    : null
 
   return (
     <div
@@ -639,6 +679,173 @@ function Profile () {
           <p>Редактировать профиль</p>
         </Link>
       </div>
+      <section
+        className='profileReminders'
+        aria-labelledby='profileRemindersTitle'
+      >
+        <div className='profileSectionHeader'>
+          <h2 id='profileRemindersTitle'>Напоминания</h2>
+          <p className='profileSectionLead'>
+            Push в браузере или бот в Telegram / MAX — выберите канал, чтобы не
+            пропустить полив. Подключение займёт меньше минуты.
+          </p>
+        </div>
+        <div
+          className='settingsNotification'
+          role='group'
+          aria-label='Push и уведомления в приложении'
+        >
+          <h3 className='headerOfsettingsNotification'>Push в приложении</h3>
+          <div className='pushSettings'>
+            <div>
+              <p>Push-уведомления</p>
+              <p role={pushError ? 'alert' : 'status'}>
+                {pushLoading
+                  ? 'Проверяем подписку...'
+                  : pushError ||
+                    (!isPushSupported()
+                      ? 'Push-уведомления не поддерживаются этим браузером'
+                      : Notification.permission === 'denied'
+                      ? isIOS()
+                        ? 'Уведомления отключены. Откройте «Настройки» → «Уведомления» → «Лейка», разрешите их и вернитесь в приложение.'
+                        : 'Уведомления отключены. Нажмите на значок замка/«Настройки сайта» в адресной строке, разрешите уведомления и обновите страницу.'
+                      : isIOS() && !isStandalone()
+                      ? 'На iPhone добавьте приложение на экран «Домой»'
+                      : 'Напомним, когда пора полить')}
+              </p>
+            </div>
+            <label className='appleSwitchSettings'>
+              <input
+                type='checkbox'
+                checked={pushEnabled}
+                disabled={pushLoading || pushChanging || !isPushSupported() || Notification.permission === 'denied'}
+                onChange={handlePushChange}
+                aria-label='Push-уведомления'
+                aria-busy={pushLoading || pushChanging}
+              />
+              <span className='sliderSettings'></span>
+            </label>
+          </div>
+          <div className='pushSettings'>
+            <div>
+              <p>Утренняя сводка</p>
+              <p role={summaryError ? 'alert' : 'status'}>
+                {summaryLoading
+                  ? 'Проверяем настройку...'
+                  : summaryError ||
+                    (morningSummaryEnabled && !pushEnabled
+                      ? 'Включите push на этом устройстве для получения сводки'
+                      : 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу')}
+              </p>
+            </div>
+            <label className='appleSwitchSettings'>
+              <input
+                type='checkbox'
+                checked={morningSummaryEnabled}
+                disabled={
+                  summaryLoading ||
+                  summaryChanging ||
+                  (!morningSummaryEnabled && !pushEnabled)
+                }
+                onChange={handleMorningSummaryChange}
+                aria-label='Утренняя сводка'
+                aria-busy={summaryLoading || summaryChanging}
+              />
+              <span className='sliderSettings'></span>
+            </label>
+          </div>
+          <div className='pushSettings'>
+            <div>
+              <p>Советы по уходу</p>
+              <p role={careAdviceError ? 'alert' : 'status'}>
+                {careAdviceLoading
+                  ? 'Проверяем настройку...'
+                  : careAdviceError ||
+                    (careAdviceEnabled
+                      ? 'Когда пора подкормить, увлажнить или осмотреть растение — с учётом сезона и лимитов'
+                      : 'Советы по уходу отключены')}
+              </p>
+            </div>
+            <label className='appleSwitchSettings'>
+              <input
+                type='checkbox'
+                checked={careAdviceEnabled}
+                disabled={careAdviceLoading || careAdviceChanging}
+                onChange={handleCareAdviceChange}
+                aria-label='Советы по уходу'
+                aria-busy={careAdviceLoading || careAdviceChanging}
+              />
+              <span className='sliderSettings'></span>
+            </label>
+          </div>
+        </div>
+        <MessengerBots headingLevel='h3' />
+      </section>
+      <section
+        className='profileAchievements'
+        aria-labelledby='profileAchievementsTitle'
+      >
+        <div className='profileSectionHeader'>
+          <h2 id='profileAchievementsTitle'>Достижения</h2>
+          <p className='profileSectionLead'>
+            Коллекция маленьких побед: месяц с «Лейкой», растения и поливы.
+          </p>
+        </div>
+        {!achievementsReady
+          ? (
+            <p className='profileAchievementsStatus' role='status'>
+              Считаем достижения…
+            </p>
+            )
+          : (
+            <>
+              <ul className='profileAchievementsList'>
+                {achievements.map(achievement => (
+                  <li
+                    key={achievement.id}
+                    className={`profileAchievement${achievement.unlocked ? ' is-unlocked' : ''}`}
+                  >
+                    <span className='profileAchievementIcon' aria-hidden='true'>
+                      <ThemedIcon src={ACHIEVEMENT_ICONS[achievement.icon]} alt='' />
+                    </span>
+                    <div className='profileAchievementText'>
+                      <p className='profileAchievementTitle'>{achievement.title}</p>
+                      <p className='profileAchievementProgress'>
+                        {achievement.progressText}
+                      </p>
+                      <span
+                        className='profileAchievementBar'
+                        role='progressbar'
+                        aria-label={`${achievement.title}: ${achievement.progressText}`}
+                        aria-valuemin={0}
+                        aria-valuemax={achievement.target}
+                        aria-valuenow={achievement.value}
+                        aria-valuetext={achievement.progressText}
+                      >
+                        <span
+                          className='profileAchievementBarFill'
+                          style={{ width: `${achievement.progressPercent}%` }}
+                        />
+                      </span>
+                    </div>
+                    {achievement.unlocked && (
+                      <span className='profileAchievementBadge'>Получено</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className='profileAchievementsSummary'>
+                {achievementsSummaryText(achievements)}
+              </p>
+              {bestStreak !== null && (
+                <p className='profileAchievementsStreak'>
+                  Личный рекорд серии: {streakCountLabel(bestStreak)}
+                </p>
+              )}
+            </>
+            )}
+      </section>
+      <GardenShareCard />
       <section
         className='passkeySettings'
         aria-labelledby='passkeySettingsTitle'
@@ -733,92 +940,6 @@ function Profile () {
           <AdminMailPanel />
         </Suspense>
       )}
-      <div className='settingsNotification'>
-        <p className='headerOfsettingsNotification'>Настройки напоминаний</p>
-        <div className='pushSettings'>
-          <div>
-            <p>Push-уведомления</p>
-            <p role={pushError ? 'alert' : 'status'}>
-              {pushLoading
-                ? 'Проверяем подписку...'
-                : pushError ||
-                  (!isPushSupported()
-                    ? 'Push-уведомления не поддерживаются этим браузером'
-                    : Notification.permission === 'denied'
-                    ? isIOS()
-                      ? 'Уведомления отключены. Откройте «Настройки» → «Уведомления» → «Лейка», разрешите их и вернитесь в приложение.'
-                      : 'Уведомления отключены. Нажмите на значок замка/«Настройки сайта» в адресной строке, разрешите уведомления и обновите страницу.'
-                    : isIOS() && !isStandalone()
-                    ? 'На iPhone добавьте приложение на экран «Домой»'
-                    : 'Напомним, когда пора полить')}
-            </p>
-          </div>
-          <label className='appleSwitchSettings'>
-            <input
-              type='checkbox'
-              checked={pushEnabled}
-              disabled={pushLoading || pushChanging || !isPushSupported() || Notification.permission === 'denied'}
-              onChange={handlePushChange}
-              aria-label='Push-уведомления'
-              aria-busy={pushLoading || pushChanging}
-            />
-            <span className='sliderSettings'></span>
-          </label>
-        </div>
-        <div className='pushSettings'>
-          <div>
-            <p>Утренняя сводка</p>
-            <p role={summaryError ? 'alert' : 'status'}>
-              {summaryLoading
-                ? 'Проверяем настройку...'
-                : summaryError ||
-                  (morningSummaryEnabled && !pushEnabled
-                    ? 'Включите push на этом устройстве для получения сводки'
-                    : 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу')}
-            </p>
-          </div>
-          <label className='appleSwitchSettings'>
-            <input
-              type='checkbox'
-              checked={morningSummaryEnabled}
-              disabled={
-                summaryLoading ||
-                summaryChanging ||
-                (!morningSummaryEnabled && !pushEnabled)
-              }
-              onChange={handleMorningSummaryChange}
-              aria-label='Утренняя сводка'
-              aria-busy={summaryLoading || summaryChanging}
-            />
-            <span className='sliderSettings'></span>
-          </label>
-        </div>
-        <div className='pushSettings'>
-          <div>
-            <p>Советы по уходу</p>
-            <p role={careAdviceError ? 'alert' : 'status'}>
-              {careAdviceLoading
-                ? 'Проверяем настройку...'
-                : careAdviceError ||
-                  (careAdviceEnabled
-                    ? 'Когда пора подкормить, увлажнить или осмотреть растение — с учётом сезона и лимитов'
-                    : 'Советы по уходу отключены')}
-            </p>
-          </div>
-          <label className='appleSwitchSettings'>
-            <input
-              type='checkbox'
-              checked={careAdviceEnabled}
-              disabled={careAdviceLoading || careAdviceChanging}
-              onChange={handleCareAdviceChange}
-              aria-label='Советы по уходу'
-              aria-busy={careAdviceLoading || careAdviceChanging}
-            />
-            <span className='sliderSettings'></span>
-          </label>
-        </div>
-      </div>
-      <MessengerBots />
       <div className='visualTheme'>
         <p>Тема оформления</p>
         {themeError && (
@@ -863,7 +984,6 @@ function Profile () {
             : `Тема задана вручную: ${theme === 'dark' ? 'тёмная' : 'светлая'}`}
         </p>
       </div>
-      <GardenShareCard />
       <section className='accountData' aria-labelledby='cookieSettingsTitle'>
         <h2 id='cookieSettingsTitle'>Cookie и аналитика</h2>
         <p className='accountDataText'>

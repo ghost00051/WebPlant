@@ -31,7 +31,8 @@ const Notification = sequelize.define('notification', {
                 'morning_summary',
                 'care_reminder',
                 'care_tip',
-                'weekly_recap'
+                'weekly_recap',
+                'garden_view'
             ]]
         }
     },

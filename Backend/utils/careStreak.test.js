@@ -4,9 +4,13 @@ import assert from 'node:assert/strict'
 import {
     buildWeeklyRecap,
     computeCareStreak,
+    localDateKey,
+    resolveFreezesPerWeek,
     summarizeWeek,
     weekWindow,
     zonedDateParts,
+    FREEZES_PER_WEEK_DEFAULT,
+    MAX_FREEZES_PER_WEEK,
     ON_TIME_GRACE_HOURS,
     STREAK_WINDOW_DAYS,
     WEEKLY_RECAP_BODY_MAX_LENGTH,
@@ -76,27 +80,97 @@ test('computeCareStreak: «вовремя» = watered и hours_late <= 24', () =
         event('watered', '2026-10-07T06:00:00Z', 1)
     ]
 
-    const result = computeCareStreak(events, { now: SUNDAY_EVENING })
-    assert.equal(result.current, 2)
-    assert.equal(result.best, 3)
+    const result = computeCareStreak(events, { now: SUNDAY_EVENING, timeZone: MSK })
+    assert.equal(result.current, 5, 'заморозки сохраняют серию и не добавляют день')
+    assert.equal(result.best, 5)
     assert.equal(result.lastWateredAt, '2026-10-07T06:00:00.000Z')
+    assert.equal(result.freeze.usedThisWeek, 0)
+    assert.equal(result.freeze.availableThisWeek, 1)
+    assert.equal(result.freeze.usedTotal, 2)
+    assert.equal(result.streakBreak, null)
+
+    const withoutFreeze = computeCareStreak(events, {
+        now: SUNDAY_EVENING,
+        timeZone: MSK,
+        freezesPerWeek: 0
+    })
+    assert.equal(withoutFreeze.current, 2, 'без заморозок поведение прежнее')
+    assert.equal(withoutFreeze.best, 3)
+    assert.equal(withoutFreeze.freeze.enabled, false)
+    assert.equal(withoutFreeze.streakBreak.reason, 'late_watering')
 })
 
-test('computeCareStreak: skipped и опоздание >24ч рвут серию', () => {
+test('computeCareStreak: без заморозок skipped и опоздание >24ч рвут серию', () => {
     const brokenBySkip = computeCareStreak([
         event('watered', '2026-10-01T06:00:00Z', 0),
         event('skipped', '2026-10-02T06:00:00Z', 0)
-    ], { now: SUNDAY_EVENING })
+    ], { now: SUNDAY_EVENING, timeZone: MSK, freezesPerWeek: 0 })
     assert.equal(brokenBySkip.current, 0)
     assert.equal(brokenBySkip.best, 1)
+    assert.equal(brokenBySkip.streakBreak.reason, 'skipped')
 
     const brokenByLate = computeCareStreak([
         event('watered', '2026-10-01T06:00:00Z', 0),
         event('watered', '2026-10-02T06:00:00Z', 26),
         event('watered', '2026-10-03T06:00:00Z', 0)
-    ], { now: SUNDAY_EVENING })
+    ], { now: SUNDAY_EVENING, timeZone: MSK, freezesPerWeek: 0 })
     assert.equal(brokenByLate.current, 1)
     assert.equal(brokenByLate.best, 1)
+})
+
+test('computeCareStreak: заморозка 1 день в неделю защищает серию', () => {
+    const protectedBySkip = computeCareStreak([
+        event('watered', '2026-10-01T06:00:00Z', 0),
+        event('watered', '2026-10-02T06:00:00Z', 0),
+        event('skipped', '2026-10-03T06:00:00Z', 0),
+        event('watered', '2026-10-05T06:00:00Z', 0)
+    ], { now: SUNDAY_EVENING, timeZone: MSK })
+
+    assert.equal(protectedBySkip.current, 3, 'пропуск не обнулил серию')
+    assert.equal(protectedBySkip.freeze.usedThisWeek, 0, 'заморозка была на прошлой неделе')
+    assert.equal(protectedBySkip.freeze.usedTotal, 1)
+    assert.equal(protectedBySkip.freeze.used[0].kind, 'skipped')
+    assert.equal(protectedBySkip.freeze.used[0].localDate, '2026-10-03')
+
+    const twoInSameWeek = computeCareStreak([
+        event('watered', '2026-10-06T06:00:00Z', 0),
+        event('skipped', '2026-10-07T06:00:00Z', 0),
+        event('skipped', '2026-10-08T06:00:00Z', 0)
+    ], { now: SUNDAY_EVENING, timeZone: MSK })
+    assert.equal(twoInSameWeek.current, 0, 'вторая проблема в той же неделе рвёт серию')
+    assert.equal(twoInSameWeek.streakBreak.reason, 'skipped')
+    assert.equal(twoInSameWeek.streakBreak.localDate, '2026-10-08')
+    assert.equal(twoInSameWeek.streakBreak.freezeAvailable, false)
+})
+
+test('computeCareStreak: два обрыва в один день тратят одну заморозку', () => {
+    const result = computeCareStreak([
+        event('watered', '2026-10-06T06:00:00Z', 0),
+        event('skipped', '2026-10-07T06:00:00Z', 0),
+        event('watered', '2026-10-07T09:00:00Z', 30)
+    ], { now: SUNDAY_EVENING, timeZone: MSK })
+
+    assert.equal(result.current, 1)
+    assert.equal(result.freeze.usedTotal, 1, 'второй сбой в тот же день бесплатный')
+    assert.equal(result.streakBreak, null)
+})
+
+test('resolveFreezesPerWeek: 1 по умолчанию, 0 отключает, значения ограничены', () => {
+    assert.equal(FREEZES_PER_WEEK_DEFAULT, 1)
+    assert.equal(MAX_FREEZES_PER_WEEK, 7)
+    assert.equal(resolveFreezesPerWeek({}), 1)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: '' }), 1)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: '0' }), 0)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: '2' }), 2)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: '99' }), MAX_FREEZES_PER_WEEK)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: '-3' }), 1)
+    assert.equal(resolveFreezesPerWeek({ STREAK_FREEZES_PER_WEEK: 'abc' }), 1)
+})
+
+test('localDateKey: локальная дата в поясе пользователя', () => {
+    assert.equal(localDateKey('2026-10-31T21:30:00Z', MSK), '2026-11-01')
+    assert.equal(localDateKey('2026-10-31T20:30:00Z', MSK), '2026-10-31')
+    assert.equal(localDateKey('не дата', MSK), null)
 })
 
 test('computeCareStreak: окно 365 дней, битые и будущие события игнорируются', () => {
@@ -115,16 +189,23 @@ test('computeCareStreak: окно 365 дней, битые и будущие с�
 })
 
 test('computeCareStreak: пустая история', () => {
-    assert.deepEqual(computeCareStreak([], { now: SUNDAY_EVENING }), {
+    const expected = {
         current: 0,
         best: 0,
-        lastWateredAt: null
-    })
-    assert.deepEqual(computeCareStreak(undefined, { now: SUNDAY_EVENING }), {
-        current: 0,
-        best: 0,
-        lastWateredAt: null
-    })
+        lastWateredAt: null,
+        freeze: {
+            enabled: true,
+            perWeek: 1,
+            weekStart: '2026-10-26',
+            usedThisWeek: 0,
+            availableThisWeek: 1,
+            usedTotal: 0,
+            used: []
+        },
+        streakBreak: null
+    }
+    assert.deepEqual(computeCareStreak([], { now: SUNDAY_EVENING, timeZone: MSK }), expected)
+    assert.deepEqual(computeCareStreak(undefined, { now: SUNDAY_EVENING, timeZone: MSK }), expected)
 })
 
 test('summarizeWeek: поливы, фото, действия ухода и дни недели', () => {

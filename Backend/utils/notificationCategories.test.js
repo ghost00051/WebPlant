@@ -42,22 +42,29 @@ test('typeToNotificationCategory: сопоставление типов и не�
     assert.equal(typeToNotificationCategory(undefined), null)
 })
 
-test('buildUnreadByCategory: суммирует по категориям, care включает оба типа', () => {
+test('buildUnreadByCategory: суммирует по категориям, care включает оба типа, garden — просмотры сада', () => {
     const result = buildUnreadByCategory([
         { type: 'watering_due', count: '2' },
         { type: 'morning_summary', count: 1 },
         { type: 'care_reminder', count: 1 },
         { type: 'care_tip', count: 3 },
+        { type: 'garden_view', count: 2 },
         { type: 'unknown', count: 10 },
         { type: 'care_tip', count: 0 },
         { type: 'care_tip', count: 'abc' }
     ])
 
-    assert.deepEqual(result, { all: 7, watering: 3, care: 4 })
+    assert.deepEqual(result, { all: 9, watering: 3, care: 4, garden: 2 })
 })
 
 test('buildUnreadByCategory: пустые и битые данные', () => {
     assert.deepEqual(buildUnreadByCategory(undefined), emptyNotificationCategoryTotals())
-    assert.deepEqual(buildUnreadByCategory([]), { all: 0, watering: 0, care: 0 })
-    assert.deepEqual(buildUnreadByCategory([null, 'oops']), { all: 0, watering: 0, care: 0 })
+    assert.deepEqual(buildUnreadByCategory([]), { all: 0, watering: 0, care: 0, garden: 0 })
+    assert.deepEqual(buildUnreadByCategory([null, 'oops']), { all: 0, watering: 0, care: 0, garden: 0 })
+})
+
+test('parseNotificationCategory/categoryWhere: категория garden доступна для F50', () => {
+    assert.equal(parseNotificationCategory('garden'), 'garden')
+    assert.deepEqual(categoryWhere('garden'), { type: { [Op.in]: ['garden_view'] } })
+    assert.equal(typeToNotificationCategory('garden_view'), 'garden')
 })

@@ -17,6 +17,7 @@ import {
     NOTIFICATION_TITLE_MAX_LENGTH
 } from '../services/notificationService.js'
 import { getReminderTickMetrics, resetReminderTickMetrics } from '../utils/reminderTickMetrics.js'
+import { MISSED_POLICY } from '../utils/missedWatering.js'
 
 const MSK = 'Europe/Moscow'
 const iso = value => new Date(value).toISOString()
@@ -176,6 +177,75 @@ test('processPlantsConcurrently: ошибка одного растения не
     assert.deepEqual(processed, [1, 3, 4])
     assert.equal(counters.errors, 1)
     assert.equal(counters.notificationsCreated, 1)
+})
+
+test('handleOverduePlant: политика preserve не сдвигает план, auto_skip сохраняет старое поведение', async () => {
+    const called = []
+    const original = {
+        autoSkipPlant: reminderService.autoSkipPlant,
+        preserveMissedPlant: reminderService.preserveMissedPlant
+    }
+
+    try {
+        reminderService.autoSkipPlant = async () => {
+            called.push('autoSkipPlant')
+            return true
+        }
+        reminderService.preserveMissedPlant = async () => {
+            called.push('preserveMissedPlant')
+            return true
+        }
+
+        await reminderService.handleOverduePlant({ id: 1 }, {
+            now: new Date('2026-10-25T06:00:00Z'),
+            cutoff: new Date('2026-10-24T06:00:00Z'),
+            zonesByUser: new Map(),
+            missedPolicy: MISSED_POLICY.PRESERVE
+        })
+        await reminderService.handleOverduePlant({ id: 2 }, {
+            now: new Date('2026-10-25T06:00:00Z'),
+            cutoff: new Date('2026-10-24T06:00:00Z'),
+            zonesByUser: new Map(),
+            missedPolicy: MISSED_POLICY.AUTO_SKIP
+        })
+    } finally {
+        reminderService.autoSkipPlant = original.autoSkipPlant
+        reminderService.preserveMissedPlant = original.preserveMissedPlant
+    }
+
+    assert.deepEqual(called, ['preserveMissedPlant', 'autoSkipPlant'])
+})
+
+test('F41/F43: настройки доставки по умолчанию и тихие часы', () => {
+    const fallback = reminderService.deliverySettingsFor(new Map(), 999)
+    assert.equal(fallback.deliveryMode, 'per_plant', 'без строки prefs старое поведение')
+    assert.equal(fallback.quietHours.enabled, false)
+
+    const quietSettings = {
+        timeZone: 'Europe/Moscow',
+        deliveryMode: 'per_plant',
+        quietHours: {
+            enabled: true,
+            start: '22:00',
+            end: '08:00',
+            startMinutes: 1320,
+            endMinutes: 480
+        }
+    }
+    assert.equal(
+        reminderService.shouldSkipPush(quietSettings, new Date('2026-11-01T19:30:00Z')),
+        true,
+        '22:30 МСК — тихие часы'
+    )
+    assert.equal(
+        reminderService.shouldSkipPush(quietSettings, new Date('2026-11-01T06:00:00Z')),
+        false,
+        '09:00 МСК — можно отправлять'
+    )
+    assert.equal(
+        reminderService.shouldSkipPush({ ...quietSettings, quietHours: { enabled: false } }),
+        false
+    )
 })
 
 test('reminderTick: агрегирует счётчики, пишет метрику и JSON-строку', async () => {

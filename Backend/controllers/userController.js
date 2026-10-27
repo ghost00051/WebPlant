@@ -22,7 +22,7 @@ import {
     setRememberedAuth,
     setSessionAuth
 } from '../utils/authTokens.js'
-import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import { describeGuestLinkSummary, linkGuestDataToUser } from '../utils/linkGuestData.js'
 import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
 import { attributeShareSignup } from '../services/gardenShareService.js'
 import { parseShareToken } from '../utils/shareTokens.js'
@@ -72,6 +72,30 @@ function buildUserPayload(user) {
         privilege_level: user.privilege_level,
         timezone: resolveTimeZone(user.timezone),
         marketing_email_opt_in: user.marketing_email_opt_in === true
+    }
+}
+
+async function linkGuestDataAfterAuth(userId, guestToken, source) {
+    if (!guestToken) return null
+
+    try {
+        const linked = await linkGuestDataToUser(userId, guestToken, source)
+        console.log(
+            `🔗 Гостевые данные → аккаунт #${userId} (${source}): ${describeGuestLinkSummary(linked)}`
+        )
+        for (const error of linked.errors) {
+            console.warn(
+                `⚠️ Не удалось перенести часть гостевых данных (${error.step}):`,
+                error.message
+            )
+        }
+        return linked
+    } catch (error) {
+        console.error(
+            '⚠️ Перенос гостевых данных не удался, но регистрация/вход продолжены:',
+            error?.message || error
+        )
+        return null
     }
 }
 
@@ -320,7 +344,6 @@ class UserController {
             const guestToken = getValidGuestToken(req.cookies?.guest_token)
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
-
             await UserLegalConsent.create({
                 user_id: user.id,
                 consent_type: 'privacy_policy',
@@ -347,18 +370,6 @@ class UserController {
             }, { transaction })
             console.log('✅ Сохранено пользовательское соглашение')
 
-            if (guestToken) {
-                const linked = await linkGuestDataToUser(
-                    user.id,
-                    guestToken,
-                    'registration_linked',
-                    transaction
-                )
-                console.log(
-                    `Связано гостевых согласий: ${linked.consentCount}, сообщений: ${linked.chatMessageCount}`
-                )
-            }
-
             if (parsedShareToken.token) {
                 try {
                     await attributeShareSignup(user.id, parsedShareToken.token, { transaction })
@@ -377,6 +388,8 @@ class UserController {
                 await setSessionAuth(res, user)
             }
             clearGuestTokenCookie(res)
+
+            await linkGuestDataAfterAuth(user.id, guestToken, 'registration_linked')
 
             void sendWelcomeEmailToUser(user).catch(error => {
                 console.error('❌ Не удалось отправить приветственное письмо:', error)
@@ -435,19 +448,7 @@ class UserController {
             }
 
             const guestToken = getValidGuestToken(req.cookies?.guest_token)
-            if (guestToken) {
-                const linked = await sequelize.transaction(transaction =>
-                    linkGuestDataToUser(
-                        user.id,
-                        guestToken,
-                        'login_linked',
-                        transaction
-                    )
-                )
-                console.log(
-                    `Связано гостевых согласий: ${linked.consentCount}, сообщений: ${linked.chatMessageCount} (вход)`
-                )
-            }
+            await linkGuestDataAfterAuth(user.id, guestToken, 'login_linked')
 
             await revokeAuthTokens(req.cookies)
             if (rememberMe === true) {

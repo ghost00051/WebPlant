@@ -333,3 +333,74 @@ export async function getCareStreak (options = {}) {
   })
   return normalizeCareStreakPayload(data)
 }
+
+const CHAT_SESSION_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+
+const CHAT_MESSAGE_MAX_LENGTH = 1000
+const GUEST_CHAT_TIMEOUT_MS = 20_000
+
+export function normalizeChatSessionId (value) {
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return CHAT_SESSION_ID_PATTERN.test(trimmed) ? trimmed : null
+}
+
+export function normalizeChatAnswerPayload (payload) {
+  if (!payload || typeof payload !== 'object') {
+    throw new ApiError('Сервер вернул некорректный ответ ИИ-помощника.', {
+      code: 'invalid-response'
+    })
+  }
+
+  const text = typeof payload.text === 'string' ? payload.text.trim() : ''
+  if (!text) {
+    throw new ApiError(
+      'Алиса не вернула ответ. Попробуйте спросить ещё раз или зайдите позже.',
+      { code: 'invalid-response' }
+    )
+  }
+
+  return {
+    text,
+    sessionId: normalizeChatSessionId(payload.sessionId),
+    usage:
+      payload.usage && typeof payload.usage === 'object' ? payload.usage : null,
+    degraded: payload.degraded === true,
+    local: payload.local === true
+  }
+}
+
+export async function sendGuestChatMessage ({
+  message,
+  sessionId,
+  signal,
+  timeoutMs = GUEST_CHAT_TIMEOUT_MS
+} = {}) {
+  const text = typeof message === 'string' ? message.trim() : ''
+  if (!text) {
+    throw new ApiError('Напишите вопрос — и Алиса ответит.', {
+      status: 400,
+      code: 'empty-message'
+    })
+  }
+  if (text.length > CHAT_MESSAGE_MAX_LENGTH) {
+    throw new ApiError('Вопрос слишком длинный: до 1000 символов.', {
+      status: 400,
+      code: 'message-too-long'
+    })
+  }
+
+  const body = { message: text }
+  const normalizedSessionId = normalizeChatSessionId(sessionId)
+  if (normalizedSessionId) body.sessionId = normalizedSessionId
+
+  const data = await requestApi('/chat/chat', {
+    method: 'POST',
+    body,
+    signal,
+    timeoutMs
+  })
+
+  return normalizeChatAnswerPayload(data)
+}

@@ -3,8 +3,18 @@ import GardenShare from '../models/GardenShare.js'
 import GardenShareSignup from '../models/GardenShareSignup.js'
 import Plant from '../models/Plant.js'
 import User from '../models/userModels.js'
+import NotificationPreference from '../models/NotificationPreference.js'
 import { getFirstName } from '../utils/personName.js'
 import { generateShareToken, isValidShareToken, normalizeShareToken } from '../utils/shareTokens.js'
+import { resolveTimeZone } from '../utils/timeZone.js'
+import { isQuietTimeForPreference } from '../utils/quietHours.js'
+import {
+    GARDEN_VIEW_NOTIFY_INTERVAL_MS,
+    buildGardenViewNotification,
+    gardenViewDedupeKey,
+    shouldNotifyGardenViews
+} from '../utils/gardenViews.js'
+import { sendNotificationPush, storeNotification } from './notificationService.js'
 
 export const DEFAULT_OWNER_NAME = 'Садовод'
 export const PUBLIC_GARDEN_NOT_FOUND = 'Сад не найден или ссылка отозвана'
@@ -146,7 +156,8 @@ export async function getPublicGarden(token) {
                last_viewed_at = now()
          WHERE token = $1
            AND revoked_at IS NULL
-         RETURNING id, user_id, token, created_at, view_count
+         RETURNING id, user_id, token, created_at, view_count,
+                   views_notified_at, views_notified_count
     `, { bind: [normalizedToken] })
 
     const share = Array.isArray(rows) ? rows[0] : null
@@ -164,7 +175,108 @@ export async function getPublicGarden(token) {
     ])
 
     if (!owner) return null
+
+    void notifyGardenShareViews(share).catch(error => {
+        console.warn(
+            '⚠️ F50: не удалось уведомить владельца о просмотре сада:',
+            error?.message || error
+        )
+    })
+
     return mapPublicGarden(share, owner, plants, plantCount)
+}
+
+const CLAIM_GARDEN_VIEW_NOTIFICATION_SQL = `
+    UPDATE garden_shares
+       SET views_notified_at = now(),
+           views_notified_count = view_count
+     WHERE id = $1
+       AND revoked_at IS NULL
+       AND view_count > views_notified_count
+       AND (views_notified_at IS NULL OR views_notified_at < now() - interval '24 hours')
+    RETURNING id, user_id, view_count
+`
+
+async function shouldPushGardenView(userId, now) {
+    try {
+        const [preference, user] = await Promise.all([
+            NotificationPreference.findByPk(userId),
+            User.findByPk(userId, { attributes: ['timezone'] })
+        ])
+        return !isQuietTimeForPreference(preference, {
+            now,
+            timeZone: resolveTimeZone(user?.timezone)
+        })
+    } catch (error) {
+        console.warn(
+            '⚠️ F50: не удалось проверить тихие часы, push будет отправлен:',
+            error?.message || error
+        )
+        return true
+    }
+}
+
+export async function notifyGardenShareViews(share, { now = new Date() } = {}) {
+    const shareId = Number(share?.id)
+    const userId = Number(share?.user_id)
+    const viewCount = toCount(share?.view_count)
+
+    if (!Number.isInteger(shareId) || shareId < 1 ||
+        !Number.isInteger(userId) || userId < 1 ||
+        viewCount < 1) {
+        return { notified: false, reason: 'invalid' }
+    }
+
+    const shouldNotify = shouldNotifyGardenViews({
+        viewCount,
+        viewsNotifiedCount: share?.views_notified_count,
+        viewsNotifiedAt: share?.views_notified_at,
+        now,
+        intervalMs: GARDEN_VIEW_NOTIFY_INTERVAL_MS
+    })
+    if (!shouldNotify) return { notified: false, reason: 'throttled' }
+
+    const [claimedRows] = await sequelize.query(CLAIM_GARDEN_VIEW_NOTIFICATION_SQL, {
+        bind: [shareId]
+    })
+    const claimed = Array.isArray(claimedRows) ? claimedRows[0] : null
+    if (!claimed) return { notified: false, reason: 'claimed_elsewhere' }
+
+    const total = toCount(claimed.view_count)
+    const payload = buildGardenViewNotification({ viewCount: total })
+    const dedupeKey = gardenViewDedupeKey(shareId, total)
+    if (!dedupeKey) return { notified: false, reason: 'invalid' }
+
+    try {
+        const { notification, created } = await storeNotification({
+            userId,
+            type: payload.type,
+            title: payload.title,
+            body: payload.body,
+            url: payload.url,
+            payload: payload.payload,
+            dedupeKey
+        })
+        if (!created) return { notified: false, reason: 'duplicate' }
+
+        if (await shouldPushGardenView(userId, now)) {
+            await sendNotificationPush({
+                userId,
+                title: payload.title,
+                body: payload.body,
+                data: {
+                    url: payload.url,
+                    tag: 'garden_view',
+                    notificationId: notification.id
+                }
+            })
+        }
+
+        return { notified: true, viewCount: total, notificationId: notification.id }
+    } catch (error) {
+        console.warn('⚠️ F50: уведомление о просмотрах сада не создано:', error?.message || error)
+        return { notified: false, reason: 'error' }
+    }
 }
 
 export async function attributeShareSignup(userId, shareToken, { transaction } = {}) {
@@ -201,5 +313,6 @@ export default {
     getShareStatus,
     revokeShare,
     getPublicGarden,
-    attributeShareSignup
+    attributeShareSignup,
+    notifyGardenShareViews
 }

@@ -33,6 +33,17 @@ const GardenShare = sequelize.define('garden_share', {
     last_viewed_at: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    views_notified_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'F50: когда владельцу последний раз сообщали о просмотрах'
+    },
+    views_notified_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'F50: view_count на момент последнего уведомления'
     }
 }, {
     tableName: 'garden_shares',

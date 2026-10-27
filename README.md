@@ -6,10 +6,15 @@
 диагностирует растение по фото. Дополнительно сайт содержит публичные справочники по
 растениям и уходу (SEO-раздел) и отдельную админ-панель.
 
-С версии 1.3.0 напоминания и недельный recap можно получать вторым каналом — в Telegram
-или MAX: аккаунт привязывается в профиле по одноразовому коду, бот присылает напоминания
-о поливе, сводку дня и «Итоги недели». На главной появилась серия ухода («поливов вовремя»,
-личный рекорд, прогресс недели), а в админке — раздел «Боты» с метриками каналов.
+С версии 1.4.0 реализован роадмап продукта (48 фич): гостевой чат на лендинге с переносом
+истории, онбординг регистрации, «Мои растения» с поливом в один тап и кнопкой
+«Добавить ещё растение», объяснимые пропуски полива, недельная сводка, заморозка серии,
+диагностика по фото, дайджест уведомлений и тихие часы, достижения профиля и публичный сад
+с переносом растений. С версии 1.3.0 напоминания и недельный recap можно получать вторым
+каналом — в Telegram или MAX: аккаунт привязывается в профиле по одноразовому коду, бот
+присылает напоминания о поливе, сводку дня и «Итоги недели». На главной появилась серия
+ухода («поливов вовремя», личный рекорд, прогресс недели), а в админке — раздел «Боты»
+с метриками каналов.
 
 Боевые адреса:
 
@@ -24,8 +29,8 @@
 
 | Компонент | Версия | Файл |
 | --- | --- | --- |
-| Backend | **1.3.0** | `Backend/package.json` |
-| Frontend | **1.3.0** | `Frontend/package.json` |
+| Backend | **1.4.0** | `Backend/package.json` |
+| Frontend | **1.4.0** | `Frontend/package.json` |
 
 Версии независимы: фронт выкладывается по FTP отдельно от backend, поэтому контракт `/api`
 должен оставаться обратно совместимым (см. `docs/api/openapi.yaml` и `CHANGELOG.md`).
@@ -152,8 +157,8 @@ WebPlant/
 ```powershell
 cd Backend
 npm ci
-Copy-Item .env.example .env   # шаблон в репозитории; заполните DB_*, SECRET_KEY и остальное
-npm run dev          # node --watch index.js, порт из PORT (по умолчанию 5000)
+Copy-Item .env.example .env
+npm run dev
 ```
 
 Проверка:
@@ -176,10 +181,9 @@ curl http://localhost:5000/health
 ### Backend в Docker Compose
 
 ```powershell
-# из корня репозитория; файл окружения — Backend/.env
 docker compose -f Backend/docker-compose.yml up -d --build
 docker compose -f Backend/docker-compose.yml ps
-curl http://localhost/health          # nginx проксирует /health на активный backend
+curl http://localhost/health
 ```
 
 `/health` через nginx работает только если `Backend/nginx/conf.d/default.conf` указывает на
@@ -202,8 +206,8 @@ gateway не запущен, проверяйте backend напрямую: `doc
 ```powershell
 cd Frontend
 npm ci
-Copy-Item .env.example .env    # при необходимости поправьте адрес API
-npm run dev                    # Vite, http://localhost:5173
+Copy-Item .env.example .env
+npm run dev
 ```
 
 `vite.config.js` проксирует `/api` на `VITE_API_PROXY_TARGET` (по умолчанию
@@ -214,8 +218,8 @@ npm run dev                    # Vite, http://localhost:5173
 
 ```powershell
 cd Frontend
-npm run build      # generate-plant-images → generate-seo-meta → vite build → prerender → build-manifest
-npm run verify     # verify-build + verify-routing + check-security-headers + build-manifest --check
+npm run build
+npm run verify
 npm run verify:admin
 ```
 

@@ -7,7 +7,8 @@ export const NOTIFICATION_CATEGORIES = Object.freeze({
         'morning_summary',
         'weekly_recap'
     ]),
-    care: Object.freeze(['care_reminder', 'care_tip'])
+    care: Object.freeze(['care_reminder', 'care_tip']),
+    garden: Object.freeze(['garden_view'])
 })
 
 export const DEFAULT_NOTIFICATION_CATEGORY = 'all'
@@ -39,7 +40,7 @@ export function typeToNotificationCategory(type) {
 }
 
 export function buildUnreadByCategory(rows) {
-    const result = { all: 0, watering: 0, care: 0 }
+    const result = emptyNotificationCategoryTotals()
     if (!Array.isArray(rows)) return result
 
     for (const row of rows) {
@@ -55,5 +56,7 @@ export function buildUnreadByCategory(rows) {
 }
 
 export function emptyNotificationCategoryTotals() {
-    return { all: 0, watering: 0, care: 0 }
+    const result = { all: 0 }
+    for (const category of NOTIFICATION_CATEGORY_KEYS) result[category] = 0
+    return result
 }
