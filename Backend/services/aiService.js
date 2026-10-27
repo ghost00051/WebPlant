@@ -1876,12 +1876,12 @@ export async function suggestSpeciesFromPhoto({ imageBuffer, imageBuffers = [] }
         throw error
     }
 
-    const prepared = await prepareVisionImage(buffers[0])
     const startedAt = Date.now()
     const deadline = createDeadline(AI_VISION_DEADLINE_MS)
     let usage = null
 
     try {
+        const prepared = await prepareVisionImage(buffers[0])
         const { value: parsed, cached } = await withAiCache({
             namespace: 'vision-species',
             payload: {

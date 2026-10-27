@@ -3,6 +3,7 @@ import { resolveTimeZone } from '../utils/timeZone.js'
 import {
     DEFAULT_QUIET_HOURS_END,
     DEFAULT_QUIET_HOURS_START,
+    DELIVERY_MODE,
     isValidClockTime,
     isValidDeliveryMode,
     parseClockMinutes,
@@ -25,6 +26,22 @@ const READ_ONLY_KEYS = ['quiet_hours_timezone']
 
 function readClockTime(value, fallback) {
     return isValidClockTime(value) ? value.trim() : fallback
+}
+
+export function syncDeliveryModeAndSummary(updates = {}) {
+    const hasDeliveryMode = Object.hasOwn(updates, 'delivery_mode')
+    const hasSummary = Object.hasOwn(updates, 'morning_summary_enabled')
+    if (!hasDeliveryMode && !hasSummary) return updates
+
+    const deliveryMode = hasDeliveryMode
+        ? updates.delivery_mode
+        : (updates.morning_summary_enabled
+            ? DELIVERY_MODE.DIGEST
+            : DELIVERY_MODE.PER_PLANT)
+
+    updates.delivery_mode = deliveryMode
+    updates.morning_summary_enabled = deliveryMode === DELIVERY_MODE.DIGEST
+    return updates
 }
 
 export function serializeNotificationPreferences(preference, { timeZone } = {}) {
@@ -146,22 +163,27 @@ export class NotificationPreferenceController {
                 })
             }
 
-            const [preference] = await this.models.NotificationPreference.findOrCreate({
-                where: { user_id: userId },
-                defaults: updates
-            })
+            syncDeliveryModeAndSummary(updates)
 
+            const existing = await this.models.NotificationPreference.findOne({
+                where: { user_id: userId }
+            })
             const nextStart = Object.hasOwn(updates, 'quiet_hours_start')
                 ? updates.quiet_hours_start
-                : readClockTime(preference.quiet_hours_start, DEFAULT_QUIET_HOURS_START)
+                : readClockTime(existing?.quiet_hours_start, DEFAULT_QUIET_HOURS_START)
             const nextEnd = Object.hasOwn(updates, 'quiet_hours_end')
                 ? updates.quiet_hours_end
-                : readClockTime(preference.quiet_hours_end, DEFAULT_QUIET_HOURS_END)
+                : readClockTime(existing?.quiet_hours_end, DEFAULT_QUIET_HOURS_END)
             if (parseClockMinutes(nextStart) === parseClockMinutes(nextEnd)) {
                 return res.status(400).json({
                     message: 'Начало и конец тихих часов не должны совпадать'
                 })
             }
+
+            const [preference] = await this.models.NotificationPreference.findOrCreate({
+                where: { user_id: userId },
+                defaults: updates
+            })
 
             const changed = Object.entries(updates).some(
                 ([key, value]) => preference[key] !== value

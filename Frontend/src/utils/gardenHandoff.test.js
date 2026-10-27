@@ -11,12 +11,15 @@ import {
   buildWantedPlantsQuery,
   clearAddPlantDraft,
   clearWantedPlants,
+  matchWantedPlantWithGuide,
+  matchWantedPlantsWithGuide,
   normalizeWantedPlant,
   pickWantedPlants,
   readAddPlantDraft,
   readWantedPlants,
   rememberAddPlantDraft,
-  rememberWantedPlants
+  rememberWantedPlants,
+  removeWantedPlants
 } from './gardenHandoff.js'
 
 const GARDEN_PLANTS = [
@@ -155,6 +158,97 @@ test('clearWantedPlants: удаляет сохранённый список', ()
     assert.equal(local.has(WANTED_PLANTS_STORAGE_KEY), false)
     assert.deepEqual(readWantedPlants(), [])
   })
+})
+
+const GUIDE_PLANTS = [
+  { slug: 'monstera', name: 'Монстера', latin: 'Monstera deliciosa', species: 'Monstera deliciosa' },
+  { slug: 'ficus-benjamina', name: 'Фикус Бенджамина', latin: 'Ficus benjamina', species: 'Ficus benjamina' }
+]
+
+test('matchWantedPlantWithGuide: совпадает по названию и виду', () => {
+  const byName = matchWantedPlantWithGuide(
+    { name: 'Монстера', species: '', intervalDays: 7 },
+    GUIDE_PLANTS
+  )
+  assert.equal(byName.slug, 'monstera')
+
+  const bySpecies = matchWantedPlantWithGuide(
+    { name: 'Что-то красивое', species: 'Ficus benjamina' },
+    GUIDE_PLANTS
+  )
+  assert.equal(bySpecies.slug, 'ficus-benjamina')
+
+  const byPartialName = matchWantedPlantWithGuide(
+    { name: 'Монстера', species: '' },
+    [{ slug: 'monstera', name: 'Монстера деликатесная', latin: 'Monstera deliciosa' }]
+  )
+  assert.equal(byPartialName.slug, 'monstera')
+
+  assert.equal(matchWantedPlantWithGuide({ name: 'Кактус' }, GUIDE_PLANTS), null)
+  assert.equal(matchWantedPlantWithGuide(null, GUIDE_PLANTS), null)
+  assert.equal(matchWantedPlantWithGuide({ name: 'Монстера' }, null), null)
+})
+
+test('matchWantedPlantsWithGuide: делит список на совпавшие и «из общего сада»', () => {
+  const plan = matchWantedPlantsWithGuide(
+    [
+      { name: 'Монстера', species: 'Monstera deliciosa', intervalDays: 7 },
+      { name: 'Кактус', species: 'Echinopsis', intervalDays: 14 },
+      { name: 'Фикус', species: '' }
+    ],
+    GUIDE_PLANTS
+  )
+
+  assert.deepEqual(plan.matchedSlugs, ['monstera', 'ficus-benjamina'])
+  assert.equal(plan.matched.length, 2)
+  assert.equal(plan.matched[0].wanted.name, 'Монстера')
+  assert.deepEqual(plan.unmatched.map(plant => plant.name), ['Кактус'])
+  assert.equal(plan.unmatched[0].intervalDays, 14)
+
+  assert.deepEqual(matchWantedPlantsWithGuide([], GUIDE_PLANTS), {
+    matched: [],
+    matchedSlugs: [],
+    unmatched: []
+  })
+  assert.deepEqual(
+    matchWantedPlantsWithGuide(GARDEN_PLANTS.slice(0, 3), []).unmatched.length,
+    3
+  )
+})
+
+test('removeWantedPlants: убирает только перенесённые растения и очищает пустой список', () => {
+  withStorage(({ local }) => {
+    rememberWantedPlants(GARDEN_PLANTS)
+    const remaining = removeWantedPlants([
+      { name: 'Монстера', species: 'Monstera deliciosa' }
+    ])
+
+    assert.deepEqual(remaining.map(plant => plant.name), ['Фикус Бенджамина', 'Орхидея'])
+    assert.equal(readWantedPlants().length, 2)
+    assert.equal(local.has(WANTED_PLANTS_STORAGE_KEY), true)
+
+    const empty = removeWantedPlants([
+      { name: 'Фикус Бенджамина', species: 'Ficus benjamina' },
+      { name: 'Орхидея', species: 'Phalaenopsis' }
+    ])
+    assert.deepEqual(empty, [])
+    assert.equal(local.has(WANTED_PLANTS_STORAGE_KEY), false)
+    assert.deepEqual(removeWantedPlants([]), [])
+  })
+})
+
+test('removeWantedPlants: без localStorage не падает', () => {
+  const previousWindow = globalThis.window
+  globalThis.window = undefined
+  try {
+    assert.deepEqual(removeWantedPlants([{ name: 'Монстера' }]), [])
+  } finally {
+    if (previousWindow === undefined) {
+      delete globalThis.window
+    } else {
+      globalThis.window = previousWindow
+    }
+  }
 })
 
 test('buildAddPlantDraft: готовит черновик для /add-plant', () => {

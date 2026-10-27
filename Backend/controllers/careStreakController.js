@@ -44,6 +44,26 @@ export function serializeLatestRecap(row) {
     }
 }
 
+export function buildFreezePayload(freeze) {
+    const source = freeze && typeof freeze === 'object' ? freeze : {}
+    const availableThisWeek = Number(source.availableThisWeek) || 0
+    const usedThisWeek = Number(source.usedThisWeek) || 0
+    const usedFreezes = Array.isArray(source.used) ? source.used : []
+    const frozenDates = usedFreezes
+        .map(item => item?.localDate)
+        .filter(value => typeof value === 'string' && value)
+
+    return {
+        ...source,
+        available: availableThisWeek > 0,
+        canFreeze: availableThisWeek > 0,
+        used: usedThisWeek > 0,
+        usedFreezes,
+        frozenDates,
+        daysLeft: availableThisWeek
+    }
+}
+
 export class CareStreakController {
     constructor(deps = {}) {
         this.models = { ...DEFAULT_MODELS, ...(deps.models || {}) }
@@ -91,8 +111,11 @@ export class CareStreakController {
             lastWateredAt: streak.lastWateredAt,
             week,
             latestRecap,
-            freeze: streak.freeze,
+            freeze: buildFreezePayload(streak.freeze),
             streakBreak: streak.streakBreak,
+            breakReason: typeof streak.streakBreak?.reason === 'string'
+                ? streak.streakBreak.reason
+                : '',
             updatedAt: now.toISOString()
         }
     }

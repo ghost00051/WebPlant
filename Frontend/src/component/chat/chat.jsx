@@ -1225,11 +1225,21 @@ function ChatSession({ sessionId, onOpenHistory, onNewChat, onSessionsChanged, i
         urls.push(...uploadData.urls)
       }
 
+      const photoMetadata = message.diagnosis
+        ? {
+            diagnosis: message.diagnosis,
+            ...(typeof message.text === 'string' && message.text.trim()
+              ? { diagnosis_text: message.text.trim().slice(0, 2000) }
+              : {})
+          }
+        : null
       const response = await fetch(`${API_URL}/plants/${plant.id}/photos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ photos: urls.map(url => ({ url })) })
+        body: JSON.stringify({
+          photos: urls.map(url => (photoMetadata ? { url, metadata: photoMetadata } : { url }))
+        })
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {

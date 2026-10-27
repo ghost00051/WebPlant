@@ -18,4 +18,10 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    files: ['src/component/homePage/homePage.jsx'],
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
+    },
+  },
 ])

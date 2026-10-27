@@ -50,6 +50,23 @@ export async function removePlantPhotoFiles(urls, {
     return removed
 }
 
+export async function removePlantPhotoFilesIfUnreferenced(url, {
+    countReferences,
+    removeFiles = removePlantPhotoFiles
+} = {}) {
+    if (typeof countReferences !== 'function') {
+        throw new TypeError('countReferences must be a function')
+    }
+
+    const references = Number(await countReferences(url)) || 0
+    if (references > 0) {
+        return { removed: 0, skipped: true, references }
+    }
+
+    const removed = Number(await removeFiles([url])) || 0
+    return { removed, skipped: false, references: 0 }
+}
+
 export async function cleanOrphanedPlantPhotoFiles({
     directory = path.resolve('uploads', 'plants'),
     thumbDirectory = PLANT_THUMB_DIRECTORY,

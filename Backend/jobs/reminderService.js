@@ -3,6 +3,7 @@ import { Op } from 'sequelize'
 import sequelize from '../db.js'
 import Plant from '../models/Plant.js'
 import WateringLog from '../models/WateringLog.js'
+import Notification from '../models/Notification.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import {
     storeNotification,
@@ -68,6 +69,9 @@ const MAX_SUMMARY_PLANTS = 5
 const SUMMARY_NAME_MAX_LENGTH = 40
 const SUMMARY_LOCATION_MAX_LENGTH = 40
 const NOTIFY_NAME_MAX_LENGTH = 80
+const DEFERRED_PUSH_TTL_MS = 48 * HOUR
+const MAX_DEFERRED_PUSHES_PER_TICK = 1000
+const DEFERRED_PUSH_PAYLOAD_KEY = 'push_pending'
 const TICK_LOCK = 'job:reminder-tick'
 const SUMMARY_TICK_LOCK = 'job:morning-summary-tick'
 const CARE_ADVICE_TICK_LOCK = 'job:care-advice-tick'
@@ -171,8 +175,7 @@ export function truncateText(value, maxLength) {
     return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
-export function buildMorningSummaryBody(plants = []) {
-    const list = Array.isArray(plants) ? plants : []
+function formatSummaryNames(list) {
     const names = list.slice(0, MAX_SUMMARY_PLANTS).map(plant => {
         const name = truncateText(plant.name || 'Растение', SUMMARY_NAME_MAX_LENGTH)
         const location = plant.location
@@ -181,11 +184,68 @@ export function buildMorningSummaryBody(plants = []) {
         return `${name}${location}`
     })
     const extraCount = list.length - names.length
-    const text = list.length
-        ? `Сегодня полить: ${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
-        : 'На сегодня полив не запланирован 🌱'
+    return `${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
+}
 
-    return truncateText(text, NOTIFICATION_BODY_MAX_LENGTH)
+function hasMissedMetadata(metadata) {
+    const value = metadata && typeof metadata === 'object' ? metadata.missed_since : null
+    return typeof value === 'string' && value.length > 0
+}
+
+export function buildMorningSummaryBody(plants = [], { tomorrow = [] } = {}) {
+    const todayList = Array.isArray(plants) ? plants : []
+    const tomorrowList = Array.isArray(tomorrow) ? tomorrow : []
+    const parts = []
+
+    if (todayList.length) parts.push(`Сегодня полить: ${formatSummaryNames(todayList)}`)
+    if (tomorrowList.length) parts.push(`Завтра полить: ${formatSummaryNames(tomorrowList)}`)
+
+    if (!parts.length) return 'На сегодня полив не запланирован 🌱'
+    return truncateText(parts.join('\n'), NOTIFICATION_BODY_MAX_LENGTH)
+}
+
+export function collectMorningSummaryPlants(plants, {
+    now = new Date(),
+    end,
+    timeZone = DEFAULT_TIME_ZONE
+} = {}) {
+    const todayEnd = end instanceof Date && Number.isFinite(end.getTime())
+        ? end
+        : getDayBounds(now, timeZone).end
+    const tomorrowKey = localTomorrowKey(now, timeZone)
+    const today = []
+    const tomorrow = []
+
+    for (const plant of Array.isArray(plants) ? plants : []) {
+        if (!plant) continue
+        if (isRemindersPaused(plant.metadata)) continue
+        if (plant.notify_morning === false) continue
+        if (!matchesWeekdayForSlot(plant, plant.next_watering_at, timeZone)) continue
+
+        const nextAt = new Date(plant.next_watering_at)
+        const hasNextAt = Number.isFinite(nextAt.getTime())
+        const missed = hasMissedMetadata(plant.metadata)
+
+        if ((hasNextAt && nextAt.getTime() < todayEnd.getTime()) || missed) {
+            today.push(plant)
+            continue
+        }
+        if (
+            plant.notify_day_before === true &&
+            hasNextAt &&
+            zonedDayKey(nextAt, timeZone) === tomorrowKey
+        ) {
+            tomorrow.push(plant)
+        }
+    }
+
+    return { today, tomorrow }
+}
+
+export function shouldSendMorningSummary({ today = [], tomorrow = [] } = {}) {
+    const todayCount = Array.isArray(today) ? today.length : 0
+    const tomorrowCount = Array.isArray(tomorrow) ? tomorrow.length : 0
+    return todayCount + tomorrowCount > 0
 }
 
 export function formatSlotLabel(slot, timeZone = DEFAULT_TIME_ZONE) {
@@ -275,6 +335,36 @@ export function withSlotNotification(metadata, key, slot) {
     return next
 }
 
+export function buildDeferredPushPayload({ tag = null, deferredAt = new Date() } = {}) {
+    const at = deferredAt instanceof Date ? deferredAt : new Date(deferredAt)
+    return {
+        [DEFERRED_PUSH_PAYLOAD_KEY]: true,
+        push_deferred_at: Number.isFinite(at.getTime()) ? at.toISOString() : null,
+        push_tag: typeof tag === 'string' && tag ? tag : null
+    }
+}
+
+export function isDeferredPushPayload(payload) {
+    return Boolean(
+        payload &&
+        typeof payload === 'object' &&
+        payload[DEFERRED_PUSH_PAYLOAD_KEY] === true
+    )
+}
+
+export function readDeferredPushTag(payload, fallback = 'reminder') {
+    const tag = payload?.push_tag
+    return typeof tag === 'string' && tag ? tag : fallback
+}
+
+export function markPushDeliveredPayload(payload, { sentAt = new Date() } = {}) {
+    const at = sentAt instanceof Date ? sentAt : new Date(sentAt)
+    const next = { ...(payload && typeof payload === 'object' ? payload : {}) }
+    next[DEFERRED_PUSH_PAYLOAD_KEY] = false
+    next.push_sent_at = Number.isFinite(at.getTime()) ? at.toISOString() : null
+    return next
+}
+
 class ReminderService {
     start() {
         cron.schedule(TICK_CRON, () => this.runReminderTick(), { timezone: 'UTC' })
@@ -339,7 +429,8 @@ class ReminderService {
         for (const [name, run] of [
             ['autoSkipOverdue', () => this.autoSkipOverdue(now)],
             ['sendDayBefore', () => this.sendDayBefore(now)],
-            ['sendOnDay', () => this.sendOnDay(now)]
+            ['sendOnDay', () => this.sendOnDay(now)],
+            ['flushDeferredPushes', () => this.flushDeferredPushes(now)]
         ]) {
             const startedAt = Date.now()
             try {
@@ -347,6 +438,8 @@ class ReminderService {
                 totals.batches += Number(result?.batches) || 0
                 totals.plantsProcessed += Number(result?.plantsProcessed) || 0
                 totals.notificationsCreated += Number(result?.notificationsCreated) || 0
+                totals.pushesSent += Number(result?.pushesSent) || 0
+                totals.deferredPushes += Number(result?.deferredPushes) || 0
                 totals.errors += Number(result?.errors) || 0
             } catch (error) {
                 totals.errors += 1
@@ -371,6 +464,8 @@ class ReminderService {
             batches: 0,
             plantsProcessed: 0,
             notificationsCreated: 0,
+            pushesSent: 0,
+            deferredPushes: 0,
             errors: 0
         }
     }
@@ -545,6 +640,7 @@ class ReminderService {
         })
 
         try {
+            const deferPush = this.shouldSkipPush(settings, now)
             const { notification, created } = await storeNotification({
                 userId: plant.user_id,
                 plantId: plant.id,
@@ -552,13 +648,16 @@ class ReminderService {
                 title,
                 body,
                 dedupeKey: `plant:${plant.id}:missed:${first.toISOString()}`,
-                scheduledFor: first
+                scheduledFor: first,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'missed_watering', deferredAt: now })
+                    : {}
             })
             if (!created) return false
 
-            if (this.shouldSkipPush(settings, now)) {
+            if (deferPush) {
                 console.log(
-                    `🌙 preserveMissed plant#${plant.id}: тихие часы — уведомление сохранено в приложении без push`
+                    `🌙 preserveMissed plant#${plant.id}: тихие часы — push отложен до их окончания`
                 )
                 return true
             }
@@ -717,6 +816,7 @@ class ReminderService {
         const { title, body } = buildAutoSkipNotification(plant, missed.length)
 
         try {
+            const deferPush = this.shouldSkipPush(settings, now)
             const { notification, created } = await storeNotification({
                 userId: plant.user_id,
                 plantId: plant.id,
@@ -724,12 +824,15 @@ class ReminderService {
                 title,
                 body,
                 dedupeKey: `plant:${plant.id}:auto_skip:${first.toISOString()}`,
-                scheduledFor: first
+                scheduledFor: first,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'auto_skip', deferredAt: now })
+                    : {}
             })
             if (!created) return false
-            if (this.shouldSkipPush(settings, now)) {
+            if (deferPush) {
                 console.log(
-                    `🌙 autoSkip plant#${plant.id}: тихие часы — уведомление сохранено в приложении без push`
+                    `🌙 autoSkip plant#${plant.id}: тихие часы — push отложен до их окончания`
                 )
                 return true
             }
@@ -750,6 +853,8 @@ class ReminderService {
         const { title, body } = buildRemindersPausedNotification(plant, { consecutiveSkips })
 
         try {
+            const pushAllowed = plant.notify_morning !== false
+            const deferPush = pushAllowed && this.shouldSkipPush(settings, now)
             const { notification, created } = await storeNotification({
                 userId: plant.user_id,
                 plantId: plant.id,
@@ -757,14 +862,17 @@ class ReminderService {
                 title,
                 body,
                 dedupeKey: `plant:${plant.id}:reminders_paused:${slot.toISOString()}`,
-                scheduledFor: slot
+                scheduledFor: slot,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'reminders_paused', deferredAt: now })
+                    : {}
             })
             if (!created) return false
 
-            if (plant.notify_morning === false) return true
-            if (this.shouldSkipPush(settings, now)) {
+            if (!pushAllowed) return true
+            if (deferPush) {
                 console.log(
-                    `🌙 remindersPaused plant#${plant.id}: тихие часы — уведомление сохранено в приложении без push`
+                    `🌙 remindersPaused plant#${plant.id}: тихие часы — push отложен до их окончания`
                 )
                 return true
             }
@@ -855,12 +963,7 @@ class ReminderService {
         const outcome = await iterateBatchesById({
             model: NotificationPreference,
             idColumn: 'user_id',
-            where: {
-                [Op.or]: [
-                    { morning_summary_enabled: true },
-                    { delivery_mode: DELIVERY_MODE.DIGEST }
-                ]
-            },
+            where: { delivery_mode: DELIVERY_MODE.DIGEST },
             batchSize,
             maxBatches,
             onBatch: async preferences => {
@@ -870,6 +973,9 @@ class ReminderService {
 
                 for (const preference of preferences) {
                     try {
+                        if (resolveDeliveryMode(preference.delivery_mode) !== DELIVERY_MODE.DIGEST) {
+                            continue
+                        }
                         const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
                         const localTime = getDateParts(now, timeZone)
                         const quietHours = quietHoursFromPreference(preference)
@@ -883,8 +989,9 @@ class ReminderService {
 
                         const { date, end } = getDayBounds(now, timeZone)
                         if (preference.last_morning_summary_date === date) continue
+                        if (!(await this.resolveMorningSummaryEnabled(preference))) continue
 
-                        await this.sendMorningSummaryTo(preference, { date, end })
+                        await this.sendMorningSummaryTo(preference, { date, end, now, timeZone })
                     } catch (error) {
                         console.error(
                             `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
@@ -905,22 +1012,84 @@ class ReminderService {
         return outcome
     }
 
-    async sendMorningSummaryTo(preference, { date, end }) {
+    async resolveMorningSummaryEnabled(preference) {
+        if (preference.morning_summary_enabled !== false) return true
+
+        try {
+            const [updated] = await NotificationPreference.update(
+                { morning_summary_enabled: true },
+                {
+                    where: {
+                        user_id: preference.user_id,
+                        delivery_mode: DELIVERY_MODE.DIGEST,
+                        morning_summary_enabled: false
+                    }
+                }
+            )
+            if (Number(updated) > 0) {
+                preference.morning_summary_enabled = true
+                console.log(
+                    `🌅 morningSummary user#${preference.user_id}: legacy digest+summary=false — флаг синхронизирован`
+                )
+                return true
+            }
+        } catch (error) {
+            console.error(
+                `❌ morningSummary user#${preference.user_id}: не удалось синхронизировать флаг:`,
+                error
+            )
+        }
+
+        return false
+    }
+
+    async sendMorningSummaryTo(preference, {
+        date,
+        end,
+        now = new Date(),
+        timeZone = DEFAULT_TIME_ZONE
+    } = {}) {
         const missedCondition = sequelize.literal("(metadata->>'missed_since') IS NOT NULL")
+        const endOfTomorrow = zonedDayHourAfter(now, 2, 0, timeZone) ??
+            new Date(end.getTime() + 24 * HOUR)
         const plants = await Plant.findAll({
             where: {
                 user_id: preference.user_id,
                 is_active: true,
                 [Op.or]: [
-                    { next_watering_at: { [Op.lt]: end } },
+                    { next_watering_at: { [Op.lt]: endOfTomorrow } },
                     missedCondition
                 ]
             },
-            attributes: ['id', 'name', 'location'],
+            attributes: [
+                'id',
+                'name',
+                'location',
+                'next_watering_at',
+                'notify_morning',
+                'notify_day_before',
+                'reminder_weekdays',
+                'watering_interval_days',
+                'metadata'
+            ],
             order: [['next_watering_at', 'ASC']]
         })
 
-        const body = buildMorningSummaryBody(plants)
+        const { today, tomorrow } = collectMorningSummaryPlants(plants, {
+            now,
+            end,
+            timeZone
+        })
+
+        if (!shouldSendMorningSummary({ today, tomorrow })) {
+            await preference.update({ last_morning_summary_date: date })
+            console.log(
+                `🌅 morningSummary user#${preference.user_id}: напоминаний нет — пустой push не отправляем`
+            )
+            return { created: false, skipped: 'empty' }
+        }
+
+        const body = buildMorningSummaryBody(today, { tomorrow })
         const { notification, created } = await storeNotification({
             userId: preference.user_id,
             type: 'morning_summary',
@@ -931,7 +1100,7 @@ class ReminderService {
 
         await preference.update({ last_morning_summary_date: date })
 
-        if (!created) return
+        if (!created) return { created: false, notification }
 
         await sendNotificationPush({
             userId: preference.user_id,
@@ -939,6 +1108,8 @@ class ReminderService {
             body,
             data: { url: '/home', tag: 'morning-summary', notificationId: notification.id }
         })
+
+        return { created: true, notification }
     }
 
     async careAdviceTick(now = new Date()) {
@@ -1040,6 +1211,7 @@ class ReminderService {
             tag: 'day_before',
             type: 'watering_day_before',
             slot,
+            now,
             skipPush: this.shouldSkipPush(settings, now)
         })
 
@@ -1113,6 +1285,7 @@ class ReminderService {
             tag: 'on_day',
             type: 'watering_due',
             slot,
+            now,
             skipPush: this.shouldSkipPush(settings, now)
         })
 
@@ -1120,6 +1293,134 @@ class ReminderService {
             await this.markNotified(plant, 'on_day', slot)
         }
         return Boolean(result.created)
+    }
+
+    async findDeferredPushes(now = new Date()) {
+        const since = new Date(now.getTime() - DEFERRED_PUSH_TTL_MS)
+        const rows = await Notification.findAll({
+            where: {
+                created_at: { [Op.gte]: since },
+                [Op.and]: [
+                    sequelize.literal(`(payload->>'${DEFERRED_PUSH_PAYLOAD_KEY}') = 'true'`)
+                ]
+            },
+            order: [['created_at', 'ASC'], ['id', 'ASC']],
+            limit: MAX_DEFERRED_PUSHES_PER_TICK
+        })
+        return Array.isArray(rows) ? rows : []
+    }
+
+    async claimDeferredPush(notification) {
+        const [claimed] = await Notification.update(
+            {
+                payload: sequelize.literal(
+                    `jsonb_set(coalesce(payload, '{}'::jsonb), '{${DEFERRED_PUSH_PAYLOAD_KEY}}', 'false'::jsonb)`
+                )
+            },
+            {
+                where: {
+                    id: notification.id,
+                    [Op.and]: [
+                        sequelize.literal(`(payload->>'${DEFERRED_PUSH_PAYLOAD_KEY}') = 'true'`)
+                    ]
+                }
+            }
+        )
+        return Number(claimed) > 0
+    }
+
+    async completeDeferredPush(notification, now = new Date()) {
+        const payload = markPushDeliveredPayload(notification.payload, { sentAt: now })
+        await Notification.update({ payload }, { where: { id: notification.id } })
+        notification.payload = payload
+    }
+
+    async restoreDeferredPush(notification) {
+        const payload = {
+            ...(notification.payload && typeof notification.payload === 'object'
+                ? notification.payload
+                : {}),
+            [DEFERRED_PUSH_PAYLOAD_KEY]: true
+        }
+        await Notification.update({ payload }, { where: { id: notification.id } })
+        notification.payload = payload
+    }
+
+    async sendDeferredPush(notification) {
+        const data = {
+            url: notification.url || '/home',
+            tag: readDeferredPushTag(notification.payload),
+            notificationId: notification.id
+        }
+        const plantId = Number(notification.plant_id)
+        if (Number.isInteger(plantId) && plantId > 0) data.plantId = plantId
+
+        await sendNotificationPush({
+            userId: Number(notification.user_id),
+            title: notification.title,
+            body: notification.body,
+            data
+        })
+    }
+
+    async flushDeferredPushes(now = new Date()) {
+        const counters = this.createTickCounters()
+        let pending = []
+
+        try {
+            pending = await this.findDeferredPushes(now)
+        } catch (error) {
+            counters.errors += 1
+            console.error('❌ flushDeferredPushes: не удалось прочитать отложенные push:', error)
+            return counters
+        }
+        if (!pending.length) return counters
+
+        let settingsByUser
+        try {
+            settingsByUser = await this.loadRecipientSettings(
+                pending.map(notification => notification.user_id)
+            )
+        } catch (error) {
+            counters.errors += 1
+            console.error('❌ flushDeferredPushes: не удалось прочитать настройки доставки:', error)
+            return counters
+        }
+
+        for (const notification of pending) {
+            try {
+                const settings = this.deliverySettingsFor(settingsByUser, notification.user_id)
+                if (this.shouldSkipPush(settings, now)) {
+                    counters.deferredPushes += 1
+                    continue
+                }
+                if (!(await this.claimDeferredPush(notification))) continue
+
+                try {
+                    await this.sendDeferredPush(notification)
+                    await this.completeDeferredPush(notification, now)
+                    counters.pushesSent += 1
+                    console.log(
+                        `📤 flushDeferredPushes: отложенный push notification#${notification.id} доставлен`
+                    )
+                } catch (error) {
+                    counters.errors += 1
+                    console.error(
+                        `❌ flushDeferredPushes: push notification#${notification.id} не отправлен:`,
+                        error
+                    )
+                    await this.restoreDeferredPush(notification)
+                }
+            } catch (error) {
+                counters.errors += 1
+                console.error(
+                    `❌ flushDeferredPushes: ошибка notification#${notification?.id}:`,
+                    error
+                )
+            }
+        }
+
+        return counters
     }
 
     matchesWeekday(plant, timeZone = DEFAULT_TIME_ZONE) {
@@ -1160,7 +1461,7 @@ class ReminderService {
         }
     }
 
-    async notify(plant, { title, body, tag, type, slot, skipPush = false }) {
+    async notify(plant, { title, body, tag, type, slot, skipPush = false, now = new Date() }) {
         const scheduledFor = slot ? new Date(slot) : new Date(plant.next_watering_at)
         const { notification, created } = await storeNotification({
             userId: plant.user_id,
@@ -1170,16 +1471,19 @@ class ReminderService {
             body,
             url: '/home',
             dedupeKey: `plant:${plant.id}:${tag}:${scheduledFor.toISOString()}`,
-            scheduledFor
+            scheduledFor,
+            payload: skipPush
+                ? buildDeferredPushPayload({ tag, deferredAt: now })
+                : {}
         })
 
         if (!created) return { notification, created: false, pushResult: null }
 
         if (skipPush) {
             console.log(
-                `🌙 notify plant#${plant.id} (${tag}): тихие часы — push пропущен, уведомление в приложении`
+                `🌙 notify plant#${plant.id} (${tag}): тихие часы — push отложен до их окончания`
             )
-            return { notification, created: true, pushResult: null }
+            return { notification, created: true, pushResult: null, deferred: true }
         }
 
         const pushResult = await sendNotificationPush({

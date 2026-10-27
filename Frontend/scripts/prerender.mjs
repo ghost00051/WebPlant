@@ -101,7 +101,7 @@ function buildWebApplication(html) {
   return JSON.parse(block[1])
 }
 
-function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false, ogImage, ogImageAlt }) {
+function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false, ogImage, ogImageAlt, omitCanonical = false, omitOgUrl = false }) {
   let page = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
   page = replaceMeta(page, 'name', 'description', description)
   page = replaceMeta(
@@ -114,7 +114,11 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
   )
   page = replaceMeta(page, 'property', 'og:title', title)
   page = replaceMeta(page, 'property', 'og:description', description)
-  page = replaceMeta(page, 'property', 'og:url', canonical)
+  if (omitOgUrl) {
+    page = page.replace(/\s*<meta\s+property="og:url"[^>]*>/i, '')
+  } else {
+    page = replaceMeta(page, 'property', 'og:url', canonical)
+  }
   page = replaceMeta(page, 'name', 'twitter:title', title)
   page = replaceMeta(page, 'name', 'twitter:description', description)
   if (ogImage) {
@@ -125,7 +129,11 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
       page = replaceMeta(page, 'name', 'twitter:image:alt', ogImageAlt)
     }
   }
-  page = replaceCanonical(page, canonical)
+  if (omitCanonical) {
+    page = page.replace(/\s*<link\s+rel="canonical"\s+href="[^"]*"\s*\/?>/i, '')
+  } else {
+    page = replaceCanonical(page, canonical)
+  }
 
   const templateStructuredData = keepTemplateStructuredData ? buildWebApplication(html) : null
   page = page.replace(
@@ -573,6 +581,8 @@ try {
         description: meta.description,
         canonical: `${siteUrl}/${route}`,
         indexable: false,
+        omitCanonical: route === 'garden',
+        omitOgUrl: route === 'garden',
         ogImage: meta.ogImage,
         ogImageAlt: meta.ogImageAlt
       })

@@ -2,7 +2,11 @@ import { Router } from 'express'
 import rateLimit from 'express-rate-limit'
 import plantController from '../controllers/plantController.js'
 import { requireAuth } from '../middleware/auth.js'
-import { validateChatPhoto, uploadChatPhoto } from '../middleware/upload.js'
+import {
+    validateChatPhoto,
+    validateOptionalChatPhoto,
+    uploadChatPhoto
+} from '../middleware/upload.js'
 import { integerParam } from '../middleware/validateParam.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
@@ -43,6 +47,16 @@ const wateringWriteLimiter = rateLimit({
     ...rateLimitStoreOptions('plant-watering-write')
 })
 
+const healthCheckLimiter = rateLimit({
+    windowMs: 60 * 60 * 1000,
+    limit: 30,
+    keyGenerator: req => String(req.user.id),
+    message: { message: 'Слишком много проверок здоровья. Попробуйте позже.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+    ...rateLimitStoreOptions('plant-health-check')
+})
+
 router.post('/suggest-species', speciesSuggestionLimiter, plantController.suggestSpecies)
 router.post(
     '/suggest-species-photo',
@@ -70,6 +84,13 @@ router.get('/:id', plantController.getOne)
 router.put('/:id', wateringWriteLimiter, plantController.update)
 router.delete('/:id', wateringWriteLimiter, plantController.delete)
 
+router.post(
+    '/:id/health-check',
+    healthCheckLimiter,
+    uploadChatPhoto.array('photo', 1),
+    validateOptionalChatPhoto,
+    plantController.healthCheck
+)
 router.post('/:id/photos', wateringWriteLimiter, plantController.addPhotos)
 router.get('/:id/photos', plantController.getPhotos)
 router.delete('/:id/photos/:photoId', wateringWriteLimiter, plantController.deletePhoto)

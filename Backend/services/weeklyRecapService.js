@@ -294,7 +294,7 @@ class WeeklyRecapService {
                 return
             }
 
-            const streak = computeCareStreak(activity.events, { now })
+            const streak = computeCareStreak(activity.events, { now, timeZone })
             const recap = buildWeeklyRecap({ week, streak })
             const quietNow = isQuietTimeForPreference(preference, { now, timeZone })
 

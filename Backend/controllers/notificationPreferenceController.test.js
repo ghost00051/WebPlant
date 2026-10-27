@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 
 import {
     NotificationPreferenceController,
-    serializeNotificationPreferences
+    serializeNotificationPreferences,
+    syncDeliveryModeAndSummary
 } from './notificationPreferenceController.js'
 
 function createResponse() {
@@ -188,11 +189,13 @@ test('PATCH: сохраняет режим, тихие часы и возвра�
     assert.equal(preference.updates.length, 1)
     assert.deepEqual(preference.updates[0], {
         delivery_mode: 'per_plant',
+        morning_summary_enabled: false,
         quiet_hours_enabled: true,
         quiet_hours_start: '23:00',
         quiet_hours_end: '07:00'
     })
     assert.equal(res.body.delivery_mode, 'per_plant')
+    assert.equal(res.body.morning_summary_enabled, false)
     assert.equal(res.body.quiet_hours_enabled, true)
     assert.equal(res.body.quiet_hours_start, '23:00')
     assert.equal(res.body.quiet_hours_end, '07:00')
@@ -233,4 +236,129 @@ test('PATCH: 500 при ошибке БД с русским сообщением
 
     assert.equal(res.statusCode, 500)
     assert.match(res.body.message, /Ошибка сервера/)
+})
+
+test('syncDeliveryModeAndSummary: один источник истины для режима и сводки (BE-03)', () => {
+    assert.deepEqual(syncDeliveryModeAndSummary({}), {})
+
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ delivery_mode: 'digest' }),
+        { delivery_mode: 'digest', morning_summary_enabled: true }
+    )
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ delivery_mode: 'per_plant' }),
+        { delivery_mode: 'per_plant', morning_summary_enabled: false }
+    )
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ morning_summary_enabled: true }),
+        { morning_summary_enabled: true, delivery_mode: 'digest' }
+    )
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ morning_summary_enabled: false }),
+        { morning_summary_enabled: false, delivery_mode: 'per_plant' }
+    )
+
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ delivery_mode: 'per_plant', morning_summary_enabled: true }),
+        { delivery_mode: 'per_plant', morning_summary_enabled: false }
+    )
+
+    assert.deepEqual(
+        syncDeliveryModeAndSummary({ quiet_hours_enabled: true }),
+        { quiet_hours_enabled: true }
+    )
+})
+
+test('PATCH: смена delivery_mode синхронизирует morning_summary_enabled (BE-03)', async () => {
+    const preference = createPreference({
+        delivery_mode: 'per_plant',
+        morning_summary_enabled: false
+    })
+    const { controller } = createController({ preference })
+
+    const on = createResponse()
+    await controller.update({ user: { id: 1 }, body: { delivery_mode: 'digest' } }, on)
+    assert.equal(on.statusCode, 200)
+    assert.equal(on.body.delivery_mode, 'digest')
+    assert.equal(on.body.morning_summary_enabled, true)
+    assert.deepEqual(preference.updates.at(-1), {
+        delivery_mode: 'digest',
+        morning_summary_enabled: true
+    })
+
+    const off = createResponse()
+    await controller.update({ user: { id: 1 }, body: { delivery_mode: 'per_plant' } }, off)
+    assert.equal(off.statusCode, 200)
+    assert.equal(off.body.delivery_mode, 'per_plant')
+    assert.equal(off.body.morning_summary_enabled, false)
+})
+
+test('PATCH: одиночная смена morning_summary_enabled переключает delivery_mode (BE-03)', async () => {
+    const preference = createPreference({
+        delivery_mode: 'digest',
+        morning_summary_enabled: false
+    })
+    const { controller } = createController({ preference })
+
+    const on = createResponse()
+    await controller.update({ user: { id: 1 }, body: { morning_summary_enabled: true } }, on)
+    assert.equal(on.statusCode, 200)
+    assert.equal(on.body.morning_summary_enabled, true)
+    assert.equal(on.body.delivery_mode, 'digest')
+
+    const off = createResponse()
+    await controller.update({ user: { id: 1 }, body: { morning_summary_enabled: false } }, off)
+    assert.equal(off.statusCode, 200)
+    assert.equal(off.body.morning_summary_enabled, false)
+    assert.equal(off.body.delivery_mode, 'per_plant')
+})
+
+test('PATCH: оба поля сразу — приоритет delivery_mode, без 400', async () => {
+    const preference = createPreference({ delivery_mode: 'digest', morning_summary_enabled: true })
+    const { controller } = createController({ preference })
+    const res = createResponse()
+
+    await controller.update({
+        user: { id: 1 },
+        body: { delivery_mode: 'per_plant', morning_summary_enabled: true }
+    }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.delivery_mode, 'per_plant')
+    assert.equal(res.body.morning_summary_enabled, false)
+})
+
+test('BE-08: невалидные тихие часы не пишутся в БД до 400 (строка создаётся)', async () => {
+    const { controller, state } = createController()
+    const res = createResponse()
+
+    await controller.update({
+        user: { id: 1 },
+        body: {
+            quiet_hours_enabled: true,
+            quiet_hours_start: '22:00',
+            quiet_hours_end: '22:00',
+            delivery_mode: 'per_plant'
+        }
+    }, res)
+
+    assert.equal(res.statusCode, 400)
+    assert.match(res.body.message, /не должны совпадать/)
+    assert.equal(state.findOrCreateCalls, 0, 'findOrCreate не должен вызываться при невалидных часах')
+    assert.equal(state.findOneCalls, 1, 'чтение существующей строки — до валидации')
+})
+
+test('BE-08: невалидные тихие часы не обновляют существующую строку', async () => {
+    const preference = createPreference({ quiet_hours_start: '22:00', quiet_hours_end: '08:00' })
+    const { controller } = createController({ preference })
+    const res = createResponse()
+
+    await controller.update({
+        user: { id: 1 },
+        body: { quiet_hours_end: '22:00' }
+    }, res)
+
+    assert.equal(res.statusCode, 400)
+    assert.match(res.body.message, /не должны совпадать/)
+    assert.equal(preference.updates.length, 0, 'никаких частичных записей')
 })

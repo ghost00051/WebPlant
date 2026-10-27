@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_SITE_ORIGIN,
   SHARE_TOKEN_STORAGE_KEY,
+  SHARE_TOKEN_TTL_MS,
   buildRegistrationPath,
   buildSharePath,
   buildShareUrl,
@@ -133,11 +134,40 @@ test('rememberShareToken/readShareToken: в localStorage попадают тол
     assert.equal(readShareToken(), null)
 
     assert.equal(rememberShareToken(TOKEN), true)
-    assert.equal(store.get(SHARE_TOKEN_STORAGE_KEY), TOKEN)
+    const record = JSON.parse(store.get(SHARE_TOKEN_STORAGE_KEY))
+    assert.equal(record.token, TOKEN)
+    assert.ok(Number.isFinite(record.savedAt))
     assert.equal(readShareToken(), TOKEN)
 
     store.set(SHARE_TOKEN_STORAGE_KEY, 'испорченное значение')
     assert.equal(readShareToken(), null)
+  })
+})
+
+test('readShareToken: токен действует 7 дней, затем удаляется как протухший (INT-06)', () => {
+  withLocalStorage(store => {
+    store.set(SHARE_TOKEN_STORAGE_KEY, JSON.stringify({
+      token: TOKEN,
+      savedAt: Date.now() - SHARE_TOKEN_TTL_MS - 1000
+    }))
+    assert.equal(readShareToken(), null)
+    assert.equal(store.has(SHARE_TOKEN_STORAGE_KEY), false)
+
+    store.set(SHARE_TOKEN_STORAGE_KEY, JSON.stringify({
+      token: TOKEN,
+      savedAt: Date.now() - SHARE_TOKEN_TTL_MS + 60_000
+    }))
+    assert.equal(readShareToken(), TOKEN)
+  })
+})
+
+test('readShareToken: старый строковый формат читается и мигрирует в запись с TTL', () => {
+  withLocalStorage(store => {
+    store.set(SHARE_TOKEN_STORAGE_KEY, TOKEN)
+    assert.equal(readShareToken(), TOKEN)
+    const migrated = JSON.parse(store.get(SHARE_TOKEN_STORAGE_KEY))
+    assert.equal(migrated.token, TOKEN)
+    assert.ok(Number.isFinite(migrated.savedAt))
   })
 })
 

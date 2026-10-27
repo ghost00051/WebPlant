@@ -77,6 +77,10 @@ function describeChatError(error) {
     }
 }
 
+function canRetryChatError(error) {
+    return error?.kind === 'unavailable' || error?.kind === 'error'
+}
+
 function LandingGuestChat() {
     const [messages, setMessages] = useState(() => [
         { id: 'greeting', role: 'assistant', text: GREETING }
@@ -296,7 +300,7 @@ function LandingGuestChat() {
                     <div className='landingChatError' role='alert'>
                         <p>{error.message}</p>
                         <div className='landingChatErrorActions'>
-                            {lastQuestion && error.kind !== 'validation' && (
+                            {lastQuestion && canRetryChatError(error) && (
                                 <button
                                     type='button'
                                     className='landingChatRetry'

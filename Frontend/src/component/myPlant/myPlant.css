@@ -511,6 +511,11 @@
     color: #FFFFFF;
 }
 
+.plantDialogActions .plantShareConfirm {
+    background: #5C7463;
+    color: #FFFFFF;
+}
+
 .plantDialogActions button:disabled {
     cursor: wait;
     opacity: 0.7;
@@ -634,6 +639,17 @@
     border-color: rgba(180, 35, 24, 0.28);
     background: #FBEDEB;
     color: #9A2C24;
+}
+
+.plantListMessage p {
+    margin: 0 0 6px;
+}
+
+.plantListMessageActions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
 }
 
 .plantCardHealthCheck {
@@ -1192,6 +1208,11 @@
     .addPlantBottomButton {
         box-shadow: none;
     }
+}
+
+.plantListNotice--info {
+    background: rgba(21, 101, 192, 0.10);
+    color: inherit;
 }
 
 @media (prefers-reduced-motion: reduce) {

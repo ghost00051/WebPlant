@@ -12,6 +12,7 @@ import {
   normalizeGuestChatHistory,
   normalizeGuestChatMessage,
   readGuestChatHistory,
+  readGuestLinkResult,
   saveGuestChatHistory,
   shouldSuggestSavingGuestChat
 } from './guestChat.js'
@@ -121,4 +122,25 @@ test('saveGuestChatHistory: пустая история не пишется', ()
   const storage = createMemoryStorage()
   assert.equal(saveGuestChatHistory({ messages: [] }, { storage }), false)
   assert.equal(storage.getItem(GUEST_CHAT_STORAGE_KEY), null)
+})
+
+test('readGuestLinkResult: перенос подтверждается только guestLink.linked === true', () => {
+  assert.deepEqual(
+    readGuestLinkResult({ guestLink: { linked: true, chatMessages: 3, consents: 1 } }),
+    { supported: true, linked: true, chatMessages: 3, consents: 1, chatCountKnown: true }
+  )
+  assert.deepEqual(
+    readGuestLinkResult({ guestLink: { linked: false, chatMessages: 0 } }),
+    { supported: true, linked: false, chatMessages: 0, consents: 0, chatCountKnown: true }
+  )
+  assert.deepEqual(
+    readGuestLinkResult({ guestLink: { chatMessages: 2 } }),
+    { supported: true, linked: false, chatMessages: 2, consents: 0, chatCountKnown: true }
+  )
+  assert.deepEqual(
+    readGuestLinkResult({ user: { id: 1 } }),
+    { supported: false, linked: false, chatMessages: 0, consents: 0, chatCountKnown: false }
+  )
+  assert.equal(readGuestLinkResult(null).supported, false)
+  assert.equal(readGuestLinkResult(null).linked, false)
 })

@@ -46,6 +46,22 @@ function clampDays(value) {
     return Math.min(MAX_INTERVAL_DAYS, Math.max(MIN_INTERVAL_DAYS, Math.round(value)))
 }
 
+const DAY_WORD_FORMS = ['день', 'дня', 'дней']
+
+function dayWord(count) {
+    const value = Math.abs(Number(count))
+    const mod10 = value % 10
+    const mod100 = value % 100
+    if (mod10 === 1 && mod100 !== 11) return DAY_WORD_FORMS[0]
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return DAY_WORD_FORMS[1]
+    return DAY_WORD_FORMS[2]
+}
+
+function intervalDaysText(minDays, maxDays) {
+    if (minDays === maxDays) return `${minDays} ${dayWord(minDays)}`
+    return `${minDays}–${maxDays} ${dayWord(maxDays)}`
+}
+
 function WateringCalculator() {
     const [speciesSlug, setSpeciesSlug] = useState(PLANTS[0].slug)
     const [season, setSeason] = useState('shoulder')
@@ -60,7 +76,7 @@ function WateringCalculator() {
 
     const minDays = clampDays(base.min * factor)
     const maxDays = clampDays(Math.max(minDays, base.max * factor))
-    const intervalText = minDays === maxDays ? `${minDays} дней` : `${minDays}–${maxDays} дней`
+    const intervalText = intervalDaysText(minDays, maxDays)
 
     return (
         <section className='wateringCalculator' aria-labelledby='wateringCalculatorTitle'>
@@ -121,7 +137,7 @@ function WateringCalculator() {
                 </p>
                 <p className='wateringCalculatorHint'>
                     Базовый интервал для вида — {plant.intervalLabel}. Поправка под ваши
-                    условия: {Math.round(factor * 100)} % от базового.
+                    условия: ≈ {Math.round(factor * 100)}% от базового.
                 </p>
                 <p className='wateringCalculatorHint'>
                     Если к следующему поливу грунт на глубине 3–4 см ещё сырой, добавьте день.

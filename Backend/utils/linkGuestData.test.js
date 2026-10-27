@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
     DEFAULT_LINK_MODELS,
     GUEST_LINK_SOURCES,
+    buildGuestLinkSummary,
     describeGuestLinkSummary,
     linkGuestDataToUser
 } from './linkGuestData.js'
@@ -195,4 +196,90 @@ test('контракт: источники и модели по умолчани
     assert.deepEqual([...GUEST_LINK_SOURCES], ['registration_linked', 'login_linked'])
     assert.ok(DEFAULT_LINK_MODELS.ChatLog)
     assert.ok(DEFAULT_LINK_MODELS.UserCookieConsent)
+})
+
+test('buildGuestLinkSummary: форма guestLink для ответов registration/login/passkey', () => {
+    assert.deepEqual(buildGuestLinkSummary(), {
+        linked: false,
+        chatMessages: 0,
+        chatSessions: 0,
+        diagnoses: 0,
+        consents: 0
+    })
+
+    assert.deepEqual(
+        buildGuestLinkSummary({
+            consentCount: 2,
+            chatMessageCount: 5,
+            chatSessionCount: 3,
+            diagnosisCount: 1,
+            linked: true,
+            errors: []
+        }),
+        {
+            linked: true,
+            chatMessages: 5,
+            chatSessions: 3,
+            diagnoses: 1,
+            consents: 2
+        }
+    )
+
+    const partial = buildGuestLinkSummary({
+        consentCount: 1,
+        chatMessageCount: 0,
+        chatSessionCount: 4,
+        diagnosisCount: 2,
+        linked: false,
+        errors: [{ step: 'chat_messages', message: 'db down' }]
+    })
+    assert.deepEqual(partial, {
+        linked: true,
+        chatMessages: 0,
+        chatSessions: 4,
+        diagnoses: 2,
+        consents: 1
+    })
+    assert.equal(partial.linked, partial.chatMessages + partial.consents > 0)
+})
+
+test('buildGuestLinkSummary: частичный сбой не даёт linked=true без перенесённых чатов/согласий', () => {
+    const failedChat = buildGuestLinkSummary({
+        consentCount: 0,
+        chatMessageCount: 0,
+        chatSessionCount: 2,
+        diagnosisCount: 1,
+        errors: [
+            { step: 'cookie_consents', message: 'db down' },
+            { step: 'chat_messages', message: 'db down' }
+        ]
+    })
+    assert.deepEqual(failedChat, {
+        linked: false,
+        chatMessages: 0,
+        chatSessions: 2,
+        diagnoses: 1,
+        consents: 0
+    })
+
+    assert.deepEqual(buildGuestLinkSummary({ consentCount: '3', chatMessageCount: -2 }), {
+        linked: true,
+        chatMessages: 0,
+        chatSessions: 0,
+        diagnoses: 0,
+        consents: 3
+    })
+})
+
+test('buildGuestLinkSummary: результат linkGuestDataToUser превращается в guestLink', async () => {
+    const { models } = createModels()
+    const result = await linkGuestDataToUser(42, GUEST, 'registration_linked', null, { models })
+
+    assert.deepEqual(buildGuestLinkSummary(result), {
+        linked: true,
+        chatMessages: 7,
+        chatSessions: 3,
+        diagnoses: 1,
+        consents: 2
+    })
 })

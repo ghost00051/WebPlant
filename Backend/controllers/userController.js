@@ -22,7 +22,11 @@ import {
     setRememberedAuth,
     setSessionAuth
 } from '../utils/authTokens.js'
-import { describeGuestLinkSummary, linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    buildGuestLinkSummary,
+    describeGuestLinkSummary,
+    linkGuestDataToUser
+} from '../utils/linkGuestData.js'
 import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
 import { attributeShareSignup } from '../services/gardenShareService.js'
 import { parseShareToken } from '../utils/shareTokens.js'
@@ -75,11 +79,11 @@ function buildUserPayload(user) {
     }
 }
 
-async function linkGuestDataAfterAuth(userId, guestToken, source) {
-    if (!guestToken) return null
+export async function linkGuestDataAfterAuth(userId, guestToken, source, deps = {}) {
+    if (!guestToken) return buildGuestLinkSummary()
 
     try {
-        const linked = await linkGuestDataToUser(userId, guestToken, source)
+        const linked = await linkGuestDataToUser(userId, guestToken, source, undefined, deps)
         console.log(
             `🔗 Гостевые данные → аккаунт #${userId} (${source}): ${describeGuestLinkSummary(linked)}`
         )
@@ -89,13 +93,13 @@ async function linkGuestDataAfterAuth(userId, guestToken, source) {
                 error.message
             )
         }
-        return linked
+        return buildGuestLinkSummary(linked)
     } catch (error) {
         console.error(
             '⚠️ Перенос гостевых данных не удался, но регистрация/вход продолжены:',
             error?.message || error
         )
-        return null
+        return buildGuestLinkSummary()
     }
 }
 
@@ -389,7 +393,7 @@ class UserController {
             }
             clearGuestTokenCookie(res)
 
-            await linkGuestDataAfterAuth(user.id, guestToken, 'registration_linked')
+            const guestLink = await linkGuestDataAfterAuth(user.id, guestToken, 'registration_linked')
 
             void sendWelcomeEmailToUser(user).catch(error => {
                 console.error('❌ Не удалось отправить приветственное письмо:', error)
@@ -397,7 +401,8 @@ class UserController {
 
             return res.status(201).json({
                 message: 'Регистрация успешна',
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (e) {
             if (transaction && !transaction.finished) {
@@ -448,7 +453,7 @@ class UserController {
             }
 
             const guestToken = getValidGuestToken(req.cookies?.guest_token)
-            await linkGuestDataAfterAuth(user.id, guestToken, 'login_linked')
+            const guestLink = await linkGuestDataAfterAuth(user.id, guestToken, 'login_linked')
 
             await revokeAuthTokens(req.cookies)
             if (rememberMe === true) {
@@ -460,7 +465,8 @@ class UserController {
 
             return res.json({
                 message: 'Вход выполнен успешно',
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (e) {
             console.error("❌ Ошибка входа:", e)

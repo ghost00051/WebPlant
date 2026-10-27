@@ -7,7 +7,7 @@ function answersLabel(count) {
     const mod100 = value % 100
     const mod10 = value % 10
     if (mod100 >= 11 && mod100 <= 14) return `${value} ответов`
-    if (mod10 === 1) return 'Один ответ'
+    if (mod10 === 1 && mod100 !== 11) return `${value} ответ`
     if (mod10 >= 2 && mod10 <= 4) return `${value} ответа`
     return `${value} ответов`
 }
@@ -24,12 +24,14 @@ function plantsLabel(count) {
 
 function RegistrationOnboarding({
     carriedChatAnswers = 0,
+    guestChatLinked = false,
     wantedPlantsCount = 0,
     onFinish
 }) {
     const dialogRef = useRef(null)
     const carried = Number(carriedChatAnswers) > 0 ? Number(carriedChatAnswers) : 0
     const wanted = Number(wantedPlantsCount) > 0 ? Number(wantedPlantsCount) : 0
+    const chatLinked = guestChatLinked === true
 
     useEffect(() => {
         const dialog = dialogRef.current
@@ -49,7 +51,7 @@ function RegistrationOnboarding({
     const handleKeyDown = event => {
         if (event.key === 'Escape') {
             event.stopPropagation()
-            onFinish({})
+            onFinish({ skip: true })
             return
         }
 
@@ -97,9 +99,21 @@ function RegistrationOnboarding({
                     <p className='registrationOnboardingCarry' role='status'>
                         <span aria-hidden='true'>✦</span>
                         <span>
-                            <strong>Ваши вопросы и диагноз сохранятся.</strong>{' '}
-                            {answersLabel(carried)} Алисы из демо-чата уже перенесены
-                            в аккаунт.
+                            {chatLinked
+                                ? (
+                                    <>
+                                        <strong>Ваши вопросы и диагноз уже в аккаунте.</strong>{' '}
+                                        Перенесли {answersLabel(carried)} из демо-чата Алисы.
+                                    </>
+                                    )
+                                : (
+                                    <>
+                                        <strong>Вопросы и диагноз сохранены на этом устройстве.</strong>{' '}
+                                        {answersLabel(carried)} из демо-чата Алисы остаются в
+                                        памяти браузера — перенесём их в аккаунт, когда сервер
+                                        подтвердит перенос.
+                                    </>
+                                    )}
                         </span>
                     </p>
                 )}
@@ -108,9 +122,9 @@ function RegistrationOnboarding({
                     <p className='registrationOnboardingGarden' role='status'>
                         <span aria-hidden='true'>✦</span>
                         <span>
-                            <strong>Растения из общего сада ждут.</strong> После
-                            настройки откроем добавление: подготовили{' '}
-                            {plantsLabel(wanted)}.
+                            <strong>Растения из общего сада ждут.</strong> Перенесём{' '}
+                            {plantsLabel(wanted)} — нажмите «Добавить», и мы откроем
+                            добавление с уже отмеченными растениями.
                         </span>
                     </p>
                 )}
@@ -138,6 +152,15 @@ function RegistrationOnboarding({
                 </div>
 
                 <div className='registrationOnboardingActions'>
+                    {wanted > 0 && (
+                        <button
+                            type='button'
+                            className='registrationOnboardingChat'
+                            onClick={() => onFinish({ transferWanted: true })}
+                        >
+                            Добавить {plantsLabel(wanted)} из общего сада
+                        </button>
+                    )}
                     {carried > 0 && (
                         <button
                             type='button'
@@ -150,7 +173,7 @@ function RegistrationOnboarding({
                     <button
                         type='button'
                         className='registrationOnboardingSkip'
-                        onClick={() => onFinish({})}
+                        onClick={() => onFinish({ skip: true })}
                     >
                         Пропустить
                     </button>

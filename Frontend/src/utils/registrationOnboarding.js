@@ -1,4 +1,6 @@
 export const PLANT_COUNT_STORAGE_KEY = 'webplant_registration_plant_count'
+export const ADD_PLANT_PATH = '/add-plant'
+export const ADD_PLANT_MULTI_PATH = '/add-plant?multi=1'
 
 export const PLANT_COUNT_PRESETS = Object.freeze([
   { id: 'one-three', label: '1–3', description: 'Пара любимых растений' },
@@ -15,6 +17,15 @@ export function normalizePlantCountPreset (value) {
 export function getPlantCountPreset (value) {
   const id = normalizePlantCountPreset(value)
   return PLANT_COUNT_PRESETS.find(preset => preset.id === id) ?? null
+}
+
+export function buildOnboardingAddPlantPath (preset) {
+  const id = normalizePlantCountPreset(preset)
+  return id === 'many' ? ADD_PLANT_MULTI_PATH : ADD_PLANT_PATH
+}
+
+export function readPlantCountPreset ({ storage } = {}) {
+  return readPlantCountRecord({ storage })?.preset ?? ''
 }
 
 export function buildPlantCountRecord ({ preset, now = Date.now() } = {}) {

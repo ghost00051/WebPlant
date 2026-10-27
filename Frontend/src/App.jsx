@@ -3,7 +3,6 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Navigate,
   useLocation,
   useNavigationType,
   useParams
@@ -13,6 +12,8 @@ import PlantsIndexPage from './component/PlantsGuide/PlantsIndexPage.jsx'
 import PlantsDetailPage from './component/PlantsGuide/PlantsDetailPage.jsx'
 import CareIndexPage from './component/CareGuide/CareIndexPage.jsx'
 import CareDetailPage from './component/CareGuide/CareDetailPage.jsx'
+import ContentPage from './component/ContentPage/ContentPage.jsx'
+import NotFoundPage from './component/ContentPage/NotFound.jsx'
 import SeoMetadata from './component/SeoMetadata/SeoMetadata.jsx'
 import RouteFallback from './component/RouteFallback/RouteFallback.jsx'
 import { ThemeProvider } from './context/ThemeContext.jsx'
@@ -290,6 +291,27 @@ function CareDetailRoute () {
   return <CareDetailPage slug={slug} />
 }
 
+function NotFoundRoute () {
+  const { pathname } = useLocation()
+
+  useEffect(() => {
+    const canonical = document.head.querySelector('link[rel="canonical"]')
+    if (canonical) canonical.remove()
+  }, [pathname])
+
+  return (
+    <SuspenseRoute>
+      <ContentPage>
+        <NotFoundPage
+          backPath='/'
+          backLabel='На главную'
+          message='Такой страницы нет — возможно, ссылка устарела или в адресе ошибка.'
+        />
+      </ContentPage>
+    </SuspenseRoute>
+  )
+}
+
 const PRIVATE_APP_ROUTES = new Set([
   '/home',
   '/notifications',
@@ -444,7 +466,7 @@ function AppContent () {
               </SuspenseRoute>
             }
           />
-          <Route path='*' element={<Navigate to='/' replace />} />
+          <Route path='*' element={<NotFoundRoute />} />
           <Route
             path='/reset-password'
             element={

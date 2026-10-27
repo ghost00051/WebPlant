@@ -6,9 +6,17 @@ import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { reminderWeekdaysForInterval } from '../../utils/date.js'
 import { guidePlants } from '../../utils/plantConditions.js'
+import { resolveMultiAddSelection } from '../../utils/multiAddSelection.js'
 import { trackEvent } from '../../utils/productEvents.js'
+import {
+    clearWantedPlants,
+    matchWantedPlantsWithGuide,
+    normalizeWantedPlant,
+    removeWantedPlants
+} from '../../utils/gardenHandoff.js'
 
 const PLURAL_FORMS = ['растение', 'растения', 'растений']
+const DEFAULT_WANTED_INTERVAL_DAYS = 7
 
 function plural(count, forms) {
     const value = Math.abs(Number(count))
@@ -24,20 +32,36 @@ function plantsWord(count) {
     return plural(count, PLURAL_FORMS)
 }
 
-async function createPlantFromGuide(plant) {
-    const intervalDays = plant.intervalDays
+function daysLabel(days) {
+    const value = Math.abs(Number(days))
+    if (!Number.isFinite(value)) return 'дней'
+    const mod10 = value % 10
+    const mod100 = value % 100
+    if (mod10 === 1 && mod100 !== 11) return 'день'
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'дня'
+    return 'дней'
+}
+
+function wantedIntervalDays(plant) {
+    const days = Number(plant?.intervalDays)
+    if (Number.isInteger(days) && days >= 1 && days <= 365) return days
+    return DEFAULT_WANTED_INTERVAL_DAYS
+}
+
+async function createPlantRecord({ name, species, intervalDays }) {
+    const safeDays = wantedIntervalDays({ intervalDays })
     const response = await fetchWithTimeout(`${API_URL}/plants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-            name: plant.name,
-            species: plant.species,
-            watering_interval_days: intervalDays,
+            name,
+            species: species || '',
+            watering_interval_days: safeDays,
             watering_time_of_day: 'morning',
             notify_morning: true,
             notify_day_before: false,
-            reminder_weekdays: reminderWeekdaysForInterval(intervalDays)
+            reminder_weekdays: reminderWeekdaysForInterval(safeDays)
         })
     })
     const data = await response.json().catch(() => ({}))
@@ -47,10 +71,30 @@ async function createPlantFromGuide(plant) {
     return data
 }
 
-function MultiAddDialog({ onClose }) {
+async function createPlantFromGuide(plant) {
+    return createPlantRecord({
+        name: plant.name,
+        species: plant.species,
+        intervalDays: plant.intervalDays
+    })
+}
+
+function sameWantedPlant(left, right) {
+    const a = normalizeWantedPlant(left)
+    const b = normalizeWantedPlant(right)
+    if (!a || !b) return false
+    return a.name === b.name && a.species === b.species
+}
+
+function MultiAddDialog({ onClose, wantedPlants = [] }) {
     const navigate = useNavigate()
     const plants = useMemo(() => guidePlants(), [])
-    const [selected, setSelected] = useState([])
+    const [handoff] = useState(() => matchWantedPlantsWithGuide(wantedPlants, plants))
+    const [selected, setSelected] = useState(handoff.matchedSlugs)
+    const [unmatched, setUnmatched] = useState(handoff.unmatched)
+    const [unmatchedBusyName, setUnmatchedBusyName] = useState('')
+    const [unmatchedError, setUnmatchedError] = useState('')
+    const [unmatchedNotice, setUnmatchedNotice] = useState('')
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [progress, setProgress] = useState({ done: 0, total: 0 })
     const [failures, setFailures] = useState([])
@@ -99,22 +143,60 @@ function MultiAddDialog({ onClose }) {
         )
     }
 
+    const handleAddUnmatched = async plant => {
+        if (isSubmitting || unmatchedBusyName) return
+        setUnmatchedBusyName(plant.name)
+        setUnmatchedError('')
+        setUnmatchedNotice('')
+
+        try {
+            await createPlantRecord({
+                name: plant.name,
+                species: plant.species,
+                intervalDays: plant.intervalDays
+            })
+            setUnmatched(current => current.filter(item => !sameWantedPlant(item, plant)))
+            removeWantedPlants([plant])
+            setUnmatchedNotice(`«${plant.name}» добавлено в ваш сад`)
+            trackEvent('plant_created', {
+                hasPhoto: false,
+                hasSpecies: Boolean(plant.species),
+                intervalDays: wantedIntervalDays(plant),
+                bulkCount: 0
+            })
+        } catch (error) {
+            console.error('Ошибка добавления растения из общего сада:', error)
+            setUnmatchedError(
+                `Не удалось добавить «${plant.name}». Проверьте подключение и попробуйте ещё раз.`
+            )
+        } finally {
+            setUnmatchedBusyName('')
+        }
+    }
+
     const handleSubmit = async () => {
         if (isSubmitting || !selected.length) return
 
-        const chosen = plants.filter(plant => selected.includes(plant.slug))
+        const { chosen, matchedBySlug } = resolveMultiAddSelection({
+            plants,
+            matched: handoff.matched,
+            selected
+        })
         setIsSubmitting(true)
         setSubmitError('')
         setFailures([])
         setProgress({ done: 0, total: chosen.length })
 
         const failed = []
+        const createdWanted = []
         let created = 0
 
         for (const plant of chosen) {
             try {
                 await createPlantFromGuide(plant)
                 created += 1
+                const matchedEntry = matchedBySlug.get(plant.slug)
+                if (matchedEntry) createdWanted.push(matchedEntry.wanted)
             } catch (error) {
                 console.error('Ошибка добавления растения из справочника:', error)
                 failed.push(plant.name)
@@ -128,6 +210,12 @@ function MultiAddDialog({ onClose }) {
             setFailures(failed)
             setSubmitError('Не удалось добавить растения. Проверьте подключение и попробуйте ещё раз.')
             return
+        }
+
+        if (unmatched.length === 0 && failed.length === 0) {
+            clearWantedPlants()
+        } else {
+            removeWantedPlants(createdWanted)
         }
 
         trackEvent('plant_created', {
@@ -185,6 +273,14 @@ function MultiAddDialog({ onClose }) {
                     </button>
                 </header>
 
+                {handoff.matched.length > 0 && (
+                    <p className='multiAddProgress' role='status'>
+                        Из общего сада уже отмечено:{' '}
+                        {handoff.matched.map(entry => entry.plant.name).join(', ')}.
+                        Проверьте выбор и нажмите «Добавить».
+                    </p>
+                )}
+
                 <ul className='multiAddList' aria-label='Растения из справочника'>
                     {plants.map(plant => {
                         const isSelected = selected.includes(plant.slug)
@@ -212,6 +308,50 @@ function MultiAddDialog({ onClose }) {
                         )
                     })}
                 </ul>
+
+                {unmatched.length > 0 && (
+                    <section className='multiAddHandoff' aria-label='Растения из общего сада'>
+                        <p className='multiAddProgress'>
+                            <strong>Из общего сада.</strong> Этих растений нет в справочнике —
+                            добавим с названием и интервалом из общего сада.
+                        </p>
+                        <ul className='multiAddList'>
+                            {unmatched.map((plant, index) => (
+                                <li key={`${plant.name}-${plant.species}-${index}`}>
+                                    <div className='multiAddItem'>
+                                        <span className='multiAddItemText'>
+                                            <span className='multiAddItemName'>{plant.name}</span>
+                                            {plant.species && (
+                                                <span className='multiAddItemLatin'>{plant.species}</span>
+                                            )}
+                                            <span className='multiAddItemInterval'>
+                                                {plant.intervalDays
+                                                    ? `полив каждые ${plant.intervalDays} ${daysLabel(plant.intervalDays)}`
+                                                    : 'интервал по умолчанию — раз в 7 дней'}
+                                            </span>
+                                        </span>
+                                        <button
+                                            type='button'
+                                            className='multiAddSubmit'
+                                            onClick={() => handleAddUnmatched(plant)}
+                                            disabled={isSubmitting || Boolean(unmatchedBusyName)}
+                                        >
+                                            {unmatchedBusyName === plant.name ? 'Добавляем…' : 'Добавить'}
+                                        </button>
+                                    </div>
+                                </li>
+                            ))}
+                        </ul>
+                        {unmatchedNotice && (
+                            <p className='multiAddProgress' role='status' aria-live='polite'>
+                                {unmatchedNotice}
+                            </p>
+                        )}
+                        {unmatchedError && (
+                            <p className='multiAddError' role='alert'>{unmatchedError}</p>
+                        )}
+                    </section>
+                )}
 
                 {isSubmitting && (
                     <p className='multiAddProgress' role='status' aria-live='polite'>{progressLabel}</p>
@@ -257,9 +397,9 @@ function MultiAddDialog({ onClose }) {
     )
 }
 
-function MultiAddPlants({ open, onClose }) {
+function MultiAddPlants({ open, onClose, wantedPlants = [] }) {
     if (!open) return null
-    return <MultiAddDialog onClose={onClose} />
+    return <MultiAddDialog onClose={onClose} wantedPlants={wantedPlants} />
 }
 
 export default MultiAddPlants

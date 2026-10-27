@@ -23,6 +23,36 @@ function readCount(value) {
   return Math.floor(number)
 }
 
+function readFrozenDates(source) {
+  const dates = []
+  const push = value => {
+    if (typeof value === 'string' && value) dates.push(value)
+  }
+
+  if (Array.isArray(source.frozenDates)) source.frozenDates.forEach(push)
+
+  for (const list of [source.usedFreezes, source.used]) {
+    if (!Array.isArray(list)) continue
+    for (const entry of list) {
+      if (typeof entry === 'string') {
+        push(entry)
+      } else if (entry && typeof entry === 'object') {
+        push(entry.localDate || entry.date || entry.frozenDate)
+      }
+    }
+  }
+
+  return [...new Set(dates)]
+}
+
+function readFreezeAvailable(source) {
+  if (typeof source.available === 'boolean') return source.available
+  if (typeof source.enabled === 'boolean') return source.enabled
+  if (typeof source.availableThisWeek === 'boolean') return source.availableThisWeek
+  if (typeof source.availableThisWeek === 'number') return true
+  return true
+}
+
 function pickFreezeSource(payload) {
   if (!payload || typeof payload !== 'object') return null
   if (payload.freeze && typeof payload.freeze === 'object') return payload.freeze
@@ -51,15 +81,20 @@ export function normalizeStreakFreeze(payload) {
   if (!source) return null
 
   const usedAt = typeof source.usedAt === 'string' ? source.usedAt : ''
-  const frozenDates = Array.isArray(source.frozenDates)
-    ? source.frozenDates.filter(value => typeof value === 'string' && value)
-    : []
-  const used = asBoolean(source.used) || asBoolean(source.usedThisWeek) || Boolean(usedAt)
-  const available =
-    typeof source.available === 'boolean' ? source.available : true
+  const frozenDates = readFrozenDates(source)
+  const perWeek = readCount(source.perWeek)
+  const usedThisWeek = readCount(source.usedThisWeek)
+  const used =
+    asBoolean(source.used) ||
+    usedThisWeek > 0 ||
+    (perWeek > 0 && usedThisWeek >= perWeek) ||
+    Boolean(usedAt)
+  const available = readFreezeAvailable(source)
   const canFreeze =
     typeof source.canFreeze === 'boolean' ? source.canFreeze : available && !used
-  const daysLeft = readCount(source.daysLeft ?? source.remaining ?? 0)
+  const daysLeft = readCount(
+    source.daysLeft ?? source.remaining ?? source.availableThisWeek ?? 0
+  )
 
   return {
     available,
@@ -71,6 +106,42 @@ export function normalizeStreakFreeze(payload) {
     label: typeof source.label === 'string' ? source.label : ''
   }
 }
+
+const BREAK_REASON_CODES = Object.freeze({
+  skipped: 'Пропущен полив',
+  late_watering: 'Полив с опозданием'
+})
+
+function humanizeBreakReason(value) {
+  if (typeof value !== 'string') return ''
+  const reason = value.trim()
+  if (!reason) return ''
+  return BREAK_REASON_CODES[reason] ?? reason
+}
+
+export function normalizeBreakReason(payload) {
+  if (!payload || typeof payload !== 'object') return ''
+
+  const direct = humanizeBreakReason(payload.breakReason)
+  if (direct) return direct
+
+  const legacy = payload.streakBreak
+  if (typeof legacy === 'string') return humanizeBreakReason(legacy)
+  if (legacy && typeof legacy === 'object') {
+    for (const key of ['message', 'text', 'title']) {
+      const text = humanizeBreakReason(legacy[key])
+      if (text) return text
+    }
+    const reason = humanizeBreakReason(legacy.reason)
+    if (!reason) return ''
+    const dateLabel =
+      typeof legacy.localDate === 'string' ? formatStreakDayLabel(legacy.localDate) : ''
+    return dateLabel ? `${reason} ${dateLabel}` : reason
+  }
+
+  return ''
+}
+
 
 export function formatStreakDayLabel(value) {
   if (typeof value !== 'string' || !value) return ''
@@ -105,7 +176,7 @@ export function describeStreakBreak({
     return {
       kind: 'frozen',
       iso: broken.date,
-      text: `Серия сохранена заморозкой ${formatStreakDayLabel(broken.date)} — день не сгорел.`
+      text: `Серия сохранена заморозкой ${formatStreakDayLabel(broken.date)} — первый пропуск в неделю прощается автоматически.`
     }
   }
 
@@ -121,7 +192,7 @@ export function describeStreakBreak({
   return {
     kind: 'broken',
     iso: broken.date,
-    text: `Серия прервалась ${dateLabel}: полив не был отмечен. Один полив вовремя — и счёт пойдёт заново.`
+    text: `Серия прервалась ${dateLabel}: полив не был отмечен. Первый пропуск в неделю прощается автоматически — дальше поливайте вовремя.`
   }
 }
 

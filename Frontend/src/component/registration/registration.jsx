@@ -25,9 +25,13 @@ import { trackEvent } from '../../utils/productEvents.js'
 import {
   clearGuestChatHistory,
   countGuestChatAnswers,
-  readGuestChatHistory
+  readGuestChatHistory,
+  readGuestLinkResult
 } from '../../utils/guestChat.js'
-import { savePlantCountPreset } from '../../utils/registrationOnboarding.js'
+import {
+  buildOnboardingAddPlantPath,
+  savePlantCountPreset
+} from '../../utils/registrationOnboarding.js'
 import { readWantedPlants } from '../../utils/gardenHandoff.js'
 import RegistrationOnboarding from './registrationOnboarding.jsx'
 import {
@@ -101,6 +105,7 @@ function Registration ({ initialMode = 'login' }) {
     countGuestChatAnswers(readGuestChatHistory())
   )
   const [carriedChatAnswers, setCarriedChatAnswers] = useState(0)
+  const [guestChatLinked, setGuestChatLinked] = useState(null)
   const [showOnboarding, setShowOnboarding] = useState(false)
   const [wantedPlantsCount] = useState(() => readWantedPlants().length)
   const loginEmailRef = useRef(null)
@@ -164,19 +169,41 @@ function Registration ({ initialMode = 'login' }) {
     return () => controller.abort()
   }, [navigate])
 
-  const finishOnboarding = ({ preset, openChat } = {}) => {
+  const applyGuestLinkResult = payload => {
+    const result = readGuestLinkResult(payload)
+    const chatTransferred =
+      result.linked && (!result.chatCountKnown || result.chatMessages > 0)
+    setGuestChatLinked(chatTransferred)
+    if (chatTransferred) {
+      clearGuestChatHistory()
+      setGuestChatAnswers(0)
+    }
+    return result
+  }
+
+  const finishOnboarding = ({ preset, openChat, transferWanted, skip } = {}) => {
     if (preset) savePlantCountPreset(preset)
     setShowOnboarding(false)
 
-    if (!openChat && wantedPlantsCount > 0) {
-      navigate('/add-plant', { replace: true })
+    if (skip) {
+      navigate('/home', { replace: true })
       return
     }
 
-    navigate('/home', {
-      replace: true,
-      ...(openChat ? { state: { activeTab: 'chat' } } : {})
-    })
+    if (openChat) {
+      navigate('/home', { replace: true, state: { activeTab: 'chat' } })
+      return
+    }
+
+    if (preset || transferWanted) {
+      const handoffQuery = transferWanted ? '?handoff=1' : ''
+      navigate(preset ? buildOnboardingAddPlantPath(preset) : `/add-plant${handoffQuery}`, {
+        replace: true
+      })
+      return
+    }
+
+    navigate('/home', { replace: true })
   }
 
   const reattachPush = async () => {
@@ -326,12 +353,12 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
+      const payload = await response.json().catch(() => ({}))
       trackEvent('register', { method: 'password' })
       clearShareToken()
 
       const answersCarried = guestChatAnswers
-      clearGuestChatHistory()
-      setGuestChatAnswers(0)
+      applyGuestLinkResult(payload)
 
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       setCarriedChatAnswers(answersCarried)
@@ -380,8 +407,8 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
-      clearGuestChatHistory()
-      setGuestChatAnswers(0)
+      const payload = await response.json().catch(() => ({}))
+      applyGuestLinkResult(payload)
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
@@ -398,9 +425,8 @@ function Registration ({ initialMode = 'login' }) {
     setIsPasskeyLoginLoading(true)
     setFormError('')
     try {
-      await loginWithPasskey(emailEntr.trim(), rememberMe)
-      clearGuestChatHistory()
-      setGuestChatAnswers(0)
+      const payload = await loginWithPasskey(emailEntr.trim(), rememberMe)
+      applyGuestLinkResult(payload)
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
@@ -914,7 +940,8 @@ function Registration ({ initialMode = 'login' }) {
                     <strong>Ваши вопросы и диагноз сохранятся</strong>
                     <p>
                       {formatAnswersCount(guestChatAnswers)} из гостевого чата
-                      перенесём в аккаунт — ничего не потеряется.
+                      остаются на этом устройстве. После входа перенесём их в
+                      аккаунт, если сервер подтвердит перенос.
                     </p>
                   </div>
                 </div>
@@ -942,6 +969,7 @@ function Registration ({ initialMode = 'login' }) {
       {showOnboarding && (
         <RegistrationOnboarding
           carriedChatAnswers={carriedChatAnswers}
+          guestChatLinked={guestChatLinked === true}
           wantedPlantsCount={wantedPlantsCount}
           onFinish={finishOnboarding}
         />

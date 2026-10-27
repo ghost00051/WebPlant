@@ -116,3 +116,14 @@
     color: #5A5A5A;
     font-family: 'Inter', sans-serif;
 }
+
+.addPlantPageHandoffNote {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(46, 125, 50, 0.08);
+    color: inherit;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm, 14px);
+    line-height: 1.45;
+}

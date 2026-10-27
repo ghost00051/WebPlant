@@ -1,4 +1,4 @@
-import { stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import Plant from '../models/Plant.js'
 import PlantPhoto from '../models/PlantPhoto.js'
@@ -13,6 +13,7 @@ import {
     isValidWateringInterval
 } from '../utils/validation.js'
 import {
+    analyzePlantPhoto,
     getMaxAdviceQuestions,
     suggestPlantSpeciesWithMeta,
     suggestSpeciesFromPhoto,
@@ -20,7 +21,18 @@ import {
     suggestWateringTimeAdvice
 } from '../services/aiService.js'
 import { logAiAdvice } from '../utils/aiAdviceLog.js'
-import { removePlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
+import {
+    removePlantPhotoFiles,
+    removePlantPhotoFilesIfUnreferenced
+} from '../utils/plantPhotoCleanup.js'
+import {
+    buildHealthCheckRecord,
+    buildHealthCheckResponse,
+    mapVisionErrorResponse,
+    mergePhotoDiagnosisMetadata,
+    mergePlantHealthCheck,
+    normalizeHealthCheckQuestion
+} from '../utils/plantHealthCheck.js'
 import {
     POPULAR_SPECIES_MAX_SPECIES_LENGTH,
     POPULAR_SPECIES_MIN_SPECIES_LENGTH,
@@ -68,7 +80,9 @@ import {
 } from '../utils/missedWatering.js'
 import { plantThumbUrl } from '../utils/plantPhotoThumb.js'
 import {
+    PLANT_PHOTO_GALLERY_MAX,
     buildPlantPhotoRow,
+    isPlantPhotoGalleryFull,
     isValidPhotoInput,
     pickNextMainPhoto,
     serializePlantPhoto,
@@ -79,11 +93,29 @@ const PLANT_PHOTO_DIRECTORY = path.resolve('uploads', 'plants')
 const SCHEDULE_DAYS_AHEAD = 90
 const WATERING_DUPLICATE_WINDOW_MS = 60 * 1000
 const MAX_METADATA_BYTES = 8 * 1024
-const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips', 'prediction']
+const RESERVED_METADATA_KEYS = ['notifications', 'missed_since', 'reminders_paused', 'consecutive_skips', 'prediction', 'health_check']
 const DEFAULT_SCHEDULE_DAYS = 7
 const POPULAR_SPECIES_CACHE_TTL_MS = 5 * 60 * 1000
 const CARE_HISTORY_DAYS = 365
 const DAY_MS = 24 * 60 * 60 * 1000
+
+const DEFAULT_MODELS = {
+    Plant,
+    PlantPhoto,
+    WateringLog,
+    PlantCareLog,
+    Notification,
+    User
+}
+
+const DEFAULT_SERVICES = {
+    analyzePlantPhoto,
+    logAiAdvice,
+    readPlantPhotoBuffer,
+    removePlantPhotoFiles,
+    removePlantPhotoFilesIfUnreferenced,
+    suggestSpeciesFromPhoto
+}
 
 let popularSpeciesCache = null
 
@@ -107,6 +139,17 @@ function writePopularSpeciesCache(limit, payload) {
 
 function invalidatePopularSpeciesCache() {
     popularSpeciesCache = null
+}
+
+async function readPlantPhotoBuffer(photoPath) {
+    const filePath = path.join(PLANT_PHOTO_DIRECTORY, path.basename(photoPath))
+    const fileStats = await stat(filePath)
+    if (!fileStats.isFile()) {
+        const error = new Error('Фотография должна быть предварительно загружена на сервер')
+        error.code = 'ENOENT'
+        throw error
+    }
+    return readFile(filePath)
 }
 
 function computeHoursLate(scheduledFor, actionAt) {
@@ -184,7 +227,7 @@ function serializePhoto(photo) {
     }
 }
 
-function serializePlantWithWateringState(plant, { now, timeZone, policy }) {
+export function serializePlantWithWateringState(plant, { now, timeZone, policy }) {
     const source = plant && typeof plant.toJSON === 'function' ? plant.toJSON() : { ...plant }
     if (Array.isArray(source.photos)) {
         source.photos = source.photos.map(serializePhoto)
@@ -233,6 +276,118 @@ function missedScheduleFields({ state, slot, now, policy, missed }) {
 }
 
 class PlantController {
+    constructor(deps = {}) {
+        this.models = { ...DEFAULT_MODELS, ...(deps.models || {}) }
+        this.services = { ...DEFAULT_SERVICES, ...(deps.services || {}) }
+
+        for (const name of Object.getOwnPropertyNames(PlantController.prototype)) {
+            if (name !== 'constructor' && typeof this[name] === 'function') {
+                this[name] = this[name].bind(this)
+            }
+        }
+    }
+
+    async healthCheck(req, res) {
+        try {
+            const userId = getUserId(req)
+            if (!userId) return res.status(401).json({ message: 'Не авторизован' })
+
+            const plant = await this.models.Plant.findOne({
+                where: { id: req.params.id, user_id: userId }
+            })
+            if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const questionResult = normalizeHealthCheckQuestion(req.body?.question)
+            if (!questionResult.ok) {
+                return res.status(400).json({ message: 'Вопрос должен быть строкой' })
+            }
+
+            const file = Array.isArray(req.files) ? req.files[0] : req.file
+            let imageBuffer = null
+            let photoUrl = ''
+
+            if (file?.buffer?.length) {
+                imageBuffer = file.buffer
+            } else {
+                const rawPhotoUrl = req.body?.photoUrl
+                if (typeof rawPhotoUrl !== 'string' || !rawPhotoUrl.trim()) {
+                    return res.status(400).json({ message: 'Загрузите фото растения или укажите photoUrl' })
+                }
+                const photoPath = getUploadedPlantPhotoPath(rawPhotoUrl)
+                if (!photoPath) {
+                    return res.status(400).json({ message: 'Некорректная ссылка на фото растения' })
+                }
+                photoUrl = rawPhotoUrl.trim().startsWith('/')
+                    ? `${req.protocol}://${req.get('host')}${photoPath}`
+                    : rawPhotoUrl.trim()
+
+                try {
+                    imageBuffer = await this.services.readPlantPhotoBuffer(photoPath)
+                } catch (error) {
+                    if (error?.code === 'ENOENT') {
+                        return res.status(400).json({
+                            message: 'Фотография должна быть предварительно загружена на сервер'
+                        })
+                    }
+                    throw error
+                }
+                if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+                    return res.status(400).json({
+                        message: 'Фотография должна быть предварительно загружена на сервер'
+                    })
+                }
+            }
+
+            let result
+            try {
+                result = await this.services.analyzePlantPhoto({
+                    imageBuffers: [imageBuffer],
+                    question: questionResult.question,
+                    plantName: plant.name,
+                    location: plant.location,
+                    timeZone: getUserAiLocale(req).timeZone
+                })
+            } catch (error) {
+                console.error('❌ Ошибка анализа здоровья растения:', error?.message || error)
+                const mapped = mapVisionErrorResponse(error, {
+                    unavailableMessage: 'Сервис проверки здоровья временно недоступен'
+                })
+                return res.status(mapped.status).json({ message: mapped.message })
+            }
+
+            const record = buildHealthCheckRecord({
+                text: result?.text,
+                diagnosis: result?.diagnosis ?? null,
+                photoUrl,
+                createdAt: new Date()
+            })
+
+            await plant.update({
+                metadata: mergePlantHealthCheck(plant.metadata, record)
+            })
+
+            if (photoUrl) {
+                try {
+                    const photo = await this.models.PlantPhoto.findOne({
+                        where: { plant_id: plant.id, url: photoUrl }
+                    })
+                    if (photo) {
+                        await photo.update({
+                            metadata: mergePhotoDiagnosisMetadata(photo.metadata, record)
+                        })
+                    }
+                } catch (error) {
+                    console.warn('⚠️ Не удалось сохранить диагноз в metadata фото:', error?.message || error)
+                }
+            }
+
+            return res.json(buildHealthCheckResponse(record))
+        } catch (error) {
+            console.error('❌ Ошибка проверки здоровья растения:', error)
+            return res.status(500).json({ message: 'Ошибка сервера' })
+        }
+    }
+
     async suggestSpecies(req, res) {
         const plantName = req.body?.name
         if (typeof plantName !== 'string' || !plantName.trim() || plantName.trim().length > 255) {
@@ -267,9 +422,9 @@ class PlantController {
         }
 
         try {
-            const result = await suggestSpeciesFromPhoto({ imageBuffer: file.buffer })
+            const result = await this.services.suggestSpeciesFromPhoto({ imageBuffer: file.buffer })
             const top = Array.isArray(result.suggestions) ? result.suggestions[0] : null
-            logAiAdvice({
+            this.services.logAiAdvice({
                 userId: getUserId(req),
                 kind: 'species',
                 plantName: top?.name,
@@ -284,10 +439,11 @@ class PlantController {
                 generatedAt: new Date().toISOString()
             })
         } catch (error) {
-            console.error('❌ Ошибка подсказки вида по фото:', error?.message || error)
-            return res.status(503).json({
-                message: 'Сервис подсказки вида по фото временно недоступен'
+            console.error('❌ Ошибка подсказки вида по фото:', error?.code || error?.message || error)
+            const mapped = mapVisionErrorResponse(error, {
+                unavailableMessage: 'Сервис подсказки вида по фото временно недоступен'
             })
+            return res.status(mapped.status).json({ message: mapped.message })
         }
     }
 
@@ -906,10 +1062,19 @@ class PlantController {
                 return res.status(400).json({ message: 'Некорректный список фотографий' })
             }
 
-            const plant = await Plant.findOne({
+            const plant = await this.models.Plant.findOne({
                 where: { id: req.params.id, user_id: userId }
             })
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
+
+            const galleryCount = await this.models.PlantPhoto.count({
+                where: { plant_id: plant.id }
+            })
+            if (isPlantPhotoGalleryFull(galleryCount, photos.length)) {
+                return res.status(400).json({
+                    message: `В галерее растения уже ${Number(galleryCount) || 0} фото — больше ${PLANT_PHOTO_GALLERY_MAX} хранить нельзя`
+                })
+            }
 
             const normalizedPhotos = []
             for (const photo of photos) {
@@ -945,7 +1110,7 @@ class PlantController {
 
             transaction = await sequelize.transaction()
             if (normalizedPhotos.some(p => p.is_main)) {
-                await PlantPhoto.update(
+                await this.models.PlantPhoto.update(
                     { is_main: false },
                     { where: { plant_id: plant.id }, transaction }
                 )
@@ -957,7 +1122,7 @@ class PlantController {
                 url: p.url
             }))
 
-            const created = await PlantPhoto.bulkCreate(rows, { transaction })
+            const created = await this.models.PlantPhoto.bulkCreate(rows, { transaction })
             await transaction.commit()
             return res.status(201).json(created.map(photo =>
                 serializePlantPhoto(photo, { thumbUrl: plantThumbUrl(photo.url) })
@@ -1007,14 +1172,14 @@ class PlantController {
             const userId = getUserId(req)
             if (!userId) return res.status(401).json({ message: 'Не авторизован' })
 
-            const plant = await Plant.findOne({
+            const plant = await this.models.Plant.findOne({
                 where: { id: req.params.id, user_id: userId },
                 attributes: ['id']
             })
             if (!plant) return res.status(404).json({ message: 'Растение не найдено' })
 
             const photoId = Number(req.params.photoId)
-            const photo = await PlantPhoto.findOne({
+            const photo = await this.models.PlantPhoto.findOne({
                 where: { id: photoId, plant_id: plant.id }
             })
             if (!photo) return res.status(404).json({ message: 'Фотография не найдена' })
@@ -1024,13 +1189,15 @@ class PlantController {
             await photo.destroy()
 
             if (wasMain) {
-                const rest = await PlantPhoto.findAll({ where: { plant_id: plant.id } })
+                const rest = await this.models.PlantPhoto.findAll({ where: { plant_id: plant.id } })
                 const next = pickNextMainPhoto(rest)
                 if (next) await next.update({ is_main: true })
             }
 
             try {
-                await removePlantPhotoFiles([photoUrl])
+                await this.services.removePlantPhotoFilesIfUnreferenced(photoUrl, {
+                    countReferences: url => this.models.PlantPhoto.count({ where: { url } })
+                })
             } catch (error) {
                 console.warn('⚠️ Не удалось удалить файлы фото растения:', error?.message || error)
             }
@@ -2386,4 +2553,5 @@ class PlantController {
     }
 }
 
+export { PlantController }
 export default new PlantController()

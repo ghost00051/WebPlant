@@ -1,5 +1,6 @@
 export const SHARE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,64}$/
 export const SHARE_TOKEN_STORAGE_KEY = 'webplant-garden-share-token'
+export const SHARE_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
 export const SHARE_UTM_SOURCE = 'share'
 export const SHARE_UTM_MEDIUM = 'garden'
 export const SHARE_UTM_CAMPAIGN_PARAM = 'utm_campaign'
@@ -72,13 +73,41 @@ function getStorage () {
   }
 }
 
+function parseStoredShare (raw) {
+  if (typeof raw !== 'string' || !raw) return null
+
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    parsed = null
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    return {
+      token: typeof parsed.token === 'string' ? parsed.token : '',
+      savedAt: Number(parsed.savedAt)
+    }
+  }
+
+  return { token: raw, savedAt: Number.NaN }
+}
+
+function writeStoredShare (storage, token, savedAt = Date.now()) {
+  storage.setItem(SHARE_TOKEN_STORAGE_KEY, JSON.stringify({ token, savedAt }))
+}
+
+function isStoredShareExpired (savedAt, now = Date.now()) {
+  if (!Number.isFinite(savedAt) || savedAt <= 0) return false
+  return now - savedAt > SHARE_TOKEN_TTL_MS
+}
+
 export function rememberShareToken (token) {
   if (!isValidShareToken(token)) return false
   const storage = getStorage()
   if (!storage) return false
 
   try {
-    storage.setItem(SHARE_TOKEN_STORAGE_KEY, token)
+    writeStoredShare(storage, token)
     return true
   } catch {
     return false
@@ -91,7 +120,19 @@ export function readShareToken () {
 
   try {
     const stored = storage.getItem(SHARE_TOKEN_STORAGE_KEY)
-    return isValidShareToken(stored) ? stored : null
+    const record = parseStoredShare(stored)
+    if (!record || !isValidShareToken(record.token)) return null
+
+    if (isStoredShareExpired(record.savedAt)) {
+      storage.removeItem(SHARE_TOKEN_STORAGE_KEY)
+      return null
+    }
+
+    if (!Number.isFinite(record.savedAt)) {
+      writeStoredShare(storage, record.token)
+    }
+
+    return record.token
   } catch {
     return null
   }

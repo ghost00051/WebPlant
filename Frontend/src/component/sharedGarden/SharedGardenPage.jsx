@@ -144,7 +144,7 @@ function SharedGardenContent ({ token }) {
     rememberAddPlantDraft(wantedPlant)
 
     if (isViewerAuthenticated(viewerSession)) {
-      navigate('/add-plant')
+      navigate('/add-plant?handoff=1')
       return
     }
 
@@ -162,7 +162,7 @@ function SharedGardenContent ({ token }) {
     if (wantedPlants.length) rememberAddPlantDraft(wantedPlants[0])
 
     if (isViewerAuthenticated(viewerSession)) {
-      navigate(wantedPlants.length ? '/add-plant' : '/home')
+      navigate(wantedPlants.length ? '/add-plant?handoff=1' : '/home')
       return
     }
 

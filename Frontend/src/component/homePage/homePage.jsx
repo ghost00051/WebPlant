@@ -258,6 +258,7 @@ function HomePage ({
   const [now, setNow] = useState(new Date())
   const [isLoading, setIsLoading] = useState(true)
   const [dataError, setDataError] = useState('')
+  const [actionError, setActionError] = useState('')
   const [badgeText, setBadgeText] = useState('')
   const [offScheduleTarget, setOffScheduleTarget] = useState(null)
   const [pouringOffSchedule, setPouringOffSchedule] = useState(null)
@@ -503,6 +504,7 @@ function HomePage ({
   const loadHomeData = useCallback(
     async ({ showLoading = false } = {}) => {
       setDataError('')
+      setActionError('')
       if (showLoading) setIsLoading(true)
 
       const results = await Promise.allSettled([
@@ -540,7 +542,6 @@ function HomePage ({
   )
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadHomeData()
     getNotifications()
   }, [loadHomeData, getNotifications])
@@ -652,7 +653,6 @@ function HomePage ({
       return
     }
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setOnboarding({
       plant: {
         id: existing.id,
@@ -785,7 +785,7 @@ function HomePage ({
       )
     } catch (error) {
       console.error('Ошибка отметки первого полива:', error)
-      setDataError(
+      setActionError(
         error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
       )
     } finally {
@@ -829,6 +829,7 @@ function HomePage ({
 
   const waterPlant = async (plantId, { onTime = true } = {}) => {
     if (!plantId || wateringId) return false
+    setActionError('')
     setWateringId(plantId)
 
     try {
@@ -864,7 +865,7 @@ function HomePage ({
       return true
     } catch (error) {
       console.error('Ошибка полива:', error)
-      setDataError(
+      setActionError(
         error.message || 'Не удалось отметить полив. Попробуйте ещё раз.'
       )
       setWateringId(null)
@@ -894,7 +895,7 @@ function HomePage ({
       return true
     } catch (error) {
       console.error('Ошибка удаления записи о поливе:', error)
-      setDataError(error.message || 'Не удалось удалить запись о поливе.')
+      setActionError(error.message || 'Не удалось удалить запись о поливе.')
       return false
     } finally {
       setDeletingWateringId(null)
@@ -964,6 +965,7 @@ function HomePage ({
       await loadHomeData()
       return {
         ok: true,
+        alreadyWatered,
         convertedSkip: Boolean(result?.data?.converted_skip)
       }
     } catch (error) {
@@ -1067,12 +1069,10 @@ function HomePage ({
   useEffect(() => {
     const key = firstDayPlant ? firstDayDismissKey(firstDayPlant.id, now) : ''
     if (!key) return
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setFirstDayDismissed(readStoredFlag(key))
   }, [firstDayPlant, now])
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setInsightSeen(readStoredFlag(insightKey))
   }, [insightKey])
 
@@ -1262,7 +1262,11 @@ function HomePage ({
       return
     }
     if (result.queued) return
-    showWateringNotice('Полив отмечен — пропуск обновлён в календаре.')
+    showWateringNotice(
+      result.alreadyWatered
+        ? 'Полив за этот день уже отмечен — календарь обновлён.'
+        : 'Полив отмечен — пропуск обновлён в календаре.'
+    )
   }
 
   const dismissFirstDay = () => {
@@ -1421,7 +1425,7 @@ function HomePage ({
       console.error('Ошибка отметки ухода:', error)
       const message =
         error?.message || 'Не удалось отметить уход. Попробуйте ещё раз.'
-      setDataError(message)
+      setActionError(message)
       setSheetNotice(message)
     } finally {
       setCareMarkingKey('')
@@ -1820,6 +1824,14 @@ function HomePage ({
             role='tabpanel'
             aria-labelledby={WATERING_TAB_ID(wateringTab)}
           >
+            {actionError && (
+              <p className='homePageDataError' role='alert'>
+                {actionError}
+                <button type='button' onClick={() => setActionError('')}>
+                  Скрыть
+                </button>
+              </p>
+            )}
             {dataError && (
               <p className='homePageDataError' role='alert'>
                 {dataError}

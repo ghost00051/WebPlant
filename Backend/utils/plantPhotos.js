@@ -115,10 +115,24 @@ export function pickNextMainPhoto(photos = []) {
     return list.length ? list[0] : null
 }
 
+export function isPlantPhotoGalleryFull(
+    existingCount,
+    incomingCount = 1,
+    max = PLANT_PHOTO_GALLERY_MAX
+) {
+    const existing = Number(existingCount)
+    const incoming = Number(incomingCount)
+    const limit = Number.isInteger(max) && max > 0 ? max : PLANT_PHOTO_GALLERY_MAX
+    if (!Number.isFinite(existing) || existing < 0) return false
+    if (!Number.isFinite(incoming) || incoming < 1) return false
+    return existing + incoming > limit
+}
+
 export default {
     PLANT_PHOTO_GALLERY_MAX,
     PLANT_PHOTO_NOTE_MAX_LENGTH,
     buildPlantPhotoRow,
+    isPlantPhotoGalleryFull,
     isValidPhotoInput,
     isValidPhotoNote,
     isValidPhotoTakenAt,

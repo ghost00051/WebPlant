@@ -1,4 +1,8 @@
-import { DELIVERY_MODE_DIGEST, DELIVERY_MODE_PER_PLANT } from '../../utils/notificationsExtraApi.js'
+import {
+  DELIVERY_MODE_DIGEST,
+  DELIVERY_MODE_PER_PLANT,
+  LOCAL_ONLY_NOTICE
+} from '../../utils/notificationsExtraApi.js'
 
 function NotificationSettingsBar({
   deliveryMode,
@@ -6,6 +10,7 @@ function NotificationSettingsBar({
   quietSummary,
   channelsSummary,
   saving,
+  localOnly = false,
   status,
   onOpenChannels,
   onOpenQuiet
@@ -17,9 +22,10 @@ function NotificationSettingsBar({
     <section className='notificationsSettings' aria-label='Настройки уведомлений'>
       <div className='notificationsSettingsRow'>
         <div
-          className='notificationsMode'
+          className={`notificationsMode${localOnly ? ' is-local-only' : ''}`}
           role='group'
           aria-label='Режим уведомлений'
+          aria-describedby={localOnly ? 'notificationsLocalOnlyNote' : undefined}
         >
           <button
             type='button'
@@ -39,6 +45,9 @@ function NotificationSettingsBar({
           >
             По растениям
           </button>
+          {localOnly && (
+            <span className='notificationsSettingsBadge'>не применено</span>
+          )}
         </div>
 
         <div className='notificationsSettingsButtons'>
@@ -70,6 +79,16 @@ function NotificationSettingsBar({
           ? 'Одна сводка в день вместо сообщений по каждому растению.'
           : 'Отдельное напоминание по каждому растению — как раньше.'}
       </p>
+
+      {localOnly && (
+        <p
+          id='notificationsLocalOnlyNote'
+          className='notificationsSettingsStatus notificationsSettingsStatus--warning'
+          role='status'
+        >
+          {LOCAL_ONLY_NOTICE}
+        </p>
+      )}
 
       {status?.text && (
         <p

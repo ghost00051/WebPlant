@@ -129,6 +129,26 @@ export async function linkGuestDataToUser(
     return result
 }
 
+function toNonNegativeCount(value) {
+    const parsed = Number(value)
+    return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : 0
+}
+
+export function buildGuestLinkSummary(result = {}) {
+    const chatMessages = toNonNegativeCount(result?.chatMessageCount)
+    const chatSessions = toNonNegativeCount(result?.chatSessionCount)
+    const diagnoses = toNonNegativeCount(result?.diagnosisCount)
+    const consents = toNonNegativeCount(result?.consentCount)
+
+    return {
+        linked: chatMessages + consents > 0,
+        chatMessages,
+        chatSessions,
+        diagnoses,
+        consents
+    }
+}
+
 export function describeGuestLinkSummary(result = {}) {
     const parts = []
     const consentCount = Number(result.consentCount) || 0
@@ -145,6 +165,7 @@ export function describeGuestLinkSummary(result = {}) {
 export default {
     DEFAULT_LINK_MODELS,
     GUEST_LINK_SOURCES,
+    buildGuestLinkSummary,
     describeGuestLinkSummary,
     linkGuestDataToUser
 }

@@ -4,6 +4,7 @@ import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { subscribeToNotificationsRefresh } from '../../utils/notificationSync.js'
 import {
   describeStreakBreak,
+  normalizeBreakReason,
   normalizeStreakFreeze
 } from '../../utils/careStreakExtra.js'
 import {
@@ -27,8 +28,6 @@ function CareStreakCard ({ refreshSignal = 0 }) {
   const [unavailable, setUnavailable] = useState(false)
   const [reloadId, setReloadId] = useState(0)
   const [extras, setExtras] = useState(null)
-  const [freezeBusy, setFreezeBusy] = useState(false)
-  const [freezeNotice, setFreezeNotice] = useState('')
   const lastLoadAtRef = useRef(0)
   const lastRefreshEventAtRef = useRef(0)
 
@@ -82,8 +81,7 @@ function CareStreakCard ({ refreshSignal = 0 }) {
         if (!active || !data || typeof data !== 'object') return
         setExtras({
           freeze: normalizeStreakFreeze(data),
-          breakReason:
-            typeof data.breakReason === 'string' ? data.breakReason : ''
+          breakReason: normalizeBreakReason(data)
         })
       } catch (error) {
         console.warn('Не удалось загрузить детали серии ухода:', error)
@@ -115,50 +113,6 @@ function CareStreakCard ({ refreshSignal = 0 }) {
     setError('')
     setUnavailable(false)
     setReloadId(value => value + 1)
-  }
-
-  const handleFreeze = async () => {
-    if (freezeBusy) return
-    setFreezeBusy(true)
-    setFreezeNotice('')
-
-    try {
-      const response = await fetchWithTimeout(
-        `${API_URL}/users/me/care-streak/freeze`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-          credentials: 'include'
-        }
-      )
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        if (
-          response.status === 404 ||
-          response.status === 405 ||
-          response.status === 501
-        ) {
-          setExtras(current => (current ? { ...current, freeze: null } : current))
-          setFreezeNotice('Заморозка пока недоступна — загляните позже')
-          return
-        }
-        throw new Error(
-          data.message || `Не удалось заморозить серию: HTTP ${response.status}`
-        )
-      }
-
-      setFreezeNotice('Пропуск заморожен — серия сохранена')
-      setReloadId(value => value + 1)
-    } catch (error) {
-      console.error('Ошибка заморозки серии:', error)
-      setFreezeNotice(
-        error?.message || 'Не удалось заморозить серию. Попробуйте ещё раз.'
-      )
-    } finally {
-      setFreezeBusy(false)
-    }
   }
 
   if (!streak && unavailable) return null
@@ -296,33 +250,16 @@ function CareStreakCard ({ refreshSignal = 0 }) {
           )}
 
           {freeze && freeze.available && (
-            <div className='careStreakFreeze' role='group' aria-label='Заморозка серии'>
+            <div className='careStreakFreeze' role='note' aria-label='Заморозка серии'>
               <div className='careStreakFreezeText'>
                 <p className='careStreakFreezeTitle'>Заморозка серии</p>
                 <p>
                   {freeze.used
-                    ? 'На этой неделе заморозка уже использована — берегите следующий пропуск.'
-                    : 'Один пропуск в неделю не прервёт серию: заморозим день.'}
+                    ? 'На этой неделе первый пропуск уже прощён автоматически — берегите следующий: он прервёт серию.'
+                    : 'Первый пропуск в неделю прощается автоматически — отдельная кнопка не нужна.'}
                 </p>
               </div>
-              {freeze.canFreeze && breakInfo && (
-                <button
-                  type='button'
-                  className='careStreakFreezeButton'
-                  onClick={handleFreeze}
-                  disabled={freezeBusy}
-                  aria-busy={freezeBusy || undefined}
-                >
-                  {freezeBusy ? 'Замораживаем…' : 'Заморозить'}
-                </button>
-              )}
             </div>
-          )}
-
-          {freezeNotice && (
-            <p className='careStreakNotice' role='status' aria-live='polite'>
-              {freezeNotice}
-            </p>
           )}
 
           {recap && (

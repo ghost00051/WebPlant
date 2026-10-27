@@ -27,6 +27,27 @@ function subscribeToSystemTheme(callback) {
     return () => mediaQuery.removeEventListener('change', callback)
 }
 
+const PUBLIC_AUTH_ROUTES = new Set(['/', '/login', '/register'])
+const GARDEN_ROUTE_PATTERN = /^\/garden\/[A-Za-z0-9_-]{16,64}$/
+
+const PRIVATE_ROUTE_PREFIXES = [
+    '/home',
+    '/my-plants',
+    '/notifications',
+    '/add-plant',
+    '/edit-profile'
+]
+
+function isPublicContentRoute(pathname) {
+    if (typeof pathname !== 'string' || !pathname) return false
+    const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname
+    if (PUBLIC_AUTH_ROUTES.has(path)) return true
+    if (GARDEN_ROUTE_PATTERN.test(path)) return true
+    return !PRIVATE_ROUTE_PREFIXES.some(
+        prefix => path === prefix || path.startsWith(`${prefix}/`)
+    )
+}
+
 export function ThemeProvider({ children }) {
     const [themeMode, setThemeModeState] = useState(getStoredThemeMode)
     const preferencesLoadedRef = useRef(false)
@@ -37,7 +58,7 @@ export function ThemeProvider({ children }) {
     )
     const theme = themeMode === 'system' ? systemTheme : themeMode
     const location = useLocation()
-    const isPublicRoute = ['/', '/login', '/register'].includes(location.pathname)
+    const isPublicRoute = isPublicContentRoute(location.pathname)
 
     useEffect(() => {
         document.documentElement.dataset.theme = theme

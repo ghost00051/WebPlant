@@ -35,6 +35,7 @@ import {
 import {
     fetchPlantPhotos,
     formatCheckDate,
+    healthCheckFromPlant,
     healthCheckLabel,
     isFeatureUnavailable,
     normalizePhotoList,
@@ -169,22 +170,60 @@ function MyPlant() {
     const [wateringId, setWateringId] = useState(null)
     const [waterNotice, setWaterNotice] = useState(null)
     const [shareBusyId, setShareBusyId] = useState(null)
+    const [shareConfirmPlant, setShareConfirmPlant] = useState(null)
     const [healthChecks, setHealthChecks] = useState(readHealthChecks)
     const [healthBusyId, setHealthBusyId] = useState(null)
     const [healthDialog, setHealthDialog] = useState(null)
     const [growthDialog, setGrowthDialog] = useState(null)
-    const [multiAdded] = useState(() => {
-        const added = Number(location.state?.addedPlants)
-        return Number.isInteger(added) && added > 0 ? added : 0
+    const [multiAddResult] = useState(() => {
+        const addedRaw = Number(location.state?.addedPlants)
+        const created = Number.isInteger(addedRaw) && addedRaw > 0 ? addedRaw : 0
+        const failedRaw = Array.isArray(location.state?.addedPlantsFailed)
+            ? location.state.addedPlantsFailed
+            : []
+        const failed = []
+        for (const value of failedRaw) {
+            const name = typeof value === 'string'
+                ? value.trim()
+                : (value && typeof value.name === 'string' ? value.name.trim() : '')
+            if (name && !failed.includes(name)) failed.push(name)
+        }
+        return { created, failed, total: created + failed.length }
     })
+    const multiAdded = multiAddResult.created
     const [multiAddedDismissed, setMultiAddedDismissed] = useState(false)
     const healthFileInputRef = useRef(null)
     const pendingHealthPlantRef = useRef(null)
     const deepLinkHandledRef = useRef('')
     const editDialogRef = useRef(null)
     const healthRetryRef = useRef(null)
+    const healthRequestRef = useRef(null)
+    const healthRequestSeqRef = useRef(0)
     const previousFocusRef = useRef(null)
     const wasEditingRef = useRef(false)
+
+    const cancelHealthCheck = useCallback(() => {
+        const active = healthRequestRef.current
+        healthRequestRef.current = null
+        if (active?.controller && typeof active.controller.abort === 'function') {
+            try {
+                active.controller.abort()
+            } catch {
+                void 0
+            }
+        }
+        return Boolean(active)
+    }, [])
+
+    const closeHealthDialog = useCallback(() => {
+        cancelHealthCheck()
+        setHealthBusyId(null)
+        setHealthDialog(null)
+    }, [cancelHealthCheck])
+
+    useEffect(() => () => {
+        cancelHealthCheck()
+    }, [cancelHealthCheck])
 
     const getAllPlant = useCallback(async (options = {}) => {
         const silent = Boolean(options) && options.silent === true
@@ -255,22 +294,28 @@ function MyPlant() {
     }, [waterNotice])
 
     useEffect(() => {
-        if (!multiAdded || multiAddedDismissed) return undefined
+        if (!multiAdded || multiAddedDismissed || multiAddResult.failed.length > 0) return undefined
         const timer = window.setTimeout(() => setMultiAddedDismissed(true), 9000)
         return () => window.clearTimeout(timer)
-    }, [multiAdded, multiAddedDismissed])
+    }, [multiAdded, multiAddedDismissed, multiAddResult.failed.length])
 
     useEffect(() => {
-        if (!editingPlant && !deleteTarget && !healthDialog && !growthDialog) return undefined
+        if (!editingPlant && !deleteTarget && !healthDialog && !growthDialog && !shareConfirmPlant) {
+            return undefined
+        }
 
         const handleKeyDown = event => {
             if (event.key !== 'Escape' || isSaving || isDeleting) return
             if (healthDialog) {
-                setHealthDialog(null)
+                closeHealthDialog()
                 return
             }
             if (growthDialog) {
                 setGrowthDialog(null)
+                return
+            }
+            if (shareConfirmPlant) {
+                setShareConfirmPlant(null)
                 return
             }
             if (editingPlant && isWateringAdviceOpen) {
@@ -285,7 +330,17 @@ function MyPlant() {
 
         window.addEventListener('keydown', handleKeyDown)
         return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [editingPlant, deleteTarget, isSaving, isDeleting, isWateringAdviceOpen, healthDialog, growthDialog])
+    }, [
+        editingPlant,
+        deleteTarget,
+        isSaving,
+        isDeleting,
+        isWateringAdviceOpen,
+        healthDialog,
+        growthDialog,
+        shareConfirmPlant,
+        closeHealthDialog
+    ])
 
     const openEditor = useCallback(selectedPlant => {
         const activeElement = typeof document === 'undefined' ? null : document.activeElement
@@ -523,14 +578,17 @@ function MyPlant() {
         }
     }
 
-    const closeHealthDialog = () => {
-        if (healthBusyId) return
-        setHealthDialog(null)
-    }
-
     const runHealthCheck = async (item, file = null) => {
         if (!item?.id) return
+        if (healthRequestRef.current) return
         if (healthBusyId) return
+
+        const token = {
+            id: healthRequestSeqRef.current + 1,
+            controller: new AbortController()
+        }
+        healthRequestSeqRef.current = token.id
+        healthRequestRef.current = token
 
         healthRetryRef.current = () => runHealthCheck(item, file)
         setHealthBusyId(item.id)
@@ -540,19 +598,25 @@ function MyPlant() {
             const check = await requestPlantHealthCheck(item.id, {
                 photoUrl: file ? '' : (mainPhotoUrl(item) || ''),
                 file,
-                question: `Проверка здоровья растения «${item.name}»`
+                question: `Проверка здоровья растения «${item.name}»`,
+                signal: token.controller.signal
             })
+            if (healthRequestRef.current !== token) return
             if (!check) throw new Error('Сервер не вернул результат проверки')
             setHealthChecks(saveHealthCheck(item.id, check))
             setHealthDialog({ plant: item, status: 'ready', check, message: '' })
         } catch (error) {
+            if (healthRequestRef.current !== token) return
             console.error('Ошибка проверки здоровья:', error)
             const message = isFeatureUnavailable(error)
                 ? 'Проверка здоровья по фото пока недоступна: сервер ещё не обновлён. Можно спросить в чате — пришлите фото там.'
                 : error.message || 'Не удалось проверить здоровье. Попробуйте ещё раз.'
             setHealthDialog({ plant: item, status: 'error', check: null, message })
         } finally {
-            setHealthBusyId(null)
+            if (healthRequestRef.current === token) {
+                healthRequestRef.current = null
+                setHealthBusyId(null)
+            }
         }
     }
 
@@ -614,31 +678,37 @@ function MyPlant() {
                 }
             } catch (error) {
                 console.warn('Не удалось получить ссылку на сад:', error)
-            }
-            if (!url) {
-                url = `${window.location.origin}/my-plants`
-            }
-
-            const title = `«${item.name}» в «Лейке»`
-            const text = item.species
-                ? `Моё растение «${item.name}» (${item.species}) в «Лейке» — сервисе ухода за комнатными растениями.`
-                : GARDEN_SHARE_TITLE
-
-            trackEvent('share_clicked', { scope: 'plant' })
-            const result = await shareGardenLink({ url, title, text })
-            if (result === 'shared') {
-                setWaterNotice({ tone: 'ok', text: 'Спасибо, что делитесь растением!' })
-            } else if (result === 'copied') {
-                setWaterNotice({ tone: 'ok', text: 'Ссылка скопирована — можно отправить другу' })
-            } else if (result === 'cancelled') {
+                const message = typeof error?.message === 'string' && error.message.trim()
+                    ? error.message.trim()
+                    : ''
                 setWaterNotice({
                     tone: 'error',
-                    text: 'Не удалось поделиться. Скопируйте ссылку из адресной строки.'
+                    text: message || 'Не удалось создать публичную ссылку на сад. Проверьте подключение и попробуйте ещё раз.'
                 })
+                return
+            }
+            if (!url) {
+                setWaterNotice({
+                    tone: 'error',
+                    text: 'Не удалось получить публичную ссылку на сад. Попробуйте ещё раз.'
+                })
+                return
+            }
+
+            const title = GARDEN_SHARE_TITLE
+            const text = 'Мой сад в «Лейке» — коллекция комнатных растений и напоминания об уходе. Посмотрите, что у меня растёт.'
+            trackEvent('share_clicked', { scope: 'garden' })
+            const result = await shareGardenLink({ url, title, text })
+            if (result === 'shared') {
+                setWaterNotice({ tone: 'ok', text: 'Спасибо! Публичная ссылка на сад отправлена.' })
+            } else if (result === 'copied') {
+                setWaterNotice({ tone: 'ok', text: 'Ссылка на сад скопирована — можно отправить другу' })
+            } else {
+                setWaterNotice({ tone: 'info', text: 'Шаринг отменён — ссылка не отправлена.' })
             }
         } catch (error) {
-            console.error('Ошибка шаринга растения:', error)
-            setWaterNotice({ tone: 'error', text: 'Не удалось поделиться растением' })
+            console.error('Ошибка шаринга сада:', error)
+            setWaterNotice({ tone: 'error', text: 'Не удалось поделиться садом. Попробуйте ещё раз.' })
         } finally {
             setShareBusyId(null)
         }
@@ -722,7 +792,31 @@ function MyPlant() {
                 )}
             </div>
 
-            {multiAdded > 0 && !multiAddedDismissed && (
+            {multiAddResult.failed.length > 0 && (
+                <div className='plantListMessage' role='alert'>
+                    <p>
+                        <b>Добавлено {multiAddResult.created} из {multiAddResult.total}.</b>{' '}
+                        Не добавлены: {multiAddResult.failed.map(name => `«${name}»`).join(', ')}.
+                    </p>
+                    <p>Можно попробовать ещё раз или добавить их вручную.</p>
+                    <div className='plantListMessageActions'>
+                        <button type='button' onClick={() => navigate('/add-plant?multi=1')}>
+                            Повторить добавление
+                        </button>
+                        {multiAddResult.failed.map(name => (
+                            <button
+                                key={name}
+                                type='button'
+                                onClick={() => navigate(`/add-plant?name=${encodeURIComponent(name)}`)}
+                            >
+                                Добавить «{name}»
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {multiAdded > 0 && multiAddResult.failed.length === 0 && !multiAddedDismissed && (
                 <div className='plantListNotice plantListNotice--success' role='status'>
                     <p>
                         Добавлено {multiAdded} {plural(multiAdded, ['растение', 'растения', 'растений'])}.
@@ -740,7 +834,11 @@ function MyPlant() {
 
             {waterNotice && (
                 <div
-                    className={`plantListNotice ${waterNotice.tone === 'error' ? 'plantListNotice--error' : 'plantListNotice--success'}`}
+                    className={`plantListNotice ${waterNotice.tone === 'error'
+                        ? 'plantListNotice--error'
+                        : waterNotice.tone === 'ok'
+                            ? 'plantListNotice--success'
+                            : 'plantListNotice--info'}`}
                     role={waterNotice.tone === 'error' ? 'alert' : 'status'}
                 >
                     <p>{waterNotice.text}</p>
@@ -821,7 +919,8 @@ function MyPlant() {
                         const lastCheck = pickLatestHealthCheck({
                             checks: healthChecks,
                             plantId: item.id,
-                            photos: item.photos
+                            photos: item.photos,
+                            serverCheck: healthCheckFromPlant(item)
                         })
                         const healthInfo = healthCheckLabel(lastCheck)
                         const isWatering = wateringId === item.id
@@ -940,9 +1039,10 @@ function MyPlant() {
                                     <button
                                         type='button'
                                         className='sharePlantButton'
-                                        onClick={() => sharePlant(item)}
+                                        onClick={() => setShareConfirmPlant(item)}
                                         disabled={shareBusyId === item.id}
                                         aria-busy={shareBusyId === item.id || undefined}
+                                        title='Поделиться публичной ссылкой на весь сад'
                                     >
                                         {shareBusyId === item.id ? 'Готовим ссылку…' : 'Поделиться'}
                                     </button>
@@ -1231,6 +1331,55 @@ function MyPlant() {
                 />
             )}
 
+            {shareConfirmPlant && (
+                <div
+                    className='plantDialogOverlay'
+                    onMouseDown={event => {
+                        if (event.target === event.currentTarget) setShareConfirmPlant(null)
+                    }}
+                >
+                    <section
+                        className='plantDialog plantShareDialog'
+                        role='alertdialog'
+                        aria-modal='true'
+                        aria-labelledby='shareGardenTitle'
+                        aria-describedby='shareGardenDescription'
+                    >
+                        <header className='plantDialogHeader'>
+                            <h2 id='shareGardenTitle'>Поделиться всем садом?</h2>
+                            <button
+                                type='button'
+                                onClick={() => setShareConfirmPlant(null)}
+                                aria-label='Закрыть подтверждение шаринга'
+                            >
+                                ×
+                            </button>
+                        </header>
+                        <p className='plantHealthText' id='shareGardenDescription'>
+                            Отдельной ссылки на одно растение нет. «Поделиться» создаёт публичную
+                            ссылку на весь ваш сад: получатель увидит все растения, их виды и
+                            интервалы полива. Создать публичную ссылку на сад и отправить её?
+                        </p>
+                        <div className='plantDialogActions'>
+                            <button type='button' onClick={() => setShareConfirmPlant(null)}>
+                                Отмена
+                            </button>
+                            <button
+                                type='button'
+                                className='plantShareConfirm'
+                                onClick={() => {
+                                    const target = shareConfirmPlant
+                                    setShareConfirmPlant(null)
+                                    void sharePlant(target)
+                                }}
+                            >
+                                Создать ссылку и поделиться
+                            </button>
+                        </div>
+                    </section>
+                </div>
+            )}
+
             {healthDialog && (
                 <div
                     className='plantDialogOverlay'
@@ -1250,7 +1399,6 @@ function MyPlant() {
                             <button
                                 type='button'
                                 onClick={closeHealthDialog}
-                                disabled={healthDialog.status === 'loading'}
                                 aria-label='Закрыть проверку здоровья'
                             >
                                 ×
@@ -1258,7 +1406,12 @@ function MyPlant() {
                         </header>
                         <p className='plantHealthPlant'>«{healthDialog.plant.name}»</p>
                         {healthDialog.status === 'loading' && (
-                            <p className='plantHealthStatus' role='status'>Смотрю фото растения…</p>
+                            <>
+                                <p className='plantHealthStatus' role='status'>Смотрю фото растения…</p>
+                                <div className='plantDialogActions'>
+                                    <button type='button' onClick={closeHealthDialog}>Отмена</button>
+                                </div>
+                            </>
                         )}
                         {healthDialog.status === 'error' && (
                             <>

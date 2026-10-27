@@ -4,6 +4,7 @@ import assert from 'node:assert/strict'
 import {
     CareStreakController,
     STREAK_EVENT_LIMIT,
+    buildFreezePayload,
     serializeLatestRecap
 } from './careStreakController.js'
 
@@ -143,6 +144,7 @@ test('loadCareStreak: ответ строго по контракту', async ()
 
     assert.deepEqual(Object.keys(result).sort(), [
         'best',
+        'breakReason',
         'current',
         'freeze',
         'lastWateredAt',
@@ -151,20 +153,32 @@ test('loadCareStreak: ответ строго по контракту', async ()
         'updatedAt',
         'week'
     ])
+    assert.equal(result.breakReason, '', 'INT-03: breakReason в корне, пустая строка без обрыва')
     assert.equal(result.current, 4)
     assert.equal(result.best, 4)
     assert.equal(result.lastWateredAt, '2026-11-01T06:00:00.000Z')
     assert.equal(result.updatedAt, NOW.toISOString())
     assert.equal(result.streakBreak, null)
     assert.deepEqual(Object.keys(result.freeze).sort(), [
+        'available',
         'availableThisWeek',
+        'canFreeze',
+        'daysLeft',
         'enabled',
+        'frozenDates',
         'perWeek',
         'used',
+        'usedFreezes',
         'usedThisWeek',
         'usedTotal',
         'weekStart'
     ])
+    assert.equal(result.freeze.available, true, 'INT-03: available для FE')
+    assert.equal(result.freeze.canFreeze, true, 'INT-03: canFreeze для FE')
+    assert.equal(result.freeze.used, false, 'INT-03: used boolean, заморозка не потрачена')
+    assert.deepEqual(result.freeze.frozenDates, [])
+    assert.deepEqual(result.freeze.usedFreezes, [])
+    assert.equal(result.freeze.daysLeft, 1)
     assert.equal(result.freeze.enabled, true)
     assert.equal(result.freeze.weekStart, WEEK_START)
     assert.equal(result.freeze.perWeek, 1)
@@ -225,7 +239,12 @@ test('loadCareStreak: без растений фото = 0, серия по по
     assert.equal(result.week.wateredLate, 1)
     assert.equal(result.freeze.usedThisWeek, 1)
     assert.equal(result.freeze.availableThisWeek, 0)
-    assert.equal(result.freeze.used[0].kind, 'late_watering')
+    assert.equal(result.freeze.available, false)
+    assert.equal(result.freeze.canFreeze, false)
+    assert.equal(result.freeze.used, true)
+    assert.deepEqual(result.freeze.frozenDates, ['2026-10-31'])
+    assert.equal(result.freeze.usedFreezes[0].kind, 'late_watering')
+    assert.equal(result.breakReason, '')
 })
 
 test('loadCareStreak: STREAK_FREEZES_PER_WEEK=0 отключает заморозки', async () => {
@@ -243,12 +262,45 @@ test('loadCareStreak: STREAK_FREEZES_PER_WEEK=0 отключает заморо�
         assert.equal(result.current, 1)
         assert.equal(result.best, 1)
         assert.equal(result.freeze.enabled, false)
+        assert.equal(result.freeze.available, false)
+        assert.equal(result.freeze.canFreeze, false)
+        assert.equal(result.freeze.used, false)
         assert.equal(result.streakBreak.reason, 'late_watering')
+        assert.equal(result.breakReason, 'late_watering', 'INT-03: breakReason из streakBreak.reason')
         assert.match(result.streakBreak.at, /^\d{4}-\d{2}-\d{2}T/)
     } finally {
         if (previous === undefined) delete process.env.STREAK_FREEZES_PER_WEEK
         else process.env.STREAK_FREEZES_PER_WEEK = previous
     }
+})
+
+test('buildFreezePayload: FE-поля из старого freeze-контракта', () => {
+    const payload = buildFreezePayload({
+        enabled: true,
+        perWeek: 2,
+        weekStart: '2026-10-26',
+        usedThisWeek: 1,
+        availableThisWeek: 1,
+        usedTotal: 3,
+        used: [
+            { at: '2026-10-31T09:00:00.000Z', localDate: '2026-10-31', weekStart: '2026-10-26', kind: 'late_watering', hoursLate: 25 },
+            { at: null, localDate: null, weekStart: '2026-10-26', kind: 'skipped' }
+        ]
+    })
+
+    assert.equal(payload.available, true)
+    assert.equal(payload.canFreeze, true)
+    assert.equal(payload.used, true)
+    assert.deepEqual(payload.frozenDates, ['2026-10-31'])
+    assert.equal(payload.usedFreezes.length, 2)
+    assert.equal(payload.daysLeft, 1)
+    assert.equal(payload.availableThisWeek, 1)
+
+    const empty = buildFreezePayload(null)
+    assert.equal(empty.available, false)
+    assert.equal(empty.canFreeze, false)
+    assert.equal(empty.used, false)
+    assert.deepEqual(empty.frozenDates, [])
 })
 
 test('loadCareStreak: старая схема без payload не ломает ответ', async () => {

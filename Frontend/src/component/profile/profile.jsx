@@ -53,6 +53,9 @@ function Profile () {
   const [plant, setPlant] = useState()
   const [history, setHistory] = useState()
   const [completion, setCompletion] = useState(null)
+  const [plantsLoadError, setPlantsLoadError] = useState('')
+  const [historyLoadError, setHistoryLoadError] = useState('')
+  const [completionLoadError, setCompletionLoadError] = useState('')
   const [careStreak, setCareStreak] = useState(null)
   const [passkeyCount, setPasskeyCount] = useState(null)
   const [passkeySupported, setPasskeySupported] = useState(false)
@@ -107,13 +110,20 @@ function Profile () {
         method: 'GET',
         credentials: 'include'
       })
-      if (response.ok) {
-        const data = await response.json()
-        const arr = data.length
-        setPlant(arr)
+      if (!response.ok) {
+        setPlantsLoadError('Не удалось загрузить растения.')
+        return
+      }
+      const data = await response.json()
+      if (Array.isArray(data)) {
+        setPlantsLoadError('')
+        setPlant(data.length)
+      } else {
+        setPlantsLoadError('Сервер вернул некорректный список растений.')
       }
     } catch (error) {
       console.error('Ошибка получения расписания:', error)
+      setPlantsLoadError('Не удалось загрузить растения.')
     }
   }, [])
 
@@ -123,15 +133,19 @@ function Profile () {
         method: 'GET',
         credentials: 'include'
       })
-      if (response.ok) {
-        const data = await response.json()
-        if (!Number.isInteger(data.total) || data.total < 0) {
-          throw new Error('Сервер вернул некорректное количество поливов')
-        }
-        setHistory(data.total)
+      if (!response.ok) {
+        setHistoryLoadError('Не удалось загрузить историю поливов.')
+        return
       }
+      const data = await response.json()
+      if (!Number.isInteger(data.total) || data.total < 0) {
+        throw new Error('Сервер вернул некорректное количество поливов')
+      }
+      setHistoryLoadError('')
+      setHistory(data.total)
     } catch (error) {
       console.error('Ошибка получения истории:', error)
+      setHistoryLoadError('Не удалось загрузить историю поливов.')
     }
   }, [])
 
@@ -141,14 +155,25 @@ function Profile () {
         method: 'GET',
         credentials: 'include'
       })
-      if (res.ok) {
-        const data = await res.json()
-        setCompletion(data)
+      if (!res.ok) {
+        setCompletionLoadError('Не удалось посчитать статистику поливов.')
+        return
       }
+      const data = await res.json()
+      setCompletionLoadError('')
+      setCompletion(data)
     } catch (e) {
       console.error('Ошибка completion:', e)
+      setCompletionLoadError('Не удалось посчитать статистику поливов.')
     }
   }, [])
+
+  const retryProfileStats = useCallback(() => {
+    setPlantsLoadError('')
+    setHistoryLoadError('')
+    setCompletionLoadError('')
+    void Promise.all([getAllPlant(), getPlantHistory(), getCompletion()])
+  }, [getAllPlant, getPlantHistory, getCompletion])
 
   useEffect(() => {
     const loadProfileData = async () => {
@@ -735,7 +760,9 @@ function Profile () {
                   : summaryError ||
                     (morningSummaryEnabled && !pushEnabled
                       ? 'Включите push на этом устройстве для получения сводки'
-                      : 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу')}
+                      : morningSummaryEnabled
+                      ? 'Каждый день в 9:00 по вашему часовому поясу: растения к поливу. Сводка — это режим «одна сводка на весь сад»; без неё приходят отдельные напоминания по растениям.'
+                      : 'Сводка выключена: приходят отдельные напоминания по растениям (около 9:00, 14:00 и 19:00), ежедневная сводка не отправляется.')}
               </p>
             </div>
             <label className='appleSwitchSettings'>
@@ -793,9 +820,24 @@ function Profile () {
         </div>
         {!achievementsReady
           ? (
-            <p className='profileAchievementsStatus' role='status'>
-              Считаем достижения…
-            </p>
+            (plantsLoadError || historyLoadError)
+              ? (
+                <div className='profileAchievementsStatus' role='alert'>
+                  <p>{plantsLoadError || historyLoadError}</p>
+                  <button
+                    type='button'
+                    className='accountDataExport'
+                    onClick={retryProfileStats}
+                  >
+                    Повторить
+                  </button>
+                </div>
+                )
+              : (
+                <p className='profileAchievementsStatus' role='status'>
+                  Считаем достижения…
+                </p>
+                )
             )
           : (
             <>
@@ -914,10 +956,21 @@ function Profile () {
           <p>Поливов вовремя</p>
           {!Number.isFinite(completion?.percent) && (
             <p className='interestPlantHint'>
-              {completion
-                ? 'Появится после первого полива.'
-                : 'Считаем статистику…'}
+              {completionLoadError
+                ? completionLoadError
+                : completion
+                  ? 'Появится после первого полива.'
+                  : 'Считаем статистику…'}
             </p>
+          )}
+          {completionLoadError && (
+            <button
+              type='button'
+              className='accountDataExport'
+              onClick={retryProfileStats}
+            >
+              Повторить
+            </button>
           )}
         </div>
       </div>

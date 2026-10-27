@@ -4,6 +4,7 @@ import {
     resolveMissedLateness,
     splitMissedWaterings,
     zonedDayKey,
+    MISSED_GRACE_HOUR,
     MISSED_GRACE_MS,
     WATERING_TIME_OF_DAY_HOURS
 } from './wateringSchedule.js'
@@ -166,6 +167,9 @@ export function buildWateringState({
     const intervalDays = intervalDaysOf(plant)
     const hour = wateringHour(plant)
 
+    const overdue = Boolean(nextWateringAt) &&
+        isWateringMissed(nextWateringAt, { now: current, timeZone: zone })
+
     const missedSlots = nextWateringAt
         ? countMissedSlots({
             nextWateringAt,
@@ -180,9 +184,11 @@ export function buildWateringState({
         ? storedMissedSince.toISOString()
         : missedSlots.length
             ? missedSlots[0].toISOString()
-            : null
+            : overdue
+                ? nextWateringAt.toISOString()
+                : null
 
-    const missed = Boolean(missingSinceIso) || missedSlots.length > 0
+    const missed = overdue || Boolean(missingSinceIso) || missedSlots.length > 0
     const missedSlotDate = toDate(missingSinceIso)
     const lateness = missedSlotDate
         ? resolveMissedLateness(missedSlotDate, { now: current })
@@ -201,18 +207,18 @@ export function buildWateringState({
 
     const nextDayKey = nextWateringAt ? zonedDayKey(nextWateringAt, zone) : null
     const todayKey = zonedDayKey(current, zone)
-    const dueToday = Boolean(nextWateringAt) && nextDayKey === todayKey &&
-        !isWateringMissed(nextWateringAt, { now: current, timeZone: zone })
+    const dueToday = Boolean(nextWateringAt) && !overdue && nextDayKey === todayKey
 
     let status = WATERING_STATE_STATUS.SCHEDULED
     if (remindersPaused) status = WATERING_STATE_STATUS.PAUSED
-    else if (missed) status = WATERING_STATE_STATUS.MISSED
+    else if (overdue || missed) status = WATERING_STATE_STATUS.MISSED
     else if (dueToday) status = WATERING_STATE_STATUS.DUE_TODAY
 
     return {
         status,
         policy: effectivePolicy,
         scheduled_for: toIso(nextWateringAt),
+        overdue,
         missed,
         missed_since: missingSinceIso,
         missed_slots: missedSlots.length || (missingSinceIso ? 1 : 0),
@@ -221,6 +227,7 @@ export function buildWateringState({
         can_backfill: canBackfill,
         backfill_until: canBackfill ? backfillUntilDate.toISOString() : null,
         reason,
+        grace_hours: MISSED_GRACE_HOUR,
         consecutive_skips: consecutiveSkips,
         reminders_paused: remindersPaused,
         timezone: zone

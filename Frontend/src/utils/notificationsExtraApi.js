@@ -25,7 +25,10 @@ const PREFERENCES_PATH = '/users/me/notification-preferences'
 const PREFERENCES_TIMEOUT_MS = 12000
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-const UNAVAILABLE_STATUSES = new Set([400, 404, 405, 501, 502, 503, 504])
+const UNAVAILABLE_STATUSES = new Set([404, 405, 501, 502, 503, 504])
+
+export const LOCAL_ONLY_NOTICE =
+  'Только на этом устройстве: на доставку уведомлений это не влияет, пока сервер не подтвердит настройку.'
 
 function storage () {
   try {
@@ -192,24 +195,35 @@ async function requestPreferences (options, init) {
   return { response, data }
 }
 
+function serverErrorMessage (data, status) {
+  if (data && typeof data.message === 'string' && data.message.trim()) {
+    return data.message.trim()
+  }
+  return `Сервер не принял настройку уведомлений: HTTP ${status}`
+}
+
 export async function loadNotificationPreferences (fallback = readLocalNotificationPreferences()) {
   try {
     const { response, data } = await requestPreferences({}, { method: 'GET' })
     if (!response.ok) {
+      const unavailable = UNAVAILABLE_STATUSES.has(response.status)
       return {
         ok: false,
-        unavailable: UNAVAILABLE_STATUSES.has(response.status),
+        unavailable,
+        localOnly: unavailable,
         status: response.status,
+        error: new Error(serverErrorMessage(data, response.status)),
         preferences: normalizeNotificationPreferences(null, fallback)
       }
     }
     const preferences = normalizeNotificationPreferences(data, fallback)
     writeLocalNotificationPreferences(preferences)
-    return { ok: true, unavailable: false, status: response.status, preferences }
+    return { ok: true, unavailable: false, localOnly: false, status: response.status, preferences }
   } catch (error) {
     return {
       ok: false,
       unavailable: true,
+      localOnly: true,
       error,
       preferences: normalizeNotificationPreferences(null, fallback)
     }
@@ -252,13 +266,25 @@ export async function saveNotificationPreferences (patch, fallback = readLocalNo
     })
 
     if (!response.ok) {
-      writeLocalNotificationPreferences(localPreferences)
+      if (UNAVAILABLE_STATUSES.has(response.status)) {
+        writeLocalNotificationPreferences(localPreferences)
+        return {
+          ok: false,
+          localOnly: true,
+          unavailable: true,
+          status: response.status,
+          error: new Error(serverErrorMessage(data, response.status)),
+          preferences: localPreferences
+        }
+      }
+
       return {
         ok: false,
-        localOnly: true,
-        unavailable: UNAVAILABLE_STATUSES.has(response.status),
+        localOnly: false,
+        unavailable: false,
         status: response.status,
-        preferences: localPreferences
+        error: new Error(serverErrorMessage(data, response.status)),
+        preferences: fallback
       }
     }
 
@@ -278,6 +304,7 @@ export async function saveNotificationPreferences (patch, fallback = readLocalNo
         unavailable: false,
         ignored: true,
         status: response.status,
+        error: new Error('Сервер не применил настройку — возможно, он ещё не обновлён.'),
         preferences: localPreferences
       }
     }

@@ -41,8 +41,8 @@ info:
     * тело JSON/urlencoded — не больше 100 kb (`413` при превышении);
     * для запросов с телом обязателен `Content-Type`: `application/json`,
       `application/x-www-form-urlencoded`, `multipart/form-data` или `*+json`, иначе `415`;
-    * файлы: до 5 МБ на файл, до 2 файлов в `POST /api/upload`, до 5 файлов в
-      `POST /api/chat/photo`;
+    * файлы: до 5 МБ на файл, до 2 файлов в `POST /api/upload` (30 загрузок
+      в час на пользователя), до 5 файлов в `POST /api/chat/photo`;
     * на большинство групп эндпоинтов действует rate-limit (`429`); лимиты перечислены в
       `ARCHITECTURE.md` §7 и в описании операций.
 
@@ -522,9 +522,15 @@ paths:
       summary: Настройки уведомлений, режим доставки (F41) и тихие часы (F43)
       description: |
         delivery_mode — digest (одна сводка в день, значение по умолчанию) или per_plant
-        (отдельное напоминание на растение). quiet_hours_* — локальное окно, в котором не
-        отправляются push, боты и письма (in-app уведомление при этом сохраняется); окно
-        может переходить через полночь (22:00–08:00). quiet_hours_timezone — read-only:
+        (отдельное напоминание на растение). Режим — источник истины: PATCH синхронизирует
+        `delivery_mode` и `morning_summary_enabled` (digest ⇔ true, per_plant ⇔ false);
+        сводка отправляется только в digest, индивидуальные push — только в per_plant
+        (без двойных уведомлений в 09:00). Растения с `notify_morning=false`,
+        `reminder_weekdays` и приостановленными напоминаниями в сводку не попадают;
+        растения с `notify_day_before=true` дополнительно попадают в строку «Завтра полить».
+        quiet_hours_* — локальное окно, в котором не отправляются push, боты и письма
+        (in-app уведомление сохраняется, а push досылается после окончания окна);
+        окно может переходить через полночь (22:00–08:00). quiet_hours_timezone — read-only:
         часовой пояс пользователя, в нём считаются границы тихих часов.
       responses:
         '200':
@@ -934,6 +940,8 @@ paths:
                     const: true
                   user:
                     $ref: '#/components/schemas/User'
+                  guestLink:
+                    $ref: '#/components/schemas/GuestLinkSummary'
         '400':
           description: челлендж истёк, подпись не проверена, ключ не соответствует аккаунту
           content:
@@ -1305,7 +1313,8 @@ paths:
       description: |
         multipart/form-data, одно фото в поле photo (до 5 МБ, JPEG/PNG/WebP/HEIC).
         Использует vision-сервис ИИ; при недоступности ИИ — 503, и клиент прячет блок
-        «Похоже на...». Лимит — 20 запросов в час на пользователя.
+        «Похоже на...». Битое/нечитаемое изображение — 400 (BE-11).
+        Лимит — 20 запросов в час на пользователя.
       requestBody:
         required: true
         content:
@@ -1627,6 +1636,74 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/{id}/health-check:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [plants]
+      operationId: checkPlantHealth
+      summary: 'F29/F34: проверка здоровья растения по фото (ИИ)'
+      description: |
+        Принимает одно фото двумя способами:
+        * `multipart/form-data` — поле `photo` (до 5 МБ, JPEG/PNG/WebP/HEIC);
+        * `application/json` — `{photoUrl, question}`, где `photoUrl` — уже загруженный
+          в `/uploads/plants/<32hex>.<ext>` файл (как в `POST /api/plants/{id}/photos`).
+
+        Результат vision-анализа сохраняется на сервере: последняя проверка пишется в
+        `plants.metadata.health_check`, а у совпадающего по URL `plant_photos` дописываются
+        `metadata.diagnosis` и `metadata.diagnosis_text`. `GET /api/plants` и
+        `GET /api/plants/{id}` возвращают `metadata.health_check`.
+
+        Ответ на `200` — строго `{text, diagnosis, photoUrl, createdAt, saved: true}`.
+        Если на фото не растение, `diagnosis.isPlant = false` и всё равно `200`.
+        Битое/нечитаемое изображение — `400`, `503` только при недоступности ИИ-провайдера.
+        Лимит: 30 проверок в час на пользователя; запись — 120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                question:
+                  type: string
+                  maxLength: 500
+          application/json:
+            schema:
+              type: object
+              required: [photoUrl]
+              properties:
+                photoUrl:
+                  type: string
+                  maxLength: 2048
+                  description: '/uploads/plants/<32hex>.<ext> или абсолютный URL того же файла'
+                question:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: 'результат проверки (saved: true)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantHealthCheck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
   /api/plants/{id}/photos:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1662,6 +1739,9 @@ paths:
       tags: [plants]
       operationId: addPlantPhotos
       summary: Привязка загруженных фотографий к растению
+      description: |
+        До 10 фото за запрос; общая галерея растения ограничена
+        `PLANT_PHOTO_GALLERY_MAX = 200` — при превышении `400`.
       requestBody:
         required: true
         content:
@@ -1709,7 +1789,10 @@ paths:
       tags: [plants]
       operationId: deletePlantPhoto
       summary: 'F30: удалить фото роста'
-      description: Удаляет запись, файл и миниатюру; если удалено главное фото — главным становится следующее.
+      description: |
+        Удаляет запись галереи; файл и миниатюру удаляет, только если на этот URL больше
+        не ссылается ни один `plant_photos` (BE-06). Если удалено главное фото — главным
+        становится следующее.
       responses:
         '200':
           description: '{deleted: true, id}'
@@ -2580,7 +2663,7 @@ paths:
       summary: Загрузка фотографий растения
       description: |
         Принимает до 2 файлов по 5 МБ (JPEG, PNG, WebP, HEIC) в поле `photos`; проверяет
-        сигнатуру файла и создаёт миниатюру. Лимит — 10 загрузок в час на пользователя.
+        сигнатуру файла и создаёт миниатюру. Лимит — 30 загрузок в час на пользователя (INT-09).
         Полученные `urls` затем передаются в `POST /api/plants` или `/api/plants/{id}/photos`.
       requestBody:
         required: true
@@ -3138,7 +3221,12 @@ paths:
         активных растений и до 100 активных растений (`is_active`, порядок
         `created_at` ASC). Email, `user_id`, телефон и фотографии не возвращаются.
         `ownerName` — первый токен `users.name`, иначе `username`, иначе «Садовод».
-        Каждый успешный вызов увеличивает `view_count` и `last_viewed_at`.
+        Каждый успешный вызов увеличивает `view_count` и `last_viewed_at`, кроме случаев:
+        (а) запрос с сессией владельца сада — свои просмотры не считаются и не порождают
+        уведомление; (б) повторный визит того же IP+UA в течение 24 часов — дедупликация,
+        чтобы перезагрузки/превью мессенджеров не накручивали счётчик. Уведомление
+        владельцу «сад посмотрели N раз» уходит не чаще раза в 24 часа и только после
+        успешного создания in-app записи.
 
         Токен неверного формата, неизвестный или отозванный токен дают одинаковый
         `404`, чтобы не подсказывать формат ссылки. Ответы не кешируются
@@ -4798,7 +4886,15 @@ paths:
     get:
       tags: [notifications]
       summary: Серия ухода и статистика недели (F10)
-      description: Текущая серия «поливов вовремя» (вовремя = hours_late ≤ 24), личный рекорд, статистика текущей локальной недели и последний weekly recap.
+      description: |
+        Текущая серия «поливов вовремя» (вовремя = hours_late ≤ 24), личный рекорд,
+        статистика текущей локальной недели и последний weekly recap.
+
+        INT-03: `freeze` дополнительно отдаёт `available`, `canFreeze`, `used` (boolean),
+        `usedFreezes` (массив; раньше назывался `used`), `frozenDates` (`used[].localDate`)
+        и `daysLeft`. В корне есть `breakReason` = `streakBreak.reason` или пустая строка;
+        старые поля `enabled/perWeek/weekStart/usedThisWeek/availableThisWeek/usedTotal`
+        сохранены.
       operationId: getCareStreak
       responses:
         '200':
@@ -5484,6 +5580,8 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/User'
+        guestLink:
+          $ref: '#/components/schemas/GuestLinkSummary'
 
     LoginRequest:
       type: object
@@ -5506,6 +5604,32 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/User'
+        guestLink:
+          $ref: '#/components/schemas/GuestLinkSummary'
+
+    GuestLinkSummary:
+      type: object
+      description: |
+        Результат переноса гостевых данных (F09) при регистрации/входе. Поле всегда
+        присутствует в новых ответах; `linked` = `chatMessages + consents > 0`. Счётчики
+        отражают только реально перенесённые записи: при частичном сбое линковки ошибки
+        не ломают регистрацию/вход, но и не считаются перенесёнными.
+      required: [linked, chatMessages, chatSessions, diagnoses, consents]
+      properties:
+        linked:
+          type: boolean
+        chatMessages:
+          type: integer
+          minimum: 0
+        chatSessions:
+          type: integer
+          minimum: 0
+        diagnoses:
+          type: integer
+          minimum: 0
+        consents:
+          type: integer
+          minimum: 0
 
     UpdateProfileRequest:
       type: object
@@ -5691,10 +5815,14 @@ components:
     PlantWateringState:
       type: object
       description: |
-        F14: объяснимое состояние полива. missed=true — слот пропущен и ждёт решения
-        пользователя (полить позже или пропустить); в режиме preserve план не сдвигается
-        автоматически.
-      required: [status, policy, missed, can_backfill]
+        F14: объяснимое состояние полива. overdue=true — слот уже в прошлом относительно
+        локальной полуночи следующего дня (та же семантика, что `is_missed` в
+        `/api/plants/schedule`), поэтому для просроченного растения status никогда не
+        бывает `scheduled`. missed=true — календарная просрочка (status=missed), т.е.
+        наступает уже при overdue; `missed_since`/`grace_hours` описывают окно, в котором
+        авто-пропуск ещё не подтверждён, а `can_backfill` — можно ли отметить полив за
+        прошедший слот. В режиме preserve план не сдвигается автоматически.
+      required: [status, policy, overdue, missed, can_backfill]
       properties:
         status:
           type: string
@@ -5706,6 +5834,9 @@ components:
           type: [string, 'null']
           format: date-time
           description: текущий запланированный слот (next_watering_at)
+        overdue:
+          type: boolean
+          description: 'BE-07: просрочено с локальной полуночи (true → status=missed)'
         missed:
           type: boolean
         missed_since:
@@ -5731,6 +5862,10 @@ components:
         reason:
           type: [string, 'null']
           enum: [missed_slot, auto_skipped, reminders_paused, null]
+        grace_hours:
+          type: integer
+          minimum: 0
+          description: 'BE-07: окно подтверждения пропуска, после которого растёт missed_slots (24 ч)'
         consecutive_skips:
           type: integer
           minimum: 0
@@ -5825,7 +5960,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
-          description: 'в т.ч. `prediction` (адаптивная модель) и `notifications` (прогресс напоминаний)'
+          description: 'в т.ч. `prediction` (адаптивная модель), `notifications` (прогресс напоминаний) и `health_check` (последняя проверка здоровья: text/diagnosis/photoUrl/createdAt)'
         created_at:
           type: string
           format: date-time
@@ -5859,6 +5994,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          description: 'может содержать diagnosis (структура разбора ИИ) и diagnosis_text (текстовый разбор)'
         thumb_url:
           type: [string, 'null']
           description: 'F30: миниатюра 160x160 (если sharp доступен)'
@@ -5876,6 +6012,28 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    PlantHealthCheck:
+      type: object
+      description: 'INT-01/INT-04: результат проверки здоровья по фото, сохранённый на сервере.'
+      required: [text, diagnosis, photoUrl, createdAt, saved]
+      properties:
+        text:
+          type: string
+          description: текстовый разбор (formatPlantDiagnosisText)
+        diagnosis:
+          type: [object, 'null']
+          additionalProperties: true
+          description: 'структура разбора ИИ (isPlant, plantName, visibleSymptoms, likelyProblems, severity, careAdvice, photoQuality, needsAnotherPhoto, summary); isPlant=false, если на фото не растение'
+        photoUrl:
+          type: string
+          description: URL проверенного фото; пустая строка для multipart (файл не сохраняется)
+        createdAt:
+          type: string
+          format: date-time
+        saved:
+          type: boolean
+          const: true
 
     PhotoInput:
       oneOf:
@@ -7164,12 +7322,32 @@ components:
           oneOf:
             - $ref: '#/components/schemas/CareStreakBreak'
             - type: 'null'
+        breakReason:
+          type: string
+          description: 'INT-03: streakBreak.reason (skipped/late_watering) или пустая строка'
+          enum: ['', skipped, late_watering]
 
     CareStreakFreeze:
       type: object
       description: 'F16: заморозка серии — 1 день в неделю не обрывает серию.'
-      required: [enabled, perWeek, weekStart, usedThisWeek, availableThisWeek, usedTotal, used]
+      required: [enabled, perWeek, weekStart, usedThisWeek, availableThisWeek, usedTotal, used, available, canFreeze, frozenDates]
       properties:
+        available:
+          type: boolean
+          description: 'INT-03: availableThisWeek > 0'
+        canFreeze:
+          type: boolean
+          description: 'INT-03: availableThisWeek > 0'
+        frozenDates:
+          type: array
+          description: 'INT-03: локальные даты (YYYY-MM-DD), сохранённые заморозкой'
+          items:
+            type: string
+            format: date
+        daysLeft:
+          type: integer
+          minimum: 0
+          description: 'INT-03: сколько заморозок ещё доступно на этой неделе'
         enabled:
           type: boolean
         perWeek:
@@ -7187,8 +7365,9 @@ components:
         usedTotal:
           type: integer
           minimum: 0
-        used:
+        usedFreezes:
           type: array
+          description: 'прежний массив used (по одной записи на заморозку)'
           items:
             type: object
             required: [at, localDate, weekStart, kind]
@@ -7208,6 +7387,9 @@ components:
               hoursLate:
                 type: integer
                 minimum: 0
+        used:
+          type: boolean
+          description: 'INT-03: заморозка потрачена на этой неделе (usedThisWeek > 0)'
 
     CareStreakBreak:
       type: object

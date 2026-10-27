@@ -61,6 +61,32 @@ export function shouldSuggestSavingGuestChat (history) {
   return countGuestChatAnswers(history) >= GUEST_CHAT_SAVE_PROMPT_AFTER_ANSWERS
 }
 
+export function readGuestLinkResult (payload) {
+  const link = payload && typeof payload === 'object' ? payload.guestLink : null
+  if (!link || typeof link !== 'object') {
+    return {
+      supported: false,
+      linked: false,
+      chatMessages: 0,
+      consents: 0,
+      chatCountKnown: false
+    }
+  }
+
+  const count = value => {
+    const number = Number(value)
+    return Number.isFinite(number) && number > 0 ? Math.trunc(number) : 0
+  }
+
+  return {
+    supported: true,
+    linked: link.linked === true,
+    chatMessages: count(link.chatMessages),
+    consents: count(link.consents),
+    chatCountKnown: Number.isFinite(Number(link.chatMessages))
+  }
+}
+
 export function buildGuestChatRecord ({ sessionId = null, messages = [] } = {}) {
   const normalized = normalizeGuestChatHistory({ sessionId, messages })
   if (!normalized.messages.length) return null

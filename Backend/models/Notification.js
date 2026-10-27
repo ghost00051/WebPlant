@@ -56,7 +56,8 @@ const Notification = sequelize.define('notification', {
     payload: {
         type: DataTypes.JSONB,
         allowNull: false,
-        defaultValue: {}
+        defaultValue: {},
+        comment: 'BE-05: push_pending=true — push отложен тихими часами, досылается фоновым тиком'
     },
     scheduled_for: {
         type: DataTypes.DATE,

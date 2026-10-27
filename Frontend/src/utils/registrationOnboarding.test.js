@@ -1,13 +1,17 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ADD_PLANT_MULTI_PATH,
+  ADD_PLANT_PATH,
   PLANT_COUNT_PRESETS,
   PLANT_COUNT_STORAGE_KEY,
+  buildOnboardingAddPlantPath,
   buildPlantCountRecord,
   clearPlantCountRecord,
   getPlantCountPreset,
   normalizePlantCountPreset,
   parsePlantCountRecord,
+  readPlantCountPreset,
   readPlantCountRecord,
   savePlantCountPreset
 } from './registrationOnboarding.js'
@@ -35,6 +39,16 @@ test('normalizePlantCountPreset: принимает только известн�
   assert.equal(normalizePlantCountPreset('4-10'), '')
 })
 
+test('buildOnboardingAddPlantPath: «Много» открывает мультивыбор, остальные — форму', () => {
+  assert.equal(buildOnboardingAddPlantPath('many'), ADD_PLANT_MULTI_PATH)
+  assert.equal(buildOnboardingAddPlantPath('one-three'), ADD_PLANT_PATH)
+  assert.equal(buildOnboardingAddPlantPath('four-ten'), ADD_PLANT_PATH)
+  assert.equal(buildOnboardingAddPlantPath(''), ADD_PLANT_PATH)
+  assert.equal(buildOnboardingAddPlantPath(null), ADD_PLANT_PATH)
+  assert.equal(ADD_PLANT_PATH, '/add-plant')
+  assert.equal(ADD_PLANT_MULTI_PATH, '/add-plant?multi=1')
+})
+
 test('buildPlantCountRecord: сохраняет пресет и время', () => {
   assert.deepEqual(
     buildPlantCountRecord({ preset: 'many', now: 1700000000000 }),
@@ -57,16 +71,19 @@ test('save/read/clear: выбор переживает перезагрузку,
   const storage = createMemoryStorage()
 
   assert.equal(readPlantCountRecord({ storage }), null)
+  assert.equal(readPlantCountPreset({ storage }), '')
   assert.equal(savePlantCountPreset('four-ten', { storage, now: 1700000000000 }), true)
   assert.deepEqual(readPlantCountRecord({ storage }), {
     preset: 'four-ten',
     savedAt: 1700000000000
   })
+  assert.equal(readPlantCountPreset({ storage }), 'four-ten')
   assert.equal(storage.getItem(PLANT_COUNT_STORAGE_KEY) !== null, true)
 
   assert.equal(savePlantCountPreset('unknown', { storage }), false)
   assert.equal(clearPlantCountRecord({ storage }), true)
   assert.equal(readPlantCountRecord({ storage }), null)
+  assert.equal(readPlantCountPreset({ storage }), '')
 })
 
 test('savePlantCountPreset: недоступный storage не роняет регистрацию', () => {

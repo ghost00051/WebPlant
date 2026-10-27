@@ -372,6 +372,15 @@ test('registration с shareToken атрибутирует регистрацию
         connection: { remoteAddress: '127.0.0.1' }
     }, sharedRes)
     assert.equal(sharedRes.statusCode, 201, `регистрация: ${JSON.stringify(sharedRes.body)}`)
+    assert.deepEqual(sharedRes.body.guestLink, {
+        linked: false,
+        chatMessages: 0,
+        chatSessions: 0,
+        diagnoses: 0,
+        consents: 0
+    }, 'FE-04: без гостевой куки ответ содержит пустой guestLink, старые поля на месте')
+    assert.equal(sharedRes.body.message, 'Регистрация успешна')
+    assert.equal(sharedRes.body.user.email, email.toLowerCase())
 
     const sharedUser = await User.findOne({ where: { email: email.toLowerCase() } })
     assert.ok(sharedUser)

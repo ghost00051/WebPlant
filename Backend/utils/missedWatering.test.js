@@ -55,6 +55,8 @@ test('buildWateringState: будущий полив — scheduled, без про
 
     assert.equal(state.status, WATERING_STATE_STATUS.SCHEDULED)
     assert.equal(state.missed, false)
+    assert.equal(state.overdue, false)
+    assert.equal(state.grace_hours, 24)
     assert.equal(state.missed_since, null)
     assert.equal(state.missed_slots, 0)
     assert.equal(state.can_backfill, false)
@@ -74,6 +76,25 @@ test('buildWateringState: полив сегодня — due_today', () => {
 
     assert.equal(state.status, WATERING_STATE_STATUS.DUE_TODAY)
     assert.equal(state.missed, false)
+    assert.equal(state.overdue, false)
+})
+
+test('BE-07: просрочен до grace 24ч — status=missed и overdue=true (согласовано с is_missed)', () => {
+    const state = buildWateringState({
+        plant: plantFixture({ next_watering_at: '2026-11-01T06:00:00Z' }),
+        now: new Date('2026-11-02T05:00:00Z'),
+        timeZone: MSK
+    })
+
+    assert.equal(state.overdue, true)
+    assert.equal(state.missed, true)
+    assert.equal(state.status, WATERING_STATE_STATUS.MISSED)
+    assert.equal(state.missed_since, '2026-11-01T06:00:00.000Z')
+    assert.equal(state.missed_slots, 1)
+    assert.equal(state.hours_late, 23)
+    assert.equal(state.can_backfill, true)
+    assert.equal(state.reason, MISSED_REASON.MISSED_SLOT)
+    assert.equal(state.grace_hours, 24)
 })
 
 test('buildWateringState: пропущенный слот объясним и доступен для backfill', () => {
@@ -143,6 +164,7 @@ test('buildWateringState: пауза напоминаний — status paused', 
     })
 
     assert.equal(state.status, WATERING_STATE_STATUS.PAUSED)
+    assert.equal(state.overdue, true)
     assert.equal(state.reminders_paused, true)
     assert.equal(state.reason, MISSED_REASON.REMINDERS_PAUSED)
 })

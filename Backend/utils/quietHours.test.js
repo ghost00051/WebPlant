@@ -164,3 +164,23 @@ test('describeQuietHoursWindow: человекочитаемое окно', () =
     assert.equal(describeQuietHoursWindow({ start: '10:00', end: '12:00' }), '10:00–12:00')
     assert.equal(describeQuietHoursWindow({}), '22:00–08:00 (через полночь)')
 })
+
+test('BE-08: равные границы тихих часов не образуют окно', () => {
+    const same = resolveQuietHours({ enabled: true, start: '22:00', end: '22:00' })
+    assert.equal(same.enabled, true)
+    assert.equal(same.startMinutes, same.endMinutes)
+
+    for (const minute of [0, 60, 720, 1320, 1439]) {
+        assert.equal(isMinuteInQuietWindow(minute, same), false, String(minute))
+    }
+    assert.equal(isQuietTime({
+        now: new Date('2026-11-01T19:30:00Z'),
+        timeZone: MSK,
+        quietHours: same
+    }), false)
+
+    const invalid = resolveQuietHours({ enabled: true, start: '25:00', end: '25:00' })
+    assert.equal(invalid.start, '22:00')
+    assert.equal(invalid.end, '08:00')
+    assert.equal(invalid.startMinutes === invalid.endMinutes, false)
+})

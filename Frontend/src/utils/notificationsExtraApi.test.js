@@ -5,8 +5,10 @@ import {
   DELIVERY_MODE_DIGEST,
   DELIVERY_MODE_PER_PLANT,
   isTimeValue,
+  loadNotificationPreferences,
   normalizeNotificationPreferences,
   readLocalNotificationPreferences,
+  saveNotificationPreferences,
   validateQuietHours,
   writeLocalNotificationPreferences
 } from './notificationsExtraApi.js'
@@ -25,6 +27,42 @@ function withLocalStorage (fn) {
   } finally {
     if (previous === undefined) delete globalThis.window
     else globalThis.window = previous
+  }
+}
+
+async function withLocalStorageAsync (fn) {
+  const store = new Map()
+  const localStorage = {
+    getItem: key => (store.has(key) ? store.get(key) : null),
+    setItem: (key, value) => store.set(key, String(value)),
+    removeItem: key => store.delete(key)
+  }
+  const previous = globalThis.window
+  globalThis.window = { localStorage }
+  try {
+    return await fn(localStorage, store)
+  } finally {
+    if (previous === undefined) delete globalThis.window
+    else globalThis.window = previous
+  }
+}
+
+async function withFetchResponse (handler, fn) {
+  const previousFetch = globalThis.fetch
+  globalThis.fetch = async (url, options) => handler(url, options)
+  try {
+    return await fn()
+  } finally {
+    if (previousFetch === undefined) delete globalThis.fetch
+    else globalThis.fetch = previousFetch
+  }
+}
+
+function jsonResponse (status, data) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => data
   }
 }
 
@@ -127,4 +165,84 @@ test('локальные предпочтения: дефолт — дайдже
 test('локальные предпочтения: без localStorage не падают', () => {
   assert.equal(readLocalNotificationPreferences().deliveryMode, DELIVERY_MODE_DIGEST)
   assert.equal(writeLocalNotificationPreferences({ deliveryMode: DELIVERY_MODE_PER_PLANT }), false)
+})
+
+test('saveNotificationPreferences: 400 — ошибка, локально НЕ сохраняем (FE-07/INT-05)', async () => {
+  await withLocalStorageAsync(async (localStorage, store) => {
+    await withFetchResponse(
+      () => jsonResponse(400, { message: 'Начало и конец тихих часов не должны совпадать' }),
+      async () => {
+        const result = await saveNotificationPreferences({
+          quietHours: { enabled: true, start: '22:00', end: '08:00' }
+        })
+        assert.equal(result.ok, false)
+        assert.equal(result.localOnly, false)
+        assert.equal(result.unavailable, false)
+        assert.equal(result.status, 400)
+        assert.match(result.error.message, /не должны совпадать/)
+        assert.equal(store.size, 0)
+      }
+    )
+  })
+})
+
+test('saveNotificationPreferences: 404 — localOnly-черновик с пометкой', async () => {
+  await withLocalStorageAsync(async (localStorage, store) => {
+    await withFetchResponse(
+      () => jsonResponse(404, { message: 'Маршрут не найден' }),
+      async () => {
+        const result = await saveNotificationPreferences({
+          deliveryMode: DELIVERY_MODE_PER_PLANT
+        })
+        assert.equal(result.ok, false)
+        assert.equal(result.localOnly, true)
+        assert.equal(result.unavailable, true)
+        assert.ok(store.size > 0)
+        assert.equal(
+          readLocalNotificationPreferences().deliveryMode,
+          DELIVERY_MODE_PER_PLANT
+        )
+      }
+    )
+  })
+})
+
+test('saveNotificationPreferences: 200 с эхом полей — серверное подтверждение', async () => {
+  await withLocalStorageAsync(async () => {
+    await withFetchResponse(
+      () => jsonResponse(200, { delivery_mode: 'per_plant' }),
+      async () => {
+        const result = await saveNotificationPreferences({
+          deliveryMode: DELIVERY_MODE_PER_PLANT
+        })
+        assert.equal(result.ok, true)
+        assert.equal(result.localOnly, false)
+        assert.equal(result.preferences.deliveryMode, DELIVERY_MODE_PER_PLANT)
+      }
+    )
+  })
+})
+
+test('loadNotificationPreferences: 500 — ошибка без localOnly; 404 — localOnly', async () => {
+  await withLocalStorageAsync(async () => {
+    await withFetchResponse(
+      () => jsonResponse(500, { message: 'Ошибка сервера' }),
+      async () => {
+        const result = await loadNotificationPreferences()
+        assert.equal(result.ok, false)
+        assert.equal(result.unavailable, false)
+        assert.equal(result.localOnly, false)
+      }
+    )
+
+    await withFetchResponse(
+      () => jsonResponse(404, { message: 'Маршрут не найден' }),
+      async () => {
+        const result = await loadNotificationPreferences()
+        assert.equal(result.ok, false)
+        assert.equal(result.unavailable, true)
+        assert.equal(result.localOnly, true)
+      }
+    )
+  })
 })

@@ -18,6 +18,7 @@ import { markWateredWithQueue, classifyWateringResponse } from '../../utils/offl
 import { trackEvent } from '../../utils/productEvents.js'
 import {
   DELIVERY_MODE_DIGEST,
+  LOCAL_ONLY_NOTICE,
   loadNotificationPreferences,
   readLocalNotificationPreferences,
   saveNotificationPreferences,
@@ -262,6 +263,7 @@ function Notifications () {
   const [selectedNotification, setSelectedNotification] = useState(null)
   const [careSheet, setCareSheet] = useState(null)
   const [preferences, setPreferences] = useState(() => readLocalNotificationPreferences())
+  const [prefsLocalOnly, setPrefsLocalOnly] = useState(false)
   const [prefsStatus, setPrefsStatus] = useState(null)
   const [prefsSaving, setPrefsSaving] = useState('')
   const [channelsOpen, setChannelsOpen] = useState(false)
@@ -318,13 +320,17 @@ function Notifications () {
       .then(result => {
         if (cancelled) return
         setPreferences(result.preferences)
+        setPrefsLocalOnly(Boolean(result.localOnly))
         if (!result.ok) {
-          setPrefsStatus({
-            tone: result.unavailable ? 'warning' : 'error',
-            text: result.unavailable
-              ? 'Сервер настроек уведомлений пока не обновлён — настройки сохраняются на этом устройстве.'
-              : 'Не удалось загрузить настройки уведомлений. Показаны сохранённые на этом устройстве.'
-          })
+          if (result.localOnly) {
+            setPrefsStatus(null)
+          } else {
+            setPrefsStatus({
+              tone: 'error',
+              text: result.error?.message ||
+                'Не удалось загрузить настройки уведомлений. Показаны сохранённые на этом устройстве.'
+            })
+          }
         }
       })
       .catch(loadError => {
@@ -405,8 +411,9 @@ function Notifications () {
         navigate('/login', { replace: true })
         return
       }
-      setPreferences(result.preferences)
       if (result.ok) {
+        setPreferences(result.preferences)
+        setPrefsLocalOnly(false)
         setPrefsStatus({
           tone: 'success',
           text: nextMode === DELIVERY_MODE_DIGEST
@@ -415,9 +422,20 @@ function Notifications () {
         })
         return
       }
+      if (result.localOnly) {
+        setPreferences(result.preferences)
+        setPrefsLocalOnly(true)
+        setPrefsStatus({
+          tone: 'warning',
+          text: 'Черновик: сервер настройку не подтвердил — на доставку это не влияет.'
+        })
+        return
+      }
+      setPreferences(previous)
+      setPrefsLocalOnly(false)
       setPrefsStatus({
-        tone: 'warning',
-        text: 'Режим сохранён на этом устройстве — сервер настроек ещё не обновлён.'
+        tone: 'error',
+        text: result.error?.message || 'Не удалось сохранить режим. Попробуйте ещё раз.'
       })
     } catch (saveError) {
       console.warn('Не удалось сохранить режим уведомлений:', saveError)
@@ -443,6 +461,7 @@ function Notifications () {
       }
       setPreferences(result.preferences)
       if (result.ok) {
+        setPrefsLocalOnly(false)
         return {
           tone: 'success',
           text: next.enabled
@@ -450,9 +469,16 @@ function Notifications () {
             : 'Тихие часы выключены.'
         }
       }
+      if (result.localOnly) {
+        setPreferences(result.preferences)
+        setPrefsLocalOnly(true)
+        return { tone: 'warning', text: LOCAL_ONLY_NOTICE }
+      }
+      setPreferences(previous)
+      setPrefsLocalOnly(false)
       return {
-        tone: 'warning',
-        text: 'Сохранено на этом устройстве — сервер настроек ещё не обновлён.'
+        tone: 'error',
+        text: result.error?.message || 'Не удалось сохранить тихие часы. Попробуйте ещё раз.'
       }
     } catch (saveError) {
       console.warn('Не удалось сохранить тихие часы:', saveError)
@@ -1173,6 +1199,7 @@ function Notifications () {
         quietSummary={quietSummary}
         channelsSummary={channelsSummary}
         saving={prefsSaving === 'delivery'}
+        localOnly={prefsLocalOnly}
         status={prefsStatus}
         onOpenChannels={() => setChannelsOpen(true)}
         onOpenQuiet={() => setQuietOpen(true)}

@@ -9,7 +9,7 @@ export const PLANTS_EXTRA_TIMEOUT_MS = 20000
 const UNAVAILABLE_STATUSES = new Set([404, 405, 501, 502, 503, 504])
 const MAX_STORED_CHECKS = 60
 const PHOTO_FIELDS = ['url', 'photo_url', 'src']
-const DATE_FIELDS = ['createdAt', 'created_at', 'date', 'takenAt', 'taken_at']
+const DATE_FIELDS = ['taken_at', 'takenAt', 'created_at', 'createdAt', 'date']
 
 export class PlantFeatureUnavailableError extends Error {
     constructor(message, { status = 0, code = 'feature-unavailable', cause } = {}) {
@@ -149,8 +149,28 @@ export function normalizeHealthCheck(payload, { photoUrl = '', createdAt = null 
         text,
         diagnosis,
         photoUrl: photoUrlOf(payload.photoUrl) || photoUrlOf(payload.photo_url) || photoUrl,
-        createdAt: toIsoString(payload.createdAt) || toIsoString(payload.created_at) || createdAt || new Date().toISOString()
+        createdAt: toIsoString(payload.createdAt) || toIsoString(payload.created_at) || createdAt || new Date().toISOString(),
+        saved: payload.saved === true
     }
+}
+
+function normalizeHealthCheckList(raw) {
+    const items = Array.isArray(raw) ? raw : [raw]
+    let latest = null
+    for (const item of items) {
+        const check = normalizeHealthCheck(item)
+        if (!check) continue
+        if (!latest || String(check.createdAt) > String(latest.createdAt)) latest = check
+    }
+    return latest
+}
+
+export function healthCheckFromPlant(plant) {
+    const metadata = plant && typeof plant === 'object' ? plant.metadata : null
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null
+    const raw = metadata.health_check ?? metadata.healthCheck
+    if (!raw) return null
+    return normalizeHealthCheckList(raw)
 }
 
 export function healthCheckLabel(check) {
@@ -248,14 +268,16 @@ export function checkFromPhotos(photos) {
     return latest
 }
 
-export function pickLatestHealthCheck({ checks, plantId, photos } = {}) {
+export function pickLatestHealthCheck({ checks, plantId, photos, serverCheck = null } = {}) {
     const stored = checks && plantId !== null && plantId !== undefined
         ? checks[String(plantId)] ?? null
         : null
     const fromPhotos = checkFromPhotos(photos)
-    if (!stored) return fromPhotos
-    if (!fromPhotos) return stored
-    return String(stored.createdAt || '') >= String(fromPhotos.createdAt || '') ? stored : fromPhotos
+    const candidates = [serverCheck, stored, fromPhotos].filter(Boolean)
+    if (!candidates.length) return null
+    return candidates.reduce((latest, candidate) =>
+        String(candidate.createdAt || '') > String(latest.createdAt || '') ? candidate : latest
+    )
 }
 
 export async function fetchPlantPhotos(plantId) {
@@ -266,7 +288,8 @@ export async function fetchPlantPhotos(plantId) {
     )
     const data = await readJson(response)
     if (!response.ok) {
-        if (isUnavailableStatus(response.status)) {
+        const hasServerMessage = typeof data?.message === 'string' && data.message.trim()
+        if (isUnavailableStatus(response.status) && !hasServerMessage) {
             throw new PlantFeatureUnavailableError('Галерея фото пока недоступна', { status: response.status })
         }
         throw new Error(data?.message || `Не удалось загрузить фото: HTTP ${response.status}`)
@@ -274,18 +297,41 @@ export async function fetchPlantPhotos(plantId) {
     return normalizePhotoList(data)
 }
 
-async function postHealthCheck(plantId, { photoUrl, file, question }) {
+export function isAbortError(error) {
+    if (!error || typeof error !== 'object') return false
+    return error.name === 'AbortError' ||
+        error.code === 'ABORT_ERR' ||
+        error.code === 20 ||
+        (Boolean(error.cause) && error.cause.name === 'AbortError')
+}
+
+export function createHealthCheckAbortError() {
+    const error = new Error('Проверка здоровья отменена')
+    error.name = 'AbortError'
+    return error
+}
+
+function isPlantNotFoundResponse(status, data) {
+    if (Number(status) !== 404) return false
+    const message = typeof data?.message === 'string' ? data.message : ''
+    return /растени/i.test(message) && /(не найден|not found)/i.test(message)
+}
+
+async function postHealthCheck(plantId, { photoUrl, file, question, signal }) {
     if (file) {
         const formData = new FormData()
         formData.append('photo', file)
         if (question) formData.append('question', question)
         const response = await fetchWithTimeout(
             `${API_URL}/plants/${encodeURIComponent(plantId)}/health-check`,
-            { method: 'POST', body: formData, credentials: 'include' },
+            { method: 'POST', body: formData, credentials: 'include', signal },
             PLANTS_EXTRA_TIMEOUT_MS
         )
         const data = await readJson(response)
         if (!response.ok) {
+            if (isPlantNotFoundResponse(response.status, data)) {
+                throw new Error(data.message)
+            }
             if (isUnavailableStatus(response.status)) {
                 throw new PlantFeatureUnavailableError('Проверка здоровья пока недоступна', { status: response.status })
             }
@@ -300,12 +346,16 @@ async function postHealthCheck(plantId, { photoUrl, file, question }) {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'include',
-            body: JSON.stringify({ photoUrl, ...(question ? { question } : {}) })
+            body: JSON.stringify({ photoUrl, ...(question ? { question } : {}) }),
+            signal
         },
         PLANTS_EXTRA_TIMEOUT_MS
     )
     const data = await readJson(response)
     if (!response.ok) {
+        if (isPlantNotFoundResponse(response.status, data)) {
+            throw new Error(data.message)
+        }
         if (isUnavailableStatus(response.status)) {
             throw new PlantFeatureUnavailableError('Проверка здоровья пока недоступна', { status: response.status })
         }
@@ -314,10 +364,10 @@ async function postHealthCheck(plantId, { photoUrl, file, question }) {
     return normalizeHealthCheck(data)
 }
 
-async function photoUrlToFile(photoUrl) {
+async function photoUrlToFile(photoUrl, signal) {
     const response = await fetchWithTimeout(
         photoUrl,
-        { method: 'GET', credentials: 'include' },
+        { method: 'GET', credentials: 'include', signal },
         PLANTS_EXTRA_TIMEOUT_MS
     )
     if (!response.ok) throw new Error('Не удалось открыть фото растения')
@@ -328,13 +378,13 @@ async function photoUrlToFile(photoUrl) {
     return new File([blob], `plant-photo.${extension}`, { type })
 }
 
-async function postChatPhotoCheck(file, question) {
+async function postChatPhotoCheck(file, question, signal) {
     const formData = new FormData()
     formData.append('photo', file)
     if (question) formData.append('message', question)
     const response = await fetchWithTimeout(
         `${API_URL}/chat/photo`,
-        { method: 'POST', body: formData, credentials: 'include' },
+        { method: 'POST', body: formData, credentials: 'include', signal },
         PLANTS_EXTRA_TIMEOUT_MS
     )
     const data = await readJson(response)
@@ -347,24 +397,34 @@ async function postChatPhotoCheck(file, question) {
     return normalizeHealthCheck(data)
 }
 
-export async function requestPlantHealthCheck(plantId, { photoUrl = '', file = null, question = '' } = {}) {
+export async function requestPlantHealthCheck(plantId, { photoUrl = '', file = null, question = '', signal } = {}) {
     if (plantId === null || plantId === undefined) throw new Error('Не выбрано растение')
 
+    const throwIfAborted = () => {
+        if (signal?.aborted) throw createHealthCheckAbortError()
+    }
+
+    throwIfAborted()
+
     try {
-        return await postHealthCheck(plantId, { photoUrl, file, question })
+        return await postHealthCheck(plantId, { photoUrl, file, question, signal })
     } catch (error) {
+        if (signal?.aborted || isAbortError(error)) throw error
         if (!isFeatureUnavailable(error)) throw error
 
+        throwIfAborted()
         let fallbackFile = file
         if (!fallbackFile && photoUrl) {
             try {
-                fallbackFile = await photoUrlToFile(photoUrl)
-            } catch {
+                fallbackFile = await photoUrlToFile(photoUrl, signal)
+            } catch (fallbackError) {
+                if (signal?.aborted || isAbortError(fallbackError)) throw fallbackError
                 throw error
             }
         }
+        throwIfAborted()
         if (!fallbackFile) throw error
-        return postChatPhotoCheck(fallbackFile, question)
+        return postChatPhotoCheck(fallbackFile, question, signal)
     }
 }
 

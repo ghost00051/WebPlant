@@ -48,7 +48,11 @@ class GardenShareController {
 
     async getPublic(req, res) {
         try {
-            const garden = await getPublicGarden(req.params?.token)
+            const garden = await getPublicGarden(req.params?.token, {
+                viewerUserId: req.user?.id ?? null,
+                ip: req.ip,
+                userAgent: req.headers?.['user-agent'] || null
+            })
             noStore(res)
             if (!garden) {
                 return res.status(404).json({ message: PUBLIC_GARDEN_NOT_FOUND })

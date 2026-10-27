@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import { WeeklyRecapService, buildWeeklyRecapEmail, isWeeklyRecapDue, readWeeklyRecapConfig, shouldSendRecapEmail, weeklyRecapDedupeKey } from './weeklyRecapService.js'
+import { computeCareStreak } from '../utils/careStreak.js'
 
 const MSK = 'Europe/Moscow'
 const SUNDAY_EVENING = new Date('2026-11-01T16:00:00Z')
@@ -372,4 +373,39 @@ test('tick: created=false (dedupe) не считается отправкой', 
     assert.equal(result.usersSkipped, 1)
     assert.equal(calls.push.length, 0)
     assert.equal(calls.updated.length, 1)
+})
+
+test('BE-10: серия в recap считается в часовом поясе пользователя, а не в Europe/Moscow', async () => {
+    const VLADIVOSTOK = 'Asia/Vladivostok'
+    const now = new Date('2026-11-01T09:00:00Z')
+
+    const events = [
+        wateringEvent('2026-10-23T06:00:00Z'),
+        { action: 'skipped', action_at: '2026-10-25T20:00:00Z', hours_late: 0 },
+        { action: 'skipped', action_at: '2026-10-26T20:00:00Z', hours_late: 0 }
+    ]
+
+    const mskStreak = computeCareStreak(events, { now })
+    const localStreak = computeCareStreak(events, { now, timeZone: VLADIVOSTOK })
+    assert.equal(mskStreak.current, 1, 'без timeZone (Europe/Moscow) серия = 1')
+    assert.equal(localStreak.current, 0, 'в поясе пользователя пропуски ломают серию')
+
+    const { service, calls } = createHarness({
+        users: [{
+            id: 1,
+            timezone: VLADIVOSTOK,
+            email: 'user@example.test',
+            marketing_email_opt_in: false
+        }],
+        eventsByUser: { 1: events }
+    })
+
+    const result = await service.runWeeklyRecapTick(now)
+    assert.equal(result.recapsCreated, 1)
+    assert.equal(calls.store.length, 1)
+
+    const recap = calls.store[0]
+    assert.equal(recap.payload.streak.current, localStreak.current)
+    assert.equal(recap.payload.streak.current, 0, 'recap не должен считать серию в Москве')
+    assert.ok(!recap.body.includes('серия 1'), `в тексте recap не должно быть московской серии: ${recap.body}`)
 })

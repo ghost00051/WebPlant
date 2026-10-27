@@ -2,10 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+    PLANT_PHOTO_GALLERY_MAX,
     PLANT_PHOTO_NOTE_MAX_LENGTH,
     buildPlantPhotoRow,
     isValidPhotoInput,
     isValidPhotoNote,
+    isPlantPhotoGalleryFull,
     isValidPhotoTakenAt,
     photoNoteOf,
     photoTakenAtOf,
@@ -15,6 +17,17 @@ import {
 } from './plantPhotos.js'
 
 const URL = '/uploads/plants/0123456789abcdef0123456789abcdef.jpg'
+
+test('BE-13 isPlantPhotoGalleryFull: применяет PLANT_PHOTO_GALLERY_MAX = 200', () => {
+    assert.equal(PLANT_PHOTO_GALLERY_MAX, 200)
+    assert.equal(isPlantPhotoGalleryFull(198, 2), false)
+    assert.equal(isPlantPhotoGalleryFull(199, 2), true)
+    assert.equal(isPlantPhotoGalleryFull(200, 1), true)
+    assert.equal(isPlantPhotoGalleryFull(200, 0), false, 'нет добавляемых фото — не превышение')
+    assert.equal(isPlantPhotoGalleryFull(10, 1, 10), true)
+    assert.equal(isPlantPhotoGalleryFull('199', '2'), true)
+    assert.equal(isPlantPhotoGalleryFull(Number.NaN, 1), false)
+})
 
 test('isValidPhotoInput: старый контракт (строка и объект url)', () => {
     assert.equal(isValidPhotoInput(URL), true)

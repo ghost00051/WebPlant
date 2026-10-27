@@ -17,7 +17,11 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { getPasskeyConfig } from '../utils/passkeyConfig.js'
-import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    buildGuestLinkSummary,
+    describeGuestLinkSummary,
+    linkGuestDataToUser
+} from '../utils/linkGuestData.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
@@ -367,13 +371,21 @@ class PasskeyController {
                 }, { transaction })
             })
 
+            let guestLink = buildGuestLinkSummary()
             if (guestToken) {
                 try {
                     const linked = await linkGuestDataToUser(user.id, guestToken, 'login_linked')
                     console.log(
                         `🔗 Гостевые данные → аккаунт #${user.id} (passkey): ` +
-                        `согласий ${linked.consentCount}, сообщений ${linked.chatMessageCount}`
+                        describeGuestLinkSummary(linked)
                     )
+                    for (const error of linked.errors) {
+                        console.warn(
+                            `⚠️ Не удалось перенести часть гостевых данных (${error.step}):`,
+                            error.message
+                        )
+                    }
+                    guestLink = buildGuestLinkSummary(linked)
                 } catch (error) {
                     console.error(
                         '⚠️ Перенос гостевых данных после входа по ключу не удался:',
@@ -392,7 +404,8 @@ class PasskeyController {
 
             return res.json({
                 ok: true,
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (error) {
             console.error('❌ finishAuthentication:', error)

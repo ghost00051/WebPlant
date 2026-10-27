@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit'
 import gardenShareController from '../controllers/gardenShareController.js'
-import { requireAuth } from '../middleware/auth.js'
+import { optionalAuth, requireAuth } from '../middleware/auth.js'
 import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
@@ -40,6 +40,6 @@ router.get('/share', requireAuth, shareStatusLimiter, gardenShareController.stat
 router.post('/share', requireAuth, shareWriteLimiter, gardenShareController.create)
 router.delete('/share', requireAuth, shareWriteLimiter, gardenShareController.revoke)
 
-router.get('/:token', publicGardenLimiter, gardenShareController.getPublic)
+router.get('/:token', publicGardenLimiter, optionalAuth, gardenShareController.getPublic)
 
 export default router
