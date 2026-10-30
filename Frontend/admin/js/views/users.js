@@ -61,6 +61,8 @@ function userDetailNode(detail, ctx) {
         ['Роль', user.role],
         ['Тариф', user.privilegeLevel],
         ['Регистрация', user.createdAt ? formatDateTime(user.createdAt) : 'неизвестна'],
+        ['Последняя активность', formatDateTime(stats.lastActivityAt)],
+        ['Последний заход на сайт', stats.lastVisitAt ? formatDateTime(stats.lastVisitAt) : 'нет данных'],
         ['Последний полив', formatDateTime(stats.lastWateringAt)],
         ['Последнее сообщение', formatDateTime(stats.lastChatAt)]
     ].map(([label, value]) => h('p', {}, [

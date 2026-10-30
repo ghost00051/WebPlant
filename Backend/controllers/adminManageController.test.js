@@ -276,3 +276,172 @@ test('deleteChatSession: фото всей переписки удаляются
     assert.ok(calls.indexOf('ChatLog.findAll') < calls.indexOf('ChatLog.destroy'))
     assert.ok(calls.indexOf('ChatLog.destroy') < calls.indexOf('removeChatPhotoFiles:2'))
 })
+
+const VISIT_AT = '2026-10-27T08:02:11.354Z'
+const CHAT_AT = '2026-10-17T12:00:00.000Z'
+
+function createUserRow(overrides = {}) {
+    return {
+        id: 3,
+        email: 'ilya@example.com',
+        name: 'Илья',
+        username: 'ilya',
+        phone: null,
+        role: 'USER',
+        privilege_level: 'free',
+        created_at: '2026-09-01T10:00:00.000Z',
+        plants: 1,
+        active_plants: 1,
+        waterings: 0,
+        photos: 0,
+        chat_messages: 2,
+        push_subscriptions: 0,
+        last_activity_at: VISIT_AT,
+        last_visit_at: VISIT_AT,
+        ...overrides
+    }
+}
+
+function createStatsRow(overrides = {}) {
+    return {
+        plants: 1,
+        active_plants: 1,
+        waterings: 0,
+        skipped: 0,
+        photos: 0,
+        chat_messages: 2,
+        chat_sessions: 1,
+        push_subscriptions: 0,
+        passkeys: 0,
+        active_sessions: 0,
+        last_watering_at: null,
+        last_chat_at: CHAT_AT,
+        last_visit_at: VISIT_AT,
+        last_activity_at: VISIT_AT,
+        ...overrides
+    }
+}
+
+function createQueryHarness({
+    visitsTracked = true,
+    userRows = [createUserRow()],
+    baseUserRow = userRows[0],
+    statsRow = createStatsRow()
+} = {}) {
+    const queries = []
+
+    const select = async (sql, params = []) => {
+        queries.push({ sql, params })
+
+        if (/AS last_watering_at/.test(sql)) return [statsRow]
+        if (/LIMIT \$\d+/.test(sql) && /GREATEST\(/.test(sql)) return userRows
+        if (/count\(\*\)::int AS total FROM users u/.test(sql)) {
+            return [{ total: userRows.length }]
+        }
+        if (/FROM users u/.test(sql) && /u\.id = \$1/.test(sql)) return [baseUserRow]
+        if (/FROM plants p/.test(sql)) return []
+        if (/FROM watering_logs w/.test(sql)) return []
+        if (/FROM chat_logs c/.test(sql)) return []
+        if (/FROM auth_sessions/.test(sql)) return []
+        if (/FROM passkeys/.test(sql)) return []
+        if (/FROM push_subscriptions/.test(sql)) return []
+        if (/FROM user_legal_consents/.test(sql)) return []
+        if (/FROM user_cookie_consents/.test(sql)) return []
+        return []
+    }
+
+    const controller = new AdminManageController({
+        select,
+        hasSiteVisitDays: async () => visitsTracked,
+        hasUsersCreatedAt: async () => true
+    })
+
+    const userQueries = () => queries.map(query => query.sql)
+    return { controller, queries, userQueries }
+}
+
+test('listUsers: активность учитывает последний заход из site_visit_days', async () => {
+    const { controller, queries } = createQueryHarness({ visitsTracked: true })
+    const res = createResponse()
+
+    await controller.listUsers({ query: { sort: 'activity', order: 'desc' } }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.items.length, 1)
+    assert.equal(res.body.items[0].lastActivityAt, VISIT_AT)
+    assert.equal(res.body.items[0].lastVisitAt, VISIT_AT)
+
+    const mainQuery = queries.find(query => /LIMIT \$\d+/.test(query.sql))
+    assert.ok(mainQuery, 'запрос списка пользователей выполнен')
+    assert.match(mainQuery.sql, /site_visit_days/, 'активность берёт заходы из site_visit_days')
+    assert.match(
+        mainQuery.sql,
+        /GREATEST\(pl\.last_at, wl\.last_at, ch\.last_at, sv\.last_at\) AS last_activity_at/,
+        'GREATEST включает визиты'
+    )
+    assert.match(mainQuery.sql, /sv\.last_at AS last_visit_at/, 'payload списка знает последний заход')
+    assert.match(mainQuery.sql, /ORDER BY last_activity_at DESC/, 'сортировка по активности сохраняется')
+})
+
+test('listUsers: без таблицы site_visit_days SQL её не упоминает, lastVisitAt = null', async () => {
+    const { controller, queries } = createQueryHarness({
+        visitsTracked: false,
+        userRows: [createUserRow({ last_activity_at: CHAT_AT, last_visit_at: undefined })]
+    })
+    const res = createResponse()
+
+    await controller.listUsers({ query: { sort: 'activity', order: 'desc' } }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.items[0].lastActivityAt, CHAT_AT)
+    assert.equal(res.body.items[0].lastVisitAt, null)
+    assert.ok(
+        queries.every(query => !/site_visit_days/.test(query.sql)),
+        'без таблицы визитов запросы её не трогают'
+    )
+
+    const mainQuery = queries.find(query => /LIMIT \$\d+/.test(query.sql))
+    assert.match(
+        mainQuery.sql,
+        /GREATEST\(pl\.last_at, wl\.last_at, ch\.last_at\) AS last_activity_at/,
+        'старое выражение активности остаётся рабочим'
+    )
+})
+
+test('getUser: статистика содержит последний заход и согласованную активность', async () => {
+    const { controller, queries } = createQueryHarness({ visitsTracked: true })
+    const res = createResponse()
+
+    await controller.getUser({ params: { id: '3' } }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.stats.lastWateringAt, null)
+    assert.equal(res.body.stats.lastChatAt, CHAT_AT)
+    assert.equal(res.body.stats.lastVisitAt, VISIT_AT)
+    assert.equal(res.body.stats.lastActivityAt, VISIT_AT)
+
+    const statsQuery = queries.find(query => /AS last_watering_at/.test(query.sql))
+    assert.ok(statsQuery, 'статистика пользователя запрошена')
+    assert.match(statsQuery.sql, /site_visit_days/, 'статистика читает последний заход')
+    assert.match(statsQuery.sql, /AS last_visit_at/, 'response знает последний заход')
+    assert.match(statsQuery.sql, /GREATEST\(/, 'активность карточки считается как в списке')
+})
+
+test('getUser: без таблицы site_visit_days отдаёт lastVisitAt = null и не падает', async () => {
+    const { controller, queries } = createQueryHarness({
+        visitsTracked: false,
+        statsRow: createStatsRow({ last_visit_at: undefined, last_activity_at: CHAT_AT })
+    })
+    const res = createResponse()
+
+    await controller.getUser({ params: { id: '3' } }, res)
+
+    assert.equal(res.statusCode, 200)
+    assert.equal(res.body.stats.lastVisitAt, null)
+    assert.equal(res.body.stats.lastActivityAt, CHAT_AT)
+
+    const statsQuery = queries.find(query => /AS last_watering_at/.test(query.sql))
+    assert.ok(statsQuery, 'статистика пользователя запрошена')
+    assert.doesNotMatch(statsQuery.sql, /site_visit_days/, 'без таблицы визитов SQL её не трогает')
+    assert.match(statsQuery.sql, /NULL::timestamptz AS last_visit_at/, 'заглушка вместо отсутствующей таблицы')
+})

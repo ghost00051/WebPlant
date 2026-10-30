@@ -508,8 +508,8 @@ const visitsPayload = {
 
 const usersPayload = {
     items: [
-        { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), plants: 9, activePlants: 8, waterings: 40, photos: 12, chatMessages: 22, pushSubscriptions: 1, lastActivityAt: new Date().toISOString() },
-        { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null, plants: 0, activePlants: 0, waterings: 0, photos: 0, chatMessages: 0, pushSubscriptions: 0, lastActivityAt: null }
+        { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), plants: 9, activePlants: 8, waterings: 40, photos: 12, chatMessages: 22, pushSubscriptions: 1, lastActivityAt: new Date().toISOString(), lastVisitAt: new Date().toISOString() },
+        { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null, plants: 0, activePlants: 0, waterings: 0, photos: 0, chatMessages: 0, pushSubscriptions: 0, lastActivityAt: null, lastVisitAt: null }
     ],
     total: 2,
     page: 1,
@@ -519,7 +519,7 @@ const usersPayload = {
 
 const userDetailPayload = {
     user: { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: '+79000000000', bio: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), userCreatedAtTracked: true },
-    stats: { plants: 9, activePlants: 8, waterings: 40, skippedWaterings: 3, photos: 12, chatMessages: 22, chatSessions: 5, pushSubscriptions: 1, passkeys: 1, activeSessions: 2, lastWateringAt: new Date().toISOString(), lastChatAt: null },
+    stats: { plants: 9, activePlants: 8, waterings: 40, skippedWaterings: 3, photos: 12, chatMessages: 22, chatSessions: 5, pushSubscriptions: 1, passkeys: 1, activeSessions: 2, lastWateringAt: new Date().toISOString(), lastChatAt: null, lastVisitAt: new Date().toISOString(), lastActivityAt: new Date().toISOString() },
     plants: [{ id: 5, name: 'Монстера', species: 'Monstera', location: null, isActive: true, wateringIntervalDays: 7, createdAt: new Date().toISOString(), lastWateredAt: new Date().toISOString(), nextWateringAt: new Date().toISOString(), waterings: 4, photos: 2, mainPhotoUrl: null, user: { id: 2, email: 'b@example.com', username: 'ivan', name: 'Иван' } }],
     waterings: [{ id: 9, plantId: 5, plantName: 'Монстера', userId: 2, userEmail: 'b@example.com', userUsername: 'ivan', action: 'watered', actionAt: new Date().toISOString(), scheduledFor: null, hoursLate: 0, note: null, createdAt: new Date().toISOString() }],
     chat: [{ id: 3, userId: 2, userEmail: 'b@example.com', userUsername: 'ivan', sessionId: '11111111-1111-4111-8111-111111111111', role: 'user', text: 'Привет', inputTokens: 5, outputTokens: 0, error: null, createdAt: new Date().toISOString() }],

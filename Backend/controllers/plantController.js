@@ -175,6 +175,34 @@ function futureWatering(from, intervalDays, timeOfDay, timeZone, now = new Date(
     return advanceZonedWatering(from, interval, hour, timeZone, now)
 }
 
+export function planBackfilledNextWatering({
+    actionAt,
+    previousNext = null,
+    intervalDays,
+    timeOfDay = 'morning',
+    timeZone,
+    now = new Date()
+} = {}) {
+    if (!Number.isInteger(intervalDays) || intervalDays < 1) return null
+
+    const plannedNext = nextWateringInstant(
+        actionAt,
+        intervalDays,
+        timeOfDay,
+        timeZone ? { timeZone } : {}
+    )
+    if (!plannedNext) return null
+
+    const previous = previousNext ? new Date(previousNext) : null
+    const hasPrevious = previous && Number.isFinite(previous.getTime())
+    const candidate = hasPrevious && previous > plannedNext ? previous : plannedNext
+    const current = now instanceof Date ? now : new Date(now)
+    if (!Number.isFinite(current.getTime())) return candidate
+    if (candidate.getTime() > current.getTime()) return candidate
+
+    return futureWatering(candidate, intervalDays, timeOfDay, timeZone, current) ?? candidate
+}
+
 function sameInstant(value, other) {
     if (value === undefined || value === null) return other === undefined || other === null
     const left = new Date(value)
@@ -1810,15 +1838,14 @@ class PlantController {
                 const prediction = await recalculatePrediction({ plant, transaction, now, timeZone })
                 const learnedIntervalDays = prediction?.intervalDays ?? intervalDays
                 const previousNext = plant.next_watering_at ? new Date(plant.next_watering_at) : null
-                const plannedNext = nextWateringInstant(
-                    plan.actionAt,
-                    learnedIntervalDays,
-                    plant.watering_time_of_day || 'morning',
-                    { timeZone }
-                ) ?? plan.nextWateringAt
-                const nextWateringAt = previousNext && plannedNext && previousNext > plannedNext
-                    ? previousNext
-                    : plannedNext
+                const nextWateringAt = planBackfilledNextWatering({
+                    actionAt: plan.actionAt,
+                    previousNext,
+                    intervalDays: learnedIntervalDays,
+                    timeOfDay: plant.watering_time_of_day || 'morning',
+                    timeZone,
+                    now
+                }) ?? plan.nextWateringAt
                 const scheduleChanged = !previousNext || !nextWateringAt ||
                     previousNext.getTime() !== nextWateringAt.getTime()
 

@@ -1523,6 +1523,12 @@ function HomePage ({
               <img src={droplets} alt='' />
               Полить сегодня
             </div>
+            {item.previousMissedWatering && (
+              <div className='watering-badge watering-badge--overdue'>
+                <img src={droplets} alt='' />
+                Предыдущий полив пропущен
+              </div>
+            )}
           </div>
         </Link>
         <div className='plantCardActions'>

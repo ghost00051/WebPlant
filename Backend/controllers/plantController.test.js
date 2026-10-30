@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+    planBackfilledNextWatering,
     PlantController,
     serializePlantWithWateringState
 } from './plantController.js'
@@ -474,4 +475,62 @@ test('serializePlantWithWateringState: BE-07 overdue проставляется 
     assert.equal(serialized.watering_state.overdue, true)
     assert.equal(serialized.watering_state.status, 'missed')
     assert.equal(serialized.watering_state.missed, true)
+})
+
+test('water slotInput: поздняя отметка доводит next_watering_at до будущего слота', () => {
+    const now = new Date('2026-10-30T17:26:00.000Z') // 30 октября, 20:26 MSK
+    const slot = new Date('2026-10-29T11:00:00.000Z') // 29 октября, 14:00 MSK — пропущенный слот
+
+    const next = planBackfilledNextWatering({
+        actionAt: slot,
+        previousNext: slot,
+        intervalDays: 1,
+        timeOfDay: 'day',
+        timeZone: MSK,
+        now
+    })
+
+    assert.equal(next.toISOString(), '2026-10-31T11:00:00.000Z')
+    assert.ok(next.getTime() > now.getTime())
+})
+
+test('water slotInput: будущий план сохраняется, прошлый сдвигается по интервалу', () => {
+    const now = new Date('2026-10-30T17:26:00.000Z')
+
+    const future = planBackfilledNextWatering({
+        actionAt: new Date('2026-10-28T11:00:00.000Z'),
+        previousNext: new Date('2026-10-28T11:00:00.000Z'),
+        intervalDays: 7,
+        timeOfDay: 'day',
+        timeZone: MSK,
+        now
+    })
+    assert.equal(future.toISOString(), '2026-11-04T11:00:00.000Z')
+
+    const kept = planBackfilledNextWatering({
+        actionAt: new Date('2026-10-28T11:00:00.000Z'),
+        previousNext: new Date('2026-11-10T11:00:00.000Z'),
+        intervalDays: 7,
+        timeOfDay: 'day',
+        timeZone: MSK,
+        now
+    })
+    assert.equal(kept.toISOString(), '2026-11-10T11:00:00.000Z')
+
+    const daily = planBackfilledNextWatering({
+        actionAt: new Date('2026-10-30T11:00:00.000Z'),
+        previousNext: new Date('2026-10-29T11:00:00.000Z'),
+        intervalDays: 1,
+        timeOfDay: 'day',
+        timeZone: MSK,
+        now
+    })
+    assert.equal(daily.toISOString(), '2026-10-31T11:00:00.000Z')
+})
+
+test('water slotInput: некорректные данные не создают план', () => {
+    assert.equal(planBackfilledNextWatering({ actionAt: null, intervalDays: 1 }), null)
+    assert.equal(planBackfilledNextWatering({ actionAt: 'не дата', intervalDays: 1 }), null)
+    assert.equal(planBackfilledNextWatering({ actionAt: new Date('2026-10-29T11:00:00Z'), intervalDays: 0 }), null)
+    assert.equal(planBackfilledNextWatering({}), null)
 })
