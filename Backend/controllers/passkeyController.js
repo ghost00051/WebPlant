@@ -57,7 +57,8 @@ function buildUserPayload(user) {
         phone: user.phone,
         bio: user.bio,
         role: user.role,
-        privilege_level: user.privilege_level
+        privilege_level: user.privilege_level,
+        createdAt: user.created_at ?? null
     }
 }
 

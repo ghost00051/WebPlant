@@ -75,7 +75,8 @@ function buildUserPayload(user) {
         role: user.role,
         privilege_level: user.privilege_level,
         timezone: resolveTimeZone(user.timezone),
-        marketing_email_opt_in: user.marketing_email_opt_in === true
+        marketing_email_opt_in: user.marketing_email_opt_in === true,
+        createdAt: user.created_at ?? null
     }
 }
 

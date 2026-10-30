@@ -5526,10 +5526,14 @@ components:
         marketing_email_opt_in:
           type: boolean
           description: согласие на маркетинговые письма (по умолчанию false)
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+          description: дата регистрации; нужна профилю (достижение «Месяц с „Лейкой“»)
         created_at:
           type: string
           format: date-time
-          description: есть в админ-выборках; в `/api/users/me` не возвращается
+          description: есть в админ-выборках; в `/api/users/me` дата регистрации отдаётся в `createdAt`
 
     RegistrationRequest:
       type: object

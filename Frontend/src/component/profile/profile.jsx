@@ -670,7 +670,7 @@ function Profile () {
   const isAdmin = profile.role === 'ADMIN'
   const achievementsReady = Number.isInteger(plant) && Number.isInteger(history)
   const achievements = buildProfileAchievements({
-    createdAt: profile.createdAt,
+    createdAt: profile.createdAt ?? profile.created_at,
     plantCount: plant,
     wateringCount: history
   })
