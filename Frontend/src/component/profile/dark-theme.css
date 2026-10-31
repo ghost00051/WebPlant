@@ -78,3 +78,51 @@ html[data-theme='dark'] body .profilePage .passkeyCreateButton {
   background-color: var(--theme-accent-soft);
   color: var(--theme-text);
 }
+
+html[data-theme='dark'] .profilePage .profileSectionHeader h2,
+html[data-theme='dark'] .profilePage .profileAchievementTitle {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .profileSectionLead,
+html[data-theme='dark'] .profilePage .profileAchievementProgress,
+html[data-theme='dark'] .profilePage .profileAchievementsSummary,
+html[data-theme='dark'] .profilePage .profileAchievementsStatus {
+  color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievements {
+  background: var(--theme-surface);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievement {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievement.is-unlocked {
+  border-color: rgba(127, 209, 160, 0.4);
+  background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievementIcon {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievementBar {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievementBarFill {
+  background: var(--theme-accent);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievementBadge {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .profilePage .profileAchievementsStreak {
+  color: var(--theme-accent-text);
+}

@@ -6,6 +6,16 @@
 диагностирует растение по фото. Дополнительно сайт содержит публичные справочники по
 растениям и уходу (SEO-раздел) и отдельную админ-панель.
 
+С версии 1.4.0 реализован роадмап продукта (48 фич): гостевой чат на лендинге с переносом
+истории, онбординг регистрации, «Мои растения» с поливом в один тап и кнопкой
+«Добавить ещё растение», объяснимые пропуски полива, недельная сводка, заморозка серии,
+диагностика по фото, дайджест уведомлений и тихие часы, достижения профиля и публичный сад
+с переносом растений. С версии 1.3.0 напоминания и недельный recap можно получать вторым
+каналом — в Telegram или MAX: аккаунт привязывается в профиле по одноразовому коду, бот
+присылает напоминания о поливе, сводку дня и «Итоги недели». На главной появилась серия
+ухода («поливов вовремя», личный рекорд, прогресс недели), а в админке — раздел «Боты»
+с метриками каналов.
+
 Боевые адреса:
 
 | Что | Адрес |
@@ -19,8 +29,8 @@
 
 | Компонент | Версия | Файл |
 | --- | --- | --- |
-| Backend | **1.2.6** | `Backend/package.json` |
-| Frontend | **1.2.20** | `Frontend/package.json` |
+| Backend | **1.4.0** | `Backend/package.json` |
+| Frontend | **1.4.0** | `Frontend/package.json` |
 
 Версии независимы: фронт выкладывается по FTP отдельно от backend, поэтому контракт `/api`
 должен оставаться обратно совместимым (см. `docs/api/openapi.yaml` и `CHANGELOG.md`).
@@ -39,15 +49,35 @@
 * аутентификация: `jsonwebtoken` (JWT в httpOnly cookie) + `auth_sessions` для отзыва,
   `bcrypt`, passkeys через `@simplewebauthn/server`;
 * `web-push` (VAPID), in-app уведомления в БД;
+* боты Telegram и MAX как второй канал доставки (`services/telegramBotService.js`,
+  `maxBotService.js`, `botChannelService.js`): вебхуки (в production) или long polling
+  (локально), привязка аккаунта по одноразовому коду, команды `/start`, `/stop`, `/status`,
+  `/help`, доставка напоминаний и recap; метрики — `GET /api/admin/bots/analytics`;
+* F10: серия ухода и недельный recap — `utils/careStreak.js`, `services/weeklyRecapService.js`,
+  `jobs/weeklyRecapJob.js`; recap сохраняется как уведомление `weekly_recap` и уходит
+  push + в подключённые мессенджеры (e-mail — при согласии на маркетинг);
+* письмо неактивным пользователям (subject «Лейка»: всё в порядке?) — `services/inactivityEmailService.js`,
+  `jobs/inactivityEmailJob.js`: находит тех, у кого есть зафиксированный последний заход
+  в `site_visit_days` и с него прошло больше `INACTIVITY_EMAIL_DAYS` дней, и отправляет
+  письмо с приглашением ответить разработчику и ссылкой вернуться в сад (с отпиской
+  и `List-Unsubscribe`); по умолчанию выключено до согласования текста; предпросмотр —
+  `cd Backend && node scripts/preview-inactivity-email.mjs --name=Иван --last-visit=2026-10-12`;
+* feature flags соцфич (`utils/featureFlags.js`): шаринг сада включён, лента и
+  комментарии выключены до критической массы шарингов;
 * `nodemailer` (SMTP) — сброс пароля, приветственные письма, рассылки из админки;
 * `multer` + `sharp` (загрузка фото и миниатюры), `helmet`, `cors`, `express-rate-limit`,
   `node-cron`, `dockerode` (телеметрия контейнеров в админке).
 
-**Frontend 1.2.20**
+**Frontend 1.3.0**
 
 * React 19, `react-router-dom` 7, `react-day-picker`, сборка Vite 8 (rolldown);
 * PWA-манифест, service worker, темы оформления, passkeys в браузере
   (`@simplewebauthn/browser`);
+* привязка Telegram/MAX в профиле (`component/messengerBots/`), карточка серии ухода на
+  главной (`component/careStreak/`), тип уведомления `weekly_recap` в колокольчике;
+* офлайн-режим PWA: кэш расписания в service worker, очередь отметок полива в
+  IndexedDB (+ Background Sync, повтор при восстановлении сети), индикатор сети и
+  плашка «доступна новая версия»;
 * публичные страницы предгенерируются скриптом `scripts/prerender.mjs`, SEO-мета —
   `scripts/generate-seo-meta.mjs`;
 * админка `Frontend/admin/` — статический сайт (HTML + CSS + ES-модули) без сборки,
@@ -78,11 +108,11 @@ WebPlant/
 │   ├── backup.sh                pg_dump + tar uploads, проверка дампа, шифрование/offsite, retention 14 дней
 │   ├── migrations/              SQL-миграции (применяются по имени, идемпотентны)
 │   ├── models/                  модели Sequelize и associations.js
-│   ├── routes/                  маршруты Express (users, plants, chat, notifications, push, admin…)
-│   ├── controllers/             обработчики (в т.ч. adminAnalytics/Manage/Push/Mail/Ai)
-│   ├── services/                ai, careAdvice/carePlan, push, mail, passwordReset, welcomeEmail
+│   ├── routes/                  маршруты Express (users, plants, chat, notifications, push, bots, admin…)
+│   ├── controllers/             обработчики (в т.ч. adminAnalytics/Manage/Push/Mail/Ai/Bots/bot)
+│   ├── services/                ai, careAdvice/carePlan, push, mail, bots (telegram/max/botChannel), weeklyRecap
 │   ├── middleware/              auth, guestToken, admin, upload, accessLog, validateJsonShape, validateParam
-│   ├── jobs/                    reminderService, cleanExpiredTokens, push/mail broadcast jobs
+│   ├── jobs/                    reminderService, weeklyRecapJob, botPollingJob, cleanExpiredTokens, push/mail broadcast jobs
 │   ├── utils/                   schedule, prediction, locks, cache, audit, marketing consent, валидация
 │   ├── integration/             интеграционные тесты (Postgres + Redis)
 │   ├── scripts/                 apply-migrations.ps1, verify-notifications.ps1, load-test.k6.js, аудит полива
@@ -94,10 +124,10 @@ WebPlant/
 │   ├── src/                     React-приложение (component/, utils/, data/, styles/)
 │   ├── admin/                   статическая админ-панель (свой README)
 │   ├── public/                  статика, шрифты Inter, иконки, sitemap
-│   ├── scripts/                 сборка, prerender, verify, e2e, admin-smoke, indexnow
+│   ├── scripts/                 сборка, prerender, verify, admin-smoke, indexnow
 │   ├── document/                PDF/DOCX юридических документов
 │   └── vite.config.js           dev-proxy /api, chunking, версия приложения
-├── .github/workflows/ci.yml     CI: frontend, backend (lint/unit/миграции/интеграция), security, a11y/E2E
+├── .github/workflows/ci.yml     CI: frontend, backend (lint/unit/миграции/интеграция), security
 ├── .github/dependabot.yml       автоматические PR обновлений зависимостей
 ├── .githooks/                   pre-push: автотег v<version> из Frontend/package.json
 ├── docs/                        эксплуатационная документация и OpenAPI
@@ -127,8 +157,8 @@ WebPlant/
 ```powershell
 cd Backend
 npm ci
-Copy-Item .env.example .env   # шаблон в репозитории; заполните DB_*, SECRET_KEY и остальное
-npm run dev          # node --watch index.js, порт из PORT (по умолчанию 5000)
+Copy-Item .env.example .env
+npm run dev
 ```
 
 Проверка:
@@ -151,10 +181,9 @@ curl http://localhost:5000/health
 ### Backend в Docker Compose
 
 ```powershell
-# из корня репозитория; файл окружения — Backend/.env
 docker compose -f Backend/docker-compose.yml up -d --build
 docker compose -f Backend/docker-compose.yml ps
-curl http://localhost/health          # nginx проксирует /health на активный backend
+curl http://localhost/health
 ```
 
 `/health` через nginx работает только если `Backend/nginx/conf.d/default.conf` указывает на
@@ -177,8 +206,8 @@ gateway не запущен, проверяйте backend напрямую: `doc
 ```powershell
 cd Frontend
 npm ci
-Copy-Item .env.example .env    # при необходимости поправьте адрес API
-npm run dev                    # Vite, http://localhost:5173
+Copy-Item .env.example .env
+npm run dev
 ```
 
 `vite.config.js` проксирует `/api` на `VITE_API_PROXY_TARGET` (по умолчанию
@@ -189,8 +218,8 @@ npm run dev                    # Vite, http://localhost:5173
 
 ```powershell
 cd Frontend
-npm run build      # generate-plant-images → generate-seo-meta → vite build → prerender → build-manifest
-npm run verify     # verify-build + verify-routing + check-security-headers + build-manifest --check
+npm run build
+npm run verify
 npm run verify:admin
 ```
 
@@ -252,6 +281,26 @@ npm run verify:admin
 | `MAIL_FROM`, `MAIL_REPLY_TO` | адрес отправителя и reply-to |
 | `MAIL_BROADCAST_BATCH_SIZE`, `MAIL_BROADCAST_SYNC_BATCH`, `MAIL_BROADCAST_DELAY_MS`, `MAIL_BROADCAST_DEDUPE_WINDOW_MS` | параметры рассылок писем |
 | `PUSH_CONCURRENCY` | параллелизм отправки push |
+| `BOTS_ENABLED` | включает боты Telegram/MAX (по умолчанию `false`; включайте после того, как заданы реальные токены и секреты) |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_USERNAME`, `TELEGRAM_BOT_API_BASE` | токен Telegram-бота, ник (можно не задавать — берётся из `getMe`), базовый URL API (default `https://api.telegram.org`) |
+| `MAX_BOT_TOKEN`, `MAX_BOT_USERNAME`, `MAX_BOT_API_BASE` | токен MAX-бота, ник, базовый URL API (default `https://platform-api.max.ru`; `platform-api2.max.ru` требует CA Минцифры) |
+| `TELEGRAM_BOT_WEBHOOK_SECRET`, `MAX_BOT_WEBHOOK_SECRET` | секреты вебхуков: проверяются в заголовках `X-Telegram-Bot-Api-Secret-Token` / `X-Max-Bot-Api-Secret` |
+| `BOT_PUBLIC_BASE_URL` | публичный HTTPS-origin API для регистрации вебхуков (`https://server.checktheplants.ru`) |
+| `BOT_WEBHOOK_ENABLED` | регистрировать вебхуки при старте (production); `false` — для локальной разработки |
+| `BOT_POLLING_ENABLED` | long polling вместо вебхуков (только dev/test; для production не рекомендуется) |
+| `BOT_LINK_CODE_TTL_MINUTES` | срок жизни одноразового кода привязки (default 15) |
+| `BOT_DELIVERY_TIMEOUT_MS` | сколько ждать доставку в мессенджеры внутри push, не задерживая тик напоминаний (default 3000) |
+| `BOT_MESSAGE_RETENTION_DAYS`, `BOT_LINK_CODE_RETENTION_DAYS` | ретенция PII-логов ботов и одноразовых кодов привязки (default 90 и 7 дней) |
+| `WEEKLY_RECAP_ENABLED` | включает недельный recap (default `true`) |
+| `WEEKLY_RECAP_EMAIL_ENABLED` | дублировать recap на e-mail при маркетинговом согласии (default `false`) |
+| `WEEKLY_RECAP_HOUR`, `WEEKLY_RECAP_WEEKDAY` | локальное время recap: час (default 19) и ISO-день недели (7 = воскресенье) |
+| `INACTIVITY_EMAIL_ENABLED` | включает письмо давно не заходившим (subject «Лейка»: всё в порядке?; default `false` — текст согласуем и включаем вручную) |
+| `INACTIVITY_EMAIL_DAYS` | порог тишины: пишем, когда с последнего зафиксированного захода прошло строго больше N полных дней (default `7`, т.е. на 8-й день) |
+| `INACTIVITY_EMAIL_REQUIRE_MARKETING_CONSENT` | учитывать отдельное согласие на маркетинговые письма (default `true`); отписавшиеся не получают письмо в любом режиме |
+| `INACTIVITY_EMAIL_REPEAT_DAYS` | `0` — одно письмо за период отсутствия; `>0` — не чаще чем раз в N дней, пока пользователь не вернулся |
+| `INACTIVITY_EMAIL_WINDOW_START`, `INACTIVITY_EMAIL_WINDOW_END` | локальное окно отправки в поясе пользователя: start включительно, end исключительно (default 10–20) |
+| `INACTIVITY_EMAIL_MAX_PER_TICK`, `INACTIVITY_EMAIL_BATCH_SIZE`, `INACTIVITY_EMAIL_DELAY_MS` | лимит писем за тик, размер keyset-батча и пауза между письмами (default 200/100/200 мс) |
+| `INACTIVITY_EMAIL_DRY_RUN` | `true` — только посчитать и залогировать кандидатов, без писем и записи в БД |
 | `UNSUBSCRIBE_URL_BASE` | базовый URL страницы отписки от рассылок (по умолчанию `<FRONTEND_URL>/unsubscribe`) |
 | `CHAT_LOG_RETENTION_DAYS`, `AI_ADVICE_LOG_RETENTION_DAYS` | сроки хранения чатов и журнала ИИ (0 — бессрочно) |
 | `NOTIFICATION_RETENTION_DAYS` | срок хранения уведомлений |
@@ -263,7 +312,7 @@ npm run verify:admin
 | `DEPLOY_TARGET` | метка окружения в `/health` (`compose` / `kubernetes`) |
 | `DB_POOL_MAX`, `DB_POOL_MIN`, `DB_POOL_ACQUIRE_MS`, `DB_POOL_IDLE_MS`, `DB_POOL_EVICT_MS` | пул соединений Sequelize |
 | `DB_STATEMENT_TIMEOUT_MS`, `DB_QUERY_TIMEOUT_MS`, `DB_RETRY_MAX` | таймауты и ретраи запросов |
-| `DOCKER_HOST`, `DOCKER_STATS_ENABLED` | телеметрия контейнеров в админке (`DOCKER_STATS_ENABLED=false` отключает) |
+| `DOCKER_HOST`, `DOCKER_STATS_ENABLED`, `DOCKER_EXPECTED_STOPPED`, `DOCKER_COMPOSE_PROJECT` | телеметрия контейнеров в админке (`DOCKER_STATS_ENABLED=false` отключает); в кластере — `DOCKER_HOST` до `docker-socket-proxy`, список намеренно остановленных в `DOCKER_EXPECTED_STOPPED`, фильтр по compose-проекту в `DOCKER_COMPOSE_PROJECT` |
 | `DEPLOY_PROTOCOL`, `DEPLOY_HOST`, `DEPLOY_PORT`, `DEPLOY_USER`, `DEPLOY_PASSWORD`, `DEPLOY_REMOTE_ROOT`, `DEPLOY_SITE_URL`, `DEPLOY_CONFIG_PATH` | параметры FTP-деплоя фронта (`deploy.config.example.json`, `.env.example`) |
 
 ### Frontend
@@ -288,8 +337,7 @@ npm run verify:admin
 | `cd Frontend; npm run lint` | ESLint (0 ошибок в CI) |
 | `cd Frontend; npm run build` | сборка + prerender + `dist/build-info.json` |
 | `cd Frontend; npm run verify` | сборка, роутинг, security-заголовки/CSP, манифест |
-| `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (8 разделов) |
-| `cd Frontend; npm run test:e2e` | E2E через `scripts/run-e2e.mjs` (нужен Chrome; в CI `WEBPLANT_E2E_REQUIRED=1`) |
+| `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (11 разделов) |
 | `powershell -File Backend/scripts/verify-notifications.ps1` | проверка уведомлений/идемпотентности на одноразовой БД |
 | `node Backend/scripts/admin-api-integration.mjs seed|verify` | 94 проверки админ-API на отдельной тестовой БД |
 | `cd Backend; node scripts/watering-prediction-audit.mjs --days=365` | read-only аудит адаптивного интервала полива |
@@ -307,9 +355,7 @@ CI (`.github/workflows/ci.yml`) на каждый push/PR:
   PostgreSQL и Redis (`RUN_INTEGRATION=1`);
 * `security` — `npm audit --audit-level=high` (backend и frontend), `gitleaks`
   (скан секретов), CodeQL (`javascript-typescript`, `security-and-quality`);
-* `notify-failure` — создаёт/обновляет issue с меткой `ci-failure`;
-* `a11y-smoke` — опционально: axe-smoke, E2E, admin-smoke (если в чекауте есть
-  `state/frontend-audit/tools/audit.mjs`).
+* `notify-failure` — создаёт/обновляет issue с меткой `ci-failure`.
 
 Обновления зависимостей приходят PR-ами от `.github/dependabot.yml`. Прикладные секреты в
 CI не используются (только `GITHUB_TOKEN` и, при необходимости, `GITLEAKS_LICENSE`).
@@ -323,7 +369,7 @@ CI не используются (только `GITHUB_TOKEN` и, при нео�
 | [RUNBOOK.md](RUNBOOK.md) | инциденты: 5xx, БД, Redis, диск, TLS, SMTP/ИИ, утечка секретов; восстановление БД и uploads; ротации; RPO/RTO |
 | [INCIDENT-RUNBOOK.md](INCIDENT-RUNBOOK.md) | роли и каналы при инциденте, шаблоны коммуникации, статус-страница, уведомление РКН, постмортем |
 | [SECRETS.md](SECRETS.md) | реестр секретов: где хранится, владелец, ротация, действия при утечке |
-| [CHANGELOG.md](CHANGELOG.md) | версии Backend 1.2.6 и Frontend 1.2.20, раздел Unreleased |
+| [CHANGELOG.md](CHANGELOG.md) | версии Backend 1.3.0 и Frontend 1.3.0, раздел Unreleased |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | лицензии зависимостей, шрифт Inter, иллюстрации |
 | [docs/api/openapi.yaml](docs/api/openapi.yaml) | контракт API (OpenAPI 3.1) |
 | [docs/DATA-RETENTION.md](docs/DATA-RETENTION.md) | сроки хранения данных, удаление и экспорт, публикация изменений документов |

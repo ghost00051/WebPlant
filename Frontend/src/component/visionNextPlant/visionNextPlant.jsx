@@ -9,6 +9,42 @@ import './dark-theme.css'
 import IconCircle from '../../assets/IconCircle.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import PlantPhoto from '../PlantPhoto/PlantPhoto'
+import {
+  careEventSummary,
+  careGroupFor,
+  careTitleFor
+} from '../../utils/careEvents.js'
+
+const CARE_GROUP_ICONS = {
+  feed: '🌱',
+  spray: '💦',
+  other: '🍃'
+}
+
+function careIconFor (actionCode) {
+  return CARE_GROUP_ICONS[careGroupFor(actionCode)] ?? '🍃'
+}
+
+function careGroupClass (actionCode) {
+  return careGroupFor(actionCode) ?? 'other'
+}
+
+function pluralizeCare (n) {
+  const abs = Math.abs(n) % 100
+  const last = abs % 10
+  if (abs > 10 && abs < 20) return 'уходов'
+  if (last === 1) return 'уход'
+  if (last >= 2 && last <= 4) return 'ухода'
+  return 'уходов'
+}
+
+function getCareTimeLabel (event) {
+  const raw = event?.done_at ?? event?.created_at ?? event?.performed_at
+  if (typeof raw !== 'string' || !raw.includes('T')) return ''
+  const date = new Date(raw)
+  if (Number.isNaN(date.getTime())) return ''
+  return getPastTime(date)
+}
 
 function pluralizePlants (n) {
   const abs = Math.abs(n) % 100
@@ -83,6 +119,7 @@ function VisionNextPlant ({
   onGoToDate,
   onWater,
   onDeleteWatering,
+  onDeleteCareAction,
   wateringPlantId,
   deletingWateringId,
   onClose
@@ -94,22 +131,28 @@ function VisionNextPlant ({
 
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [waterError, setWaterError] = useState(null)
+  const [careBusyId, setCareBusyId] = useState(null)
+  const [careError, setCareError] = useState(null)
   const kind = day?.kind ?? 'empty'
 
   const isPast = kind === 'past'
-  const isEmpty = kind === 'empty'
 
   const pendingPlants = day?.plants ?? []
   const localEvents = day?.events ?? []
   const wateredEvents = localEvents.filter(e => e.kind === 'watered')
   const overdueEvents = localEvents.filter(e => e.kind === 'overdue')
   const skippedEvents = localEvents.filter(e => e.kind === 'skipped')
+  const careEvents = localEvents.filter(e => e.kind === 'care')
+  const plannedCareEvents = localEvents.filter(e => e.kind === 'care_planned')
   const pendingCount = pendingPlants.length
   const hasRows = pendingCount > 0 || localEvents.length > 0
+  const isEmpty = kind === 'empty' && !hasRows
 
   const dayIso = day?.iso ?? null
   const waterErrorMessage =
     waterError && waterError.iso === dayIso ? waterError.message : ''
+  const careErrorMessage =
+    careError && careError.iso === dayIso ? careError.message : ''
 
   const handleWaterPlant = async (plantId, scheduledFor) => {
     if (!plantId || wateringPlantId) return
@@ -126,6 +169,35 @@ function VisionNextPlant ({
         iso: dayIso,
         message: 'Не удалось отметить полив. Попробуйте ещё раз.'
       })
+    }
+  }
+
+  const handleCancelCare = async event => {
+    const logId = event?.log_id ?? event?.id
+    const plantId = event?.plant?.id
+    if (logId === null || logId === undefined) return
+    if (plantId === null || plantId === undefined) return
+    if (careBusyId !== null) return
+
+    setCareError(null)
+    setCareBusyId(logId)
+    try {
+      const result = await onDeleteCareAction?.(plantId, logId)
+      if (result && result.ok === false) {
+        setCareError({
+          iso: dayIso,
+          message:
+            result.message || 'Не удалось отменить действие ухода. Попробуйте ещё раз.'
+        })
+      }
+    } catch (error) {
+      console.error('Ошибка отмены действия ухода:', error)
+      setCareError({
+        iso: dayIso,
+        message: 'Не удалось отменить действие ухода. Попробуйте ещё раз.'
+      })
+    } finally {
+      setCareBusyId(null)
     }
   }
 
@@ -149,6 +221,18 @@ function VisionNextPlant ({
       skippedEvents.length === 1
         ? '1 пропущено'
         : `${skippedEvents.length} пропущено`
+    )
+  }
+  if (careEvents.length) {
+    counterParts.push(
+      `${careEvents.length} ${pluralizeCare(careEvents.length)}`
+    )
+  }
+  if (plannedCareEvents.length) {
+    counterParts.push(
+      `${plannedCareEvents.length} ${pluralizeCare(
+        plannedCareEvents.length
+      )} ${plannedCareEvents.length === 1 ? 'запланирован' : 'запланировано'}`
     )
   }
   if (pendingCount) {
@@ -294,6 +378,93 @@ function VisionNextPlant ({
     )
   }
 
+  const renderCareRow = (event, index) => {
+    const plant = event?.plant ?? null
+    const actionCode = event?.action_code ?? event?.actionCode
+    const group = careGroupClass(actionCode)
+    const title = event?.title || careTitleFor(actionCode) || 'Уход'
+    const summary = careEventSummary(event)
+    const timeLabel = getCareTimeLabel(event)
+    const logId = event?.log_id ?? event?.id ?? null
+    const plantName = plant?.name ?? 'Растение'
+    const isBusy = careBusyId !== null && careBusyId === logId
+
+    return (
+      <li
+        key={`care-${logId ?? index}`}
+        className='plantsPreview__item plantsPreview__item--care'
+      >
+        <div className='plantsPreview__photoWrap'>
+          <div>
+            <span
+              className={`careRowIcon careRowIcon--${group}`}
+              aria-hidden='true'
+            >
+              {careIconFor(actionCode)}
+            </span>
+          </div>
+          <div className='careRowText'>
+            <span className='careRowTitle'>{title}</span>
+            <p className='careRowMeta'>{plantName}</p>
+            {summary && <p className='careRowMeta'>{summary}</p>}
+          </div>
+        </div>
+        <div className='plantsPreview__actions'>
+          {timeLabel && (
+            <p className='classOfgetWateringTime classOfgetWateringTime--care'>
+              {timeLabel}
+            </p>
+          )}
+          {logId !== null && (
+            <button
+              type='button'
+              className='plantsPreview__delete'
+              disabled={careBusyId !== null}
+              aria-busy={isBusy}
+              aria-label={`Отменить ${title.toLowerCase()} растения «${plantName}»`}
+              onClick={() => handleCancelCare(event)}
+            >
+              {isBusy ? 'Отменяем…' : 'Отменить'}
+            </button>
+          )}
+        </div>
+      </li>
+    )
+  }
+
+  const renderPlannedCareRow = (event, index) => {
+    const plant = event?.plant ?? null
+    const actionCode = event?.action_code ?? event?.actionCode
+    const group = careGroupClass(actionCode)
+    const title = event?.title || careTitleFor(actionCode) || 'Уход'
+    const plantName = plant?.name || 'Растение'
+
+    return (
+      <li
+        key={`care-planned-${plant?.id ?? 'plant'}-${index}`}
+        className='plantsPreview__item plantsPreview__item--care plantsPreview__item--planned'
+      >
+        <div className='plantsPreview__photoWrap'>
+          <div>
+            <span
+              className={`careRowIcon careRowIcon--${group}`}
+              aria-hidden='true'
+            >
+              {careIconFor(actionCode)}
+            </span>
+          </div>
+          <div className='careRowText'>
+            <span className='careRowTitle'>{title}</span>
+            <p className='careRowMeta'>{plantName}</p>
+          </div>
+        </div>
+        <div className='plantsPreview__actions'>
+          <span className='carePlannedBadge'>Запланировано</span>
+        </div>
+      </li>
+    )
+  }
+
   return createPortal(
     <div
       className={`vision-overlay ${active ? 'is-active' : ''}`}
@@ -335,6 +506,11 @@ function VisionNextPlant ({
             {waterErrorMessage && (
               <p className='wateringNote wateringNote--error' role='alert'>
                 {waterErrorMessage}
+              </p>
+            )}
+            {careErrorMessage && (
+              <p className='wateringNote wateringNote--error' role='alert'>
+                {careErrorMessage}
               </p>
             )}
             {day && isEmpty && (
@@ -403,6 +579,8 @@ function VisionNextPlant ({
                     key: `watered-${ev.plant.id}-${i}`
                   })
                 )}
+                {careEvents.map((ev, i) => renderCareRow(ev, i))}
+                {plannedCareEvents.map((ev, i) => renderPlannedCareRow(ev, i))}
               </ul>
             )}
           </div>

@@ -1,5 +1,12 @@
-import { Op } from 'sequelize'
+import { Op, QueryTypes } from 'sequelize'
+import sequelize from '../db.js'
 import Notification from '../models/Notification.js'
+import { hasNotificationClicks } from '../utils/adminSchema.js'
+import {
+    buildUnreadByCategory,
+    categoryWhere,
+    parseNotificationCategory
+} from '../utils/notificationCategories.js'
 
 const LIST_ATTRIBUTES = [
     'id',
@@ -8,10 +15,27 @@ const LIST_ATTRIBUTES = [
     'title',
     'body',
     'url',
+    'payload',
     'scheduled_for',
     'read_at',
     'created_at'
 ]
+
+const CLICK_UPDATE_SQL = `
+    UPDATE notifications
+    SET clicked_at = COALESCE(clicked_at, now()),
+        read_at = COALESCE(read_at, now()),
+        click_count = click_count + 1
+    WHERE id = $1 AND user_id = $2
+    RETURNING id
+`
+
+const LEGACY_CLICK_UPDATE_SQL = `
+    UPDATE notifications
+    SET read_at = COALESCE(read_at, now())
+    WHERE id = $1 AND user_id = $2
+    RETURNING id
+`
 const DEFAULT_LIMIT = 20
 const MAX_LIMIT = 50
 const MAX_OFFSET = 1_000_000
@@ -76,8 +100,19 @@ class NotificationController {
                 })
             }
 
-            const where = { user_id: req.user.id, ...STATUS_FILTERS[status]() }
-            const [result, unreadCount] = await Promise.all([
+            const category = parseNotificationCategory(req.query.category)
+            if (!category) {
+                return res.status(400).json({
+                    message: 'Параметр category должен принимать значение all, watering, care или garden'
+                })
+            }
+
+            const where = {
+                user_id: req.user.id,
+                ...STATUS_FILTERS[status](),
+                ...categoryWhere(category)
+            }
+            const [result, unreadRows] = await Promise.all([
                 Notification.findAndCountAll({
                     where,
                     attributes: LIST_ATTRIBUTES,
@@ -86,17 +121,21 @@ class NotificationController {
                     offset: pagination.offset
                 }),
                 Notification.count({
-                    where: { user_id: req.user.id, read_at: null }
+                    where: { user_id: req.user.id, read_at: null },
+                    group: ['type']
                 })
             ])
 
             const items = result.rows.map(notification => notification.toJSON())
             const nextOffset = pagination.offset + items.length
+            const unreadByCategory = buildUnreadByCategory(unreadRows)
 
             return res.json({
                 items,
                 total: result.count,
-                unreadCount,
+                unreadCount: unreadByCategory.all,
+                unreadByCategory,
+                category,
                 status,
                 limit: pagination.limit,
                 offset: pagination.offset,
@@ -151,6 +190,33 @@ class NotificationController {
         } catch (error) {
             console.error('❌ Ошибка отметки уведомления:', error)
             return res.status(500).json({ message: 'Не удалось обновить уведомление' })
+        }
+    }
+
+    async markClicked(req, res) {
+        try {
+            const id = parseNotificationId(req.params.id)
+            if (!id) {
+                return res.status(400).json({ message: 'Некорректный идентификатор уведомления' })
+            }
+
+            const clicksTracked = await hasNotificationClicks()
+            const rows = await sequelize.query(
+                clicksTracked ? CLICK_UPDATE_SQL : LEGACY_CLICK_UPDATE_SQL,
+                {
+                    bind: [id, req.user.id],
+                    type: QueryTypes.SELECT
+                }
+            )
+
+            if (!rows?.length) {
+                return res.status(404).json({ message: 'Уведомление не найдено' })
+            }
+
+            return res.json({ ok: true })
+        } catch (error) {
+            console.error('❌ Ошибка отметки клика по уведомлению:', error)
+            return res.status(500).json({ message: 'Не удалось отметить клик по уведомлению' })
         }
     }
 

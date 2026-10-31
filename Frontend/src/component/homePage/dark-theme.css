@@ -11,6 +11,19 @@ html[data-theme='dark'] .godOfplantSoffSchedule {
     border-color: var(--theme-border);
 }
 
+html[data-theme='dark'] .wateringTabs {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .wateringTabsIndicator {
+    background: #303239;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45), 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+html[data-theme='dark'] .wateringTabBadge--empty {
+    background: rgba(255, 255, 255, 0.08);
+}
+
 html[data-theme='dark'] .checkPlantSoffScheduleoverlay {
     background: rgba(0, 0, 0, 0.6);
 }
@@ -46,4 +59,145 @@ html[data-theme='dark'] .offScheduleToggle {
 html[data-theme='dark'] .offScheduleToggle:hover {
     background: var(--theme-raised);
     border-color: #4a4d55;
+}
+
+html[data-theme='dark'] .no-photo {
+    background-color: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .plantRender--first {
+    border-color: var(--theme-accent);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+
+html[data-theme='dark'] .homePageAllPlantsLink {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .homePageNoticeDismiss:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme='dark'] .daySummary,
+html[data-theme='dark'] .homePageSeasonBadge,
+html[data-theme='dark'] .desktopSeasonBadge,
+html[data-theme='dark'] .homeInsightItem,
+html[data-theme='dark'] .plantDayTask,
+html[data-theme='dark'] .weekSummaryStat,
+html[data-theme='dark'] .firstDayPhotoFallback,
+html[data-theme='dark'] .plantDaySheetPhotoFallback,
+html[data-theme='dark'] .missedCardPhotoFallback {
+    background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .firstDayCard,
+html[data-theme='dark'] .weekSummaryCard,
+html[data-theme='dark'] .careTaskCard,
+html[data-theme='dark'] .missedCard,
+html[data-theme='dark'] .homeInsightPanel,
+html[data-theme='dark'] .plantDaySheet {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .daySummaryButton,
+html[data-theme='dark'] .missedCardWaterLater,
+html[data-theme='dark'] .careTaskMark,
+html[data-theme='dark'] .plantDayTaskAction {
+    background: #6f8376;
+    color: #101612;
+}
+
+html[data-theme='dark'] .daySummaryText h2,
+html[data-theme='dark'] .firstDayHeader h2,
+html[data-theme='dark'] .careTaskTitle,
+html[data-theme='dark'] .weekSummaryHeader h2,
+html[data-theme='dark'] .homeInsightHeader h2,
+html[data-theme='dark'] .plantDaySheetHeader h2,
+html[data-theme='dark'] .plantDayTaskTitle,
+html[data-theme='dark'] .missedCardName,
+html[data-theme='dark'] .missedCardQuestion,
+html[data-theme='dark'] .homeInsightItemText,
+html[data-theme='dark'] .firstDayFactText,
+html[data-theme='dark'] .plantDayTaskDescription {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .daySummaryText p,
+html[data-theme='dark'] .weekSummaryDates,
+html[data-theme='dark'] .weekSummaryStatus,
+html[data-theme='dark'] .weekSummaryExtra,
+html[data-theme='dark'] .weekSummaryStat span,
+html[data-theme='dark'] .weekSummaryStat strong,
+html[data-theme='dark'] .homeInsightEyebrow,
+html[data-theme='dark'] .homeInsightDate,
+html[data-theme='dark'] .homeInsightItemTitle,
+html[data-theme='dark'] .firstDayEyebrow,
+html[data-theme='dark'] .firstDayFactTitle,
+html[data-theme='dark'] .careTaskMeta,
+html[data-theme='dark'] .careTaskField,
+html[data-theme='dark'] .plantDaySheetEyebrow,
+html[data-theme='dark'] .plantDaySheetSubtitle,
+html[data-theme='dark'] .plantDaySheetEmpty,
+html[data-theme='dark'] .missedCardBadge,
+html[data-theme='dark'] .plantCareButton {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .missedCardBadge {
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .homeInsightItemTitle,
+html[data-theme='dark'] .firstDayFactTitle,
+html[data-theme='dark'] .firstDayLink,
+html[data-theme='dark'] .plantCareButton,
+html[data-theme='dark'] .careTaskSheetButton {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .firstDayCard,
+html[data-theme='dark'] .missedCard,
+html[data-theme='dark'] .weekSummaryCard {
+    box-shadow: none;
+}
+
+html[data-theme='dark'] .plantDaySheetOverlay {
+    background: rgba(0, 0, 0, 0.6);
+}
+
+html[data-theme='dark'] .plantDaySheetClose,
+html[data-theme='dark'] .homeInsightClose:hover,
+html[data-theme='dark'] .firstDayDismiss:hover {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .insightButton {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .insightBadge {
+    background: #f4f5f4;
+    box-shadow: 0 0 0 2px var(--theme-surface);
+}
+
+html[data-theme='dark'] .careTaskField input {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careTaskChips button {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careTaskChips button.is-active {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent-text);
+    color: var(--theme-accent-text);
 }

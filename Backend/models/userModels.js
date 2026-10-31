@@ -46,6 +46,11 @@ const User = sequelize.define("user", {
         type: DataTypes.DATE,
         allowNull: true
     },
+    inactivity_email_sent_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Когда отправлено письмо «Всё в порядке?»; before-send claim против дублей, при ошибке откатывается'
+    },
     timezone: {
         type: DataTypes.STRING(64),
         allowNull: true,
@@ -71,6 +76,12 @@ const User = sequelize.define("user", {
         type: DataTypes.DATE,
         allowNull: true,
         comment: 'Когда согласие отозвано (one-click отписка или настройки)'
+    },
+    created_at: {
+        type: DataTypes.DATE,
+        allowNull: false,
+        defaultValue: DataTypes.NOW,
+        comment: 'Момент регистрации (F03): backfill — MIN(user_legal_consents.accepted_at) для source=registration'
     }
 }, {
     tableName: 'users',
@@ -85,6 +96,11 @@ const User = sequelize.define("user", {
             name: 'idx_users_marketing_email_opt_in',
             fields: ['marketing_email_opt_in'],
             where: { marketing_email_opt_in: true }
+        },
+        {
+            name: 'idx_users_inactivity_email_sent_at',
+            fields: ['inactivity_email_sent_at'],
+            where: { inactivity_email_sent_at: null }
         }
     ]
 })

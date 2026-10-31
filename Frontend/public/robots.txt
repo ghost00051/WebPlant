@@ -3,5 +3,10 @@ Allow: /
 
 Disallow: /api/
 Disallow: /uploads/
+Disallow: /garden/
+Disallow: /admin
+Disallow: /404.html
 
 Sitemap: https://checktheplants.ru/sitemap.xml
+
+Clean-param: utm_source&utm_medium&utm_campaign&utm_term&utm_content&yclid&gclid&from&fbclid /

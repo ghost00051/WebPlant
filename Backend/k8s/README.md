@@ -50,14 +50,12 @@
 в Secret (перечислен в `$secretKeys`), остальные `SMTP_*`/`MAIL_*` — в ConfigMap.
 Почта нужна для писем со ссылкой сброса пароля: пока `SMTP_PASSWORD` пуст,
 восстановление пароля отвечает `503`, а `GET /health` показывает
-`"mail": "not-configured"`. После заполнения пароля образ пересобирать не нужно, но
-одного `deploy.ps1 -SkipBuild -SkipImageLoad` **недостаточно**: Secret обновится,
-а поды продолжат работать со старыми переменными, потому что env читается только
-при старте контейнера. Нужен ещё перезапуск подов:
+`"mail": "not-configured"`. После заполнения пароля образ пересобирать не нужно:
+Secret обновится, и `deploy.ps1` сам перезапустит поды, потому что env читается
+только при старте контейнера.
 
 ```powershell
 powershell -File Backend/k8s/scripts/deploy.ps1 -SkipBuild -SkipImageLoad
-kubectl rollout restart deployment/backend -n webplant
 ```
 
 ## Требования
@@ -119,13 +117,15 @@ kubectl rollout undo deployment/backend -n webplant      # предыдущий 
 
 **Изменились только настройки** (`Backend/.env`, ConfigMap, Secret, флаги задач) —
 пересобирать образ не нужно, но поды должны перезапуститься, потому что переменные
-окружения читаются только при старте:
+окружения читаются только при старте. `deploy.ps1` сравнивает содержимое
+`webplant-config`, `webplant-env` и `webplant-secrets` до и после применения и сам
+делает `kubectl rollout restart deployment/backend`, если что-то изменилось:
 
 ```powershell
-# .env → Secret и ConfigMap, плюс перезапуск подов (образ не пересобирается)
+# .env → Secret и ConfigMap, плюс автоматический перезапуск подов (образ не пересобирается)
 powershell -File Backend/k8s/scripts/deploy.ps1 -SkipBuild -SkipImageLoad
 
-# или вручную, если правили ConfigMap в кластере
+# или вручную, если правили ConfigMap прямо в кластере
 kubectl rollout restart deployment/backend -n webplant
 ```
 
@@ -237,6 +237,47 @@ kubectl exec -n webplant deployment/redis -- redis-cli --scan --pattern 'ctp:*'
 наружу порт не публикуется — доступ только внутри кластера и через
 `kubectl port-forward svc/redis 6379:6379 -n webplant`.
 
+## Состояние контейнеров в админке
+
+Раздел «Рассылки и сервер» показывает два контура сразу:
+
+* **Поды Kubernetes** — из API кластера: готовность (`Running 1/1`), перезапуски, узел и
+  причина, по которой под не стартует (`ErrImageNeverPull`, `ImagePullBackOff`,
+  `CrashLoopBackOff`, «Не запланирован: …»). Кнопка «Логи» тянет последние строки
+  (`GET /api/system/docker-stats/pod:<имя>/logs`);
+* **Контейнеры compose** — через `docker-socket-proxy`: nginx, certbot, postgres, redis,
+  backup и остановленный боевой backend.
+
+Как это устроено:
+
+* поды читаются под ServiceAccount `webplant-backend`; Role `webplant-backend-pods`
+  разрешает только `get`/`list` подов и `get` их логов в namespace `webplant`
+  (`05-serviceaccount.yaml`), токен монтируется (`automountServiceAccountToken: true`).
+  Проверка прав:
+  `kubectl auth can-i list pods -n webplant --as=system:serviceaccount:webplant:webplant-backend`;
+* Docker-статистика идёт не в локальный демон, а в `ctp_docker_socket_proxy`, подключённый
+  к сети `kind` со статическим адресом `172.20.0.250`. Адрес и флаг живут в
+  `10-configmap.yaml` (`DOCKER_HOST`, `DOCKER_STATS_ENABLED=true`), подключение делает
+  `deploy.ps1` (`docker network connect --ip …`). Под может достучаться до docker-контейнера
+  только по IP: имена контейнеров и `127.0.0.1` внутри пода не работают;
+* контейнеры, остановленные намеренно, перечислены в `DOCKER_EXPECTED_STOPPED`
+  (`ctp_backend`, `ctp_migrate`) и не попадают в «Проблемы» — иначе панель вечно
+  показывала бы красное из-за выключенного compose-бэкенда;
+* в панель попадают только контейнеры compose-проекта `backend` и контейнеры без метки
+  проекта (`ctp_k8s_gateway`) — за это отвечает `DOCKER_COMPOSE_PROJECT`. Соседние
+  проекты на том же Docker-хосте (в этом репозитории их видно как `school-*`) не мешают.
+
+Если панель пишет «Docker недоступен»:
+
+```powershell
+docker network inspect kind                      # сеть есть? Kubernetes включён?
+docker network connect --ip 172.20.0.250 kind ctp_docker_socket_proxy   # восстановить связку
+kubectl exec -n webplant deployment/backend -- node -e "fetch('http://172.20.0.250:2375/_ping').then(r=>r.text()).then(console.log)"
+```
+
+Связка теряется после перезапуска Docker Desktop (сеть `kind` пересоздаётся) — повторный
+`deploy.ps1` её чинит. Порт наружу не публикуется: proxy доступен только из docker-сетей.
+
 ## Особенности Docker Desktop Kubernetes
 
 Их полезно знать, чтобы не искать несуществующие проблемы:
@@ -268,6 +309,13 @@ kubectl exec -n webplant deployment/redis -- redis-cli --scan --pattern 'ctp:*'
   под, поэтому обе реплики backend и Job-ы переноса данных живут на одной ноде.
   Для разъезда по нодам нужен RWX-класс (NFS/CephFS) — тогда же имеет смысл
   добавить HPA.
+* **Пробы терпимы к просадке диска.** Пока `deploy.ps1` раскладывает ~135-МБ образ на все
+  ноды, WSL2 отвечает медленнее обычного: exec-проба `pg_isready`/`redis-cli` и `/health`
+  (с roundtrip в PostgreSQL) не укладывались в 5 с, и поды на минуту уходили в `0/1` —
+  gateway в это время отдавал 5xx, хотя приложение было живо. Поэтому `timeoutSeconds`
+  у readiness/liveness подняты до 10 с, `failureThreshold` — до 6, а у PostgreSQL появился
+  `startupProbe`. Если ноды снова начнут «мигать», смотрите
+  `kubectl get events -n webplant --sort-by=.lastTimestamp`, а не логи приложения.
 
 ## Перенос боевых данных
 
@@ -325,7 +373,9 @@ powershell -File Backend/k8s/scripts/switch-traffic.ps1 -Target compose
 секрете кластера (`kubectl get secret webplant-secrets -n webplant -o jsonpath='{.data.REDIS_URL}'`).
 
 Остановить лишний стек после переезда: `docker compose stop backend postgres backup`
-(nginx и certbot остаются на месте и продолжают держать TLS).
+(nginx и certbot остаются на месте и продолжают держать TLS). Остановленные контейнеры
+перечислены в `DOCKER_EXPECTED_STOPPED` (ConfigMap `webplant-config`), поэтому в админке
+они не считаются проблемой — см. «Состояние контейнеров в админке».
 
 > **Дубли push при двух запущенных бэкендах.** Пока оба бэкенда живы, а Redis у
 > них разный, напоминания уходят дважды: в базах продублированы одни и те же

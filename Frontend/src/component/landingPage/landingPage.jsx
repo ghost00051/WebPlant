@@ -1,9 +1,16 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import LogoMark from '../../assets/LogoMark.svg'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
 import SiteFooter from '../SiteFooter/SiteFooter.jsx'
 import { ARTICLE_NAV, PLANT_NAV } from '../../data/seoMeta.js'
 import { CARE_PATH, PLANTS_PATH, articlePath, plantPath } from '../../data/siteMap.js'
+import { trackEvent } from '../../utils/productEvents.js'
+import LandingDemoGarden from './landingDemoGarden.jsx'
+import { countDemoDueToday } from './landingDemoGardenData.js'
+import LandingGuestChat from './landingGuestChat.jsx'
+import LandingReminderScenario from './landingReminderScenario.jsx'
+import LandingSocialProof from './landingSocialProof.jsx'
 import './landingPage.css'
 import './dark-theme.css'
 
@@ -44,6 +51,23 @@ const GUIDE_PLANTS = PLANT_NAV.slice(0, 5)
 const GUIDE_ARTICLES = ARTICLE_NAV.slice(0, 3)
 
 function LandingPage() {
+    const [demoWateredIds, setDemoWateredIds] = useState({})
+    const demoDueLeft = countDemoDueToday(demoWateredIds)
+
+    useEffect(() => {
+        trackEvent('landing_view')
+    }, [])
+
+    const waterDemoPlant = plantId => {
+        setDemoWateredIds(current =>
+            current[plantId] ? current : { ...current, [plantId]: true }
+        )
+    }
+
+    const resetDemoGarden = () => {
+        setDemoWateredIds({})
+    }
+
     return (
         <div className='landingPage'>
             <header className='landingHeader'>
@@ -84,38 +108,16 @@ function LandingPage() {
                         <p className='landingPrivacyNote'>
                             Создайте аккаунт, чтобы сохранить свои растения и расписание.
                         </p>
+                        <LandingReminderScenario dueLeft={demoDueLeft} />
                     </div>
-                    <div className='landingPreview' aria-label='Как устроена Лейка'>
-                        <div className='landingPreviewHeader'>
-                            <span className='landingPreviewLogo'>
-                                <img src={LogoMark} alt='' />
-                            </span>
-                            <div>
-                                <span className='landingPreviewGreeting'>Ваш сад под рукой</span>
-                                <strong>План на сегодня</strong>
-                            </div>
-                            <span className='landingPreviewCount'>2</span>
-                        </div>
-                        <div className='landingPreviewCalendar' aria-hidden='true'>
-                            <span>ПН</span><span>ВТ</span><span>СР</span><span>ЧТ</span><span>ПТ</span>
-                            <span>5</span><span className='isToday'>6</span><span>7</span><span>8</span><span>9</span>
-                        </div>
-                        <div className='landingPreviewPlant'>
-                            <span className='landingPlantGlyph' aria-hidden='true'>✳</span>
-                            <span><strong>Монстера</strong><small>Полить сегодня</small></span>
-                            <span className='landingPlantCheck' aria-hidden='true'>✓</span>
-                        </div>
-                        <div className='landingPreviewPlant'>
-                            <span className='landingPlantGlyph landingPlantGlyphLight' aria-hidden='true'>❋</span>
-                            <span><strong>Фикус</strong><small>Полить сегодня</small></span>
-                            <span className='landingPlantCheck' aria-hidden='true'>✓</span>
-                        </div>
-                        <div className='landingPreviewTip'>
-                            <span aria-hidden='true'>✦</span>
-                            Не уверены, когда поливать? Спросите ИИ-помощника.
-                        </div>
-                    </div>
+                    <LandingDemoGarden
+                        wateredIds={demoWateredIds}
+                        onWater={waterDemoPlant}
+                        onReset={resetDemoGarden}
+                    />
                 </section>
+
+                <LandingGuestChat />
 
                 <section className='landingFeatures' aria-labelledby='landingFeaturesTitle'>
                     <div className='landingSectionHeading'>
@@ -145,6 +147,8 @@ function LandingPage() {
                     </ol>
                     <Link className='landingPrimaryAction' to='/register'>Попробовать «Лейку»</Link>
                 </section>
+
+                <LandingSocialProof />
 
                 <section className='landingGuide' aria-labelledby='landingGuideTitle'>
                     <div className='landingSectionHeading'>

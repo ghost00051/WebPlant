@@ -1,6 +1,12 @@
 import { QueryTypes } from 'sequelize'
 import sequelize from '../db.js'
-import { hasSiteVisitDays, hasUsersCreatedAt } from '../utils/adminSchema.js'
+import {
+    hasNotificationClicks,
+    hasProductEvents,
+    hasSiteVisitDays,
+    hasSiteVisitUtm,
+    hasUsersCreatedAt
+} from '../utils/adminSchema.js'
 import {
     TIMEZONE,
     isValidDay,
@@ -8,8 +14,20 @@ import {
     parseRangeDays,
     userCreatedAtSql
 } from '../utils/adminAnalytics.js'
+import {
+    RETENTION_MAX_DAYS,
+    RETENTION_WINDOWS,
+    buildActivity,
+    buildPushMetrics,
+    computeFunnel,
+    computeRetention
+} from '../utils/productMetrics.js'
+import { readAiMetricsRange } from '../utils/aiMetrics.js'
+import { buildProductMetricsBoard } from '../services/productMetricsService.js'
 
 const MSK = `'${TIMEZONE}'`
+
+const RETENTION_COHORT_COUNT = 8
 
 const dayOf = expression => `((${expression}) AT TIME ZONE ${MSK})::date`
 
@@ -27,6 +45,20 @@ const VISITS_SOURCE = tracked => tracked
                NULL::integer AS user_id, NULL::text AS device, NULL::text AS first_path,
                NULL::text AS referrer_host
         WHERE false) site_visit_days`
+
+const PRODUCT_EVENTS_SOURCE = tracked => tracked
+    ? 'product_events'
+    : `(SELECT NULL::integer AS user_id, NULL::text AS event,
+               NULL::timestamptz AS created_at
+        WHERE false) product_events`
+
+const RETENTION_FLAGS_SQL = RETENTION_WINDOWS
+    .map(window => `bool_or(ev.ev_day BETWEEN s.reg_day + 1 AND s.reg_day + ${window.days}) AS ${window.key}`)
+    .join(',\n               ')
+
+const RETENTION_COUNTS_SQL = RETENTION_WINDOWS
+    .map(window => `count(*) FILTER (WHERE f.${window.key})::int AS ${window.key}`)
+    .join(',\n           ')
 
 function select(sql, params = []) {
     return sequelize.query(sql, { bind: params, type: QueryTypes.SELECT })
@@ -419,14 +451,15 @@ class AdminAnalyticsController {
         }
 
         try {
-            const [hasCreatedAt, visitsTracked] = await Promise.all([
+            const [hasCreatedAt, visitsTracked, utmTracked] = await Promise.all([
                 hasUsersCreatedAt(),
-                hasSiteVisitDays()
+                hasSiteVisitDays(),
+                hasSiteVisitUtm()
             ])
             const createdExpr = userCreatedAtSql(hasCreatedAt)
 
             const [topSpecies, topByPlants, topByWaterings, topByChat, byWeekday, byHour, byInterval,
-                consentTypes, registrationsByWeekday, recentUsers, totals] = await Promise.all([
+                consentTypes, registrationsByWeekday, recentUsers, totals, utmSources] = await Promise.all([
                 select(`
                     SELECT COALESCE(NULLIF(TRIM(p.species), ''), 'Не указан') AS species,
                            count(*)::int AS count
@@ -529,7 +562,23 @@ class AdminAnalyticsController {
                         (SELECT count(*)::int FROM watering_logs) AS waterings,
                         (SELECT count(*)::int FROM chat_logs) AS messages,
                         (SELECT count(*)::int FROM plant_photos) AS photos
-                `)
+                `),
+
+                utmTracked
+                    ? select(`
+                        ${BOUNDS_CTE}
+                        SELECT NULLIF(TRIM(utm_source), '') AS source,
+                               NULLIF(TRIM(utm_medium), '') AS medium,
+                               NULLIF(TRIM(utm_campaign), '') AS campaign,
+                               count(*)::int AS visitors
+                        FROM site_visit_days
+                        WHERE day BETWEEN (SELECT start_day FROM b) AND (SELECT today FROM b)
+                          AND NULLIF(TRIM(utm_source), '') IS NOT NULL
+                        GROUP BY 1, 2, 3
+                        ORDER BY visitors DESC, source ASC
+                        LIMIT 10
+                    `, [days])
+                    : []
             ])
 
             return res.json({
@@ -592,10 +641,223 @@ class AdminAnalyticsController {
                     privilegeLevel: row.privilege_level,
                     createdAt: row.created_at
                 })),
+                utmTracked,
+                utmSources: rowsOf(utmSources).map(row => ({
+                    source: row.source,
+                    medium: row.medium,
+                    campaign: row.campaign,
+                    visitors: toInteger(row.visitors)
+                })),
                 averages: buildAverages(firstRow(totals))
             })
         } catch (error) {
             return fail(res, error, 'breakdown')
+        }
+    }
+
+    async getProductAnalytics(req, res) {
+        const days = parseRangeDays(req.query.days)
+        if (days === null) {
+            return res.status(400).json({ message: 'Параметр days должен быть целым числом от 1 до 365' })
+        }
+
+        try {
+            const [hasCreatedAt, eventsTracked, clicksTracked, visitsTracked] = await Promise.all([
+                hasUsersCreatedAt(),
+                hasProductEvents(),
+                hasNotificationClicks(),
+                hasSiteVisitDays()
+            ])
+            const createdExpr = userCreatedAtSql(hasCreatedAt)
+            const eventsSource = PRODUCT_EVENTS_SOURCE(eventsTracked)
+            const retentionTracked = eventsTracked || visitsTracked
+
+            const pushClicksSql = clicksTracked
+                ? `(SELECT COALESCE(sum(click_count), 0)::int
+                        FROM notifications
+                        WHERE ${IN_RANGE('created_at')}) AS clicks,
+                   (SELECT count(*)::int
+                        FROM notifications
+                        WHERE clicked_at IS NOT NULL
+                          AND ${dayOf('clicked_at')} = (SELECT today FROM b)) AS clicked_today`
+                : '0::int AS clicks,\n                   0::int AS clicked_today'
+
+            const activitySql = `
+                ${BOUNDS_CTE}
+                SELECT
+                    count(DISTINCT user_id) FILTER (WHERE ${dayOf('created_at')} = (SELECT today FROM b))::int AS dau,
+                    count(DISTINCT user_id) FILTER (WHERE ${dayOf('created_at')} >= (SELECT today FROM b) - 6)::int AS wau,
+                    count(DISTINCT user_id) FILTER (WHERE ${dayOf('created_at')} >= (SELECT today FROM b) - 29)::int AS mau,
+                    count(DISTINCT user_id) FILTER (WHERE ${IN_RANGE('created_at')})::int AS active_users,
+                    count(*) FILTER (WHERE ${dayOf('created_at')} = (SELECT today FROM b))::int AS events_today,
+                    count(*) FILTER (WHERE ${IN_RANGE('created_at')})::int AS events_in_range
+                FROM ${eventsSource}
+            `
+
+            const newUsersSql = `
+                ${BOUNDS_CTE}
+                SELECT count(*)::int AS new_users
+                FROM users u
+                WHERE ${IN_RANGE(createdExpr)}
+            `
+
+            const funnelSql = `
+                ${BOUNDS_CTE}
+                SELECT
+                    count(*) FILTER (WHERE u.role <> 'ADMIN' AND ${IN_RANGE(createdExpr)})::int AS registered,
+                    (SELECT count(DISTINCT p.user_id)::int
+                        FROM plants p
+                        WHERE ${IN_RANGE('p.created_at')}) AS plant_created,
+                    (SELECT count(DISTINCT w.user_id)::int
+                        FROM watering_logs w
+                        WHERE w.action = 'watered' AND ${IN_RANGE('w.action_at')}) AS watering_marked,
+                    (SELECT count(DISTINCT ps.user_id)::int
+                        FROM push_subscriptions ps
+                        WHERE ps.user_id IS NOT NULL AND ${IN_RANGE('ps.created_at')}) AS push_subscribed
+                FROM users u
+            `
+
+            const retentionEvSources = []
+            if (eventsTracked) {
+                retentionEvSources.push(`SELECT DISTINCT s.user_id, s.reg_day,
+                           ${dayOf('pe.created_at')} AS ev_day
+                    FROM selected s
+                    JOIN product_events pe ON pe.user_id = s.user_id
+                    WHERE ${dayOf('pe.created_at')} BETWEEN s.reg_day + 1 AND s.reg_day + ${RETENTION_MAX_DAYS}`)
+            }
+            if (visitsTracked) {
+                retentionEvSources.push(`SELECT DISTINCT s.user_id, s.reg_day,
+                           sv.day AS ev_day
+                    FROM selected s
+                    JOIN site_visit_days sv ON sv.user_id = s.user_id
+                    WHERE sv.day BETWEEN s.reg_day + 1 AND s.reg_day + ${RETENTION_MAX_DAYS}`)
+            }
+            const retentionEvSql = retentionEvSources.join('\n                    UNION\n                    ')
+
+            const retentionSql = `
+                ${BOUNDS_CTE},
+                week_starts AS (
+                    SELECT ((SELECT (today - (extract(isodow FROM today)::int - 1))::date FROM b)
+                            - offsets.days_back)::date AS cohort
+                    FROM (SELECT generate_series(0, ${(RETENTION_COHORT_COUNT - 1) * 7}, 7) AS days_back) offsets
+                ),
+                u0 AS (
+                    SELECT u.id AS user_id,
+                           ${dayOf(createdExpr)} AS reg_day
+                    FROM users u
+                    WHERE u.role <> 'ADMIN'
+                ),
+                registered AS (
+                    SELECT user_id, reg_day,
+                           (reg_day - (extract(isodow FROM reg_day)::int - 1))::date AS cohort
+                    FROM u0
+                    WHERE reg_day IS NOT NULL
+                ),
+                selected AS (
+                    SELECT r.user_id, r.reg_day, r.cohort
+                    FROM registered r
+                    JOIN week_starts w ON w.cohort = r.cohort
+                ),
+                ev AS (
+                    ${retentionEvSql}
+                ),
+                flags AS (
+                    SELECT s.cohort, s.user_id,
+                           ${RETENTION_FLAGS_SQL}
+                    FROM selected s
+                    LEFT JOIN ev ON ev.user_id = s.user_id
+                    GROUP BY s.cohort, s.user_id
+                )
+                SELECT f.cohort,
+                       count(*)::int AS size,
+                       ${RETENTION_COUNTS_SQL}
+                FROM flags f
+                GROUP BY f.cohort
+                ORDER BY f.cohort DESC
+            `
+
+            const eventsSql = `
+                ${BOUNDS_CTE}
+                SELECT event, count(*)::int AS count, count(DISTINCT user_id)::int AS users
+                FROM product_events
+                WHERE ${IN_RANGE('created_at')}
+                GROUP BY event
+                ORDER BY count DESC, event ASC
+                LIMIT 10
+            `
+
+            const pushSql = `
+                ${BOUNDS_CTE}
+                SELECT
+                    (SELECT count(*)::int FROM notifications WHERE ${IN_RANGE('created_at')}) AS notifications,
+                    ${pushClicksSql}
+            `
+
+            const [activityRows, newUsersRows, funnelRows, retentionRows, eventRows, pushRows] =
+                await Promise.all([
+                    select(activitySql, [days]),
+                    select(newUsersSql, [days]),
+                    select(funnelSql, [days]),
+                    retentionTracked ? select(retentionSql, [days]) : [],
+                    eventsTracked ? select(eventsSql, [days]) : [],
+                    select(pushSql, [days])
+                ])
+
+            const activity = camelizeCounters(firstRow(activityRows), {
+                dau: 'dau',
+                wau: 'wau',
+                mau: 'mau',
+                activeUsers: 'active_users',
+                eventsToday: 'events_today',
+                eventsInRange: 'events_in_range'
+            })
+            activity.newUsers = toInteger(firstRow(newUsersRows).new_users)
+
+            const funnelRow = firstRow(funnelRows)
+            const pushRow = firstRow(pushRows)
+
+            let aiCost = null
+            let aiRequests = null
+            try {
+                const aiMetrics = await readAiMetricsRange({ days })
+                const cost = Number(aiMetrics?.summary?.cost?.total)
+                aiCost = Number.isFinite(cost) ? cost : null
+                const requests = Number(aiMetrics?.summary?.totals?.requests)
+                aiRequests = Number.isFinite(requests) ? requests : null
+            } catch (error) {
+                console.warn('⚠️ Стоимость ИИ для метрик продукта недоступна:', error?.message || error)
+            }
+
+            const metrics = await buildProductMetricsBoard({ days, aiCost, aiRequests })
+
+            return res.json({
+                generatedAt: new Date().toISOString(),
+                timezone: TIMEZONE,
+                days,
+                eventsTracked,
+                usersCreatedAtTracked: hasCreatedAt,
+                activity: eventsTracked ? buildActivity(activity) : buildActivity({}),
+                funnel: computeFunnel({
+                    registered: funnelRow.registered,
+                    plantCreated: funnelRow.plant_created,
+                    wateringMarked: funnelRow.watering_marked,
+                    pushSubscribed: funnelRow.push_subscribed
+                }),
+                retention: retentionTracked ? computeRetention(rowsOf(retentionRows)) : [],
+                events: rowsOf(eventRows).map(row => ({
+                    event: row.event,
+                    count: toInteger(row.count),
+                    users: toInteger(row.users)
+                })),
+                push: buildPushMetrics({
+                    notifications: pushRow.notifications,
+                    clicks: pushRow.clicks,
+                    clickedToday: pushRow.clicked_today
+                }),
+                metrics
+            })
+        } catch (error) {
+            return fail(res, error, 'product')
         }
     }
 

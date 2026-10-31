@@ -1,0 +1,263 @@
+.multiAddOverlay {
+    position: fixed;
+    z-index: 1200;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 16px;
+    background: rgb(20 24 22 / 58%);
+}
+
+.multiAddDialog {
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 560px);
+    max-height: min(92dvh, 780px);
+    box-sizing: border-box;
+    padding: 20px;
+    border: 1px solid #E5E5E5;
+    border-radius: 20px;
+    background: #FFFFFF;
+    color: #2D2D2D;
+    font-family: 'Inter', sans-serif;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 24%);
+}
+
+.multiAddDialog:focus {
+    outline: none;
+}
+
+.multiAddHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 14px;
+}
+
+.multiAddHeader h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    line-height: 1.25;
+}
+
+.multiAddHeader p {
+    margin: 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.multiAddClose {
+    flex: 0 0 auto;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 26px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.multiAddList {
+    display: grid;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+}
+
+.multiAddItem {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 56px;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #E2E6E3;
+    border-radius: 14px;
+    background: #F7F5F1;
+    cursor: pointer;
+    transition: border-color 0.2s, background-color 0.2s;
+}
+
+.multiAddItem.isSelected {
+    border-color: #5C7463;
+    background: #EDF4EF;
+}
+
+.multiAddItem input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.multiAddItemText {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.multiAddItemName {
+    font-size: var(--font-size-base);
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.multiAddItemLatin {
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+}
+
+.multiAddItemInterval {
+    color: #5C7463;
+    font-size: var(--font-size-sm);
+    line-height: 1.3;
+}
+
+.multiAddItemCheck {
+    display: grid;
+    flex: 0 0 auto;
+    width: 26px;
+    height: 26px;
+    place-items: center;
+    border: 1px solid #C9D2CB;
+    border-radius: 50%;
+    background: #FFFFFF;
+}
+
+.multiAddItemCheck img {
+    width: 15px;
+    height: 15px;
+    opacity: 0;
+}
+
+.multiAddItem.isSelected .multiAddItemCheck {
+    border-color: #5C7463;
+    background: #5C7463;
+}
+
+.multiAddItem.isSelected .multiAddItemCheck img {
+    opacity: 1;
+    filter: brightness(0) invert(1);
+}
+
+.multiAddItem:focus-within {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+.multiAddProgress,
+.multiAddCount {
+    margin: 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.4;
+}
+
+.multiAddError {
+    margin: 0 0 10px;
+    color: #B42318;
+    font-size: var(--font-size-sm);
+    line-height: 1.45;
+}
+
+.multiAddActions {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #EDEAE4;
+}
+
+.multiAddActions > div {
+    display: flex;
+    gap: 10px;
+}
+
+.multiAddCancel,
+.multiAddSubmit {
+    min-height: 48px;
+    border: 0;
+    border-radius: 14px;
+    padding: 10px 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.multiAddCancel {
+    flex: 0 0 auto;
+    background: #F0EDE8;
+    color: #5A5A5A;
+}
+
+.multiAddSubmit {
+    flex: 1;
+    background: #5C7463;
+    color: #FFFFFF;
+}
+
+.multiAddCancel:disabled,
+.multiAddSubmit:disabled {
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+.multiAddClose:focus-visible,
+.multiAddCancel:focus-visible,
+.multiAddSubmit:focus-visible {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+    .multiAddDialog {
+        padding: 24px;
+    }
+
+    .multiAddItem {
+        min-height: 60px;
+    }
+}
+
+.multiAddHandoff {
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px dashed rgba(46, 125, 50, 0.45);
+    border-radius: 14px;
+    background: rgba(46, 125, 50, 0.06);
+}
+
+.multiAddHandoff .multiAddProgress {
+    margin: 0 0 8px;
+}
+
+@media (max-width: 380px) {
+    .multiAddDialog {
+        padding: 16px;
+    }
+
+    .multiAddCancel,
+    .multiAddSubmit {
+        font-size: var(--font-size-sm);
+        padding: 10px 12px;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .multiAddItem {
+        transition: none;
+    }
+}

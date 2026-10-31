@@ -7,9 +7,11 @@ import { rateLimitStoreOptions } from '../utils/rateLimitStore.js'
 
 const router = Router()
 
+export const UPLOAD_RATE_LIMIT_PER_HOUR = 30
+
 const uploadLimiter = rateLimit({
     windowMs: 60 * 60 * 1000,
-    limit: 10,
+    limit: UPLOAD_RATE_LIMIT_PER_HOUR,
     keyGenerator: req => String(req.user.id),
     message: { message: 'Слишком много загрузок. Попробуйте позже.' },
     standardHeaders: true,

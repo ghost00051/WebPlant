@@ -9,7 +9,6 @@ info:
     `Backend/models/*.js`. Спека фиксирует фактические методы, пути, коды ответов и
     структуры, которые сервис возвращает сейчас.
 
-    ## Базовый URL
 
     * боевой: `https://server.checktheplants.ru/api` (плюс `/health` и `/livez` вне `/api`);
     * локально: `http://localhost:5000/api` (порт из `PORT`).
@@ -17,7 +16,6 @@ info:
     Фронтенд обращается к API с другого origin (`https://checktheplants.ru`,
     `https://admin.checktheplants.ru`), поэтому CORS включён с `credentials: true`.
 
-    ## Аутентификация
 
     Сессия хранится в httpOnly-cookie, токенов в `localStorage` нет:
 
@@ -31,7 +29,6 @@ info:
     браузерные клиенты должны отправлять запросы с `credentials: 'include'`.
     Отзыв сессий — `auth_sessions.revoked_at`; при отзыве все запросы получают `401`.
 
-    ## CSRF и Origin
 
     Отдельного CSRF-токена нет. Для `POST`/`PUT`/`PATCH`/`DELETE` сервер проверяет
     `Origin` и `Sec-Fetch-Site`: запрос с недопустимого origin, кросс-сайтовый запрос без
@@ -40,24 +37,21 @@ info:
     Разрешённые origin'ы: `FRONTEND_URL`, `ADMIN_PANEL_ORIGIN`, а вне production —
     `LOCAL_DEV_ORIGINS`.
 
-    ## Ограничения запросов
 
     * тело JSON/urlencoded — не больше 100 kb (`413` при превышении);
     * для запросов с телом обязателен `Content-Type`: `application/json`,
       `application/x-www-form-urlencoded`, `multipart/form-data` или `*+json`, иначе `415`;
-    * файлы: до 5 МБ на файл, до 2 файлов в `POST /api/upload`, до 5 файлов в
-      `POST /api/chat/photo`;
+    * файлы: до 5 МБ на файл, до 2 файлов в `POST /api/upload` (30 загрузок
+      в час на пользователя), до 5 файлов в `POST /api/chat/photo`;
     * на большинство групп эндпоинтов действует rate-limit (`429`); лимиты перечислены в
       `ARCHITECTURE.md` §7 и в описании операций.
 
-    ## Формат ошибок
 
     Все ошибки — объект `{"message": "<текст>"}`. Обобщённые ответы обработчика:
     `400 {"message":"Некорректный запрос"}`, `413 {"message":"Размер запроса превышает
     допустимый лимит"}`, `500 {"message":"Internal server error"}`; доменные ошибки
     возвращают собственный текст (см. схемы).
 
-    ## Прочие коды
 
     * `503` — недоступная зависимость (БД при `/health`, SMTP при сбросе пароля,
       ИИ-сервис, push не настроен) или исчерпан суточный бюджет ИИ для гостя;
@@ -79,6 +73,8 @@ tags:
     description: WebAuthn-ключи (passkeys)
   - name: plants
     description: растения, расписание, поливы, фото, советы ИИ
+  - name: garden
+    description: шаринг сада F13 — публичная ссылка на сад и атрибуция регистраций
   - name: chat
     description: чат с ИИ-помощником и анализ фото
   - name: notifications
@@ -91,6 +87,10 @@ tags:
     description: cookie- и юридические согласия
   - name: admin
     description: админ-API (только role=ADMIN)
+  - name: events
+    description: продуктовая аналитика F01 — приём пользовательских событий
+  - name: bots
+    description: боты Telegram/MAX F16 — привязка каналов, вебхуки, доставка напоминаний/recap
 
 security:
   - cookieAuth: []
@@ -155,6 +155,7 @@ paths:
       description: |
         Создаёт пользователя, согласия (`privacy_policy`, `terms_of_service`, версия 2.0),
         настройки уведомлений; привязывает гостевые согласия и сообщения чата к аккаунту.
+        Необязательный `shareToken` (F13) атрибутирует регистрацию к ссылке шаринга.
         Выдаёт cookie сессии. Лимит: 5 запросов в час с IP.
       security: []
       requestBody:
@@ -518,7 +519,19 @@ paths:
     get:
       tags: [notifications]
       operationId: getNotificationPreferences
-      summary: Настройки уведомлений и темы
+      summary: Настройки уведомлений, режим доставки (F41) и тихие часы (F43)
+      description: |
+        delivery_mode — digest (одна сводка в день, значение по умолчанию) или per_plant
+        (отдельное напоминание на растение). Режим — источник истины: PATCH синхронизирует
+        `delivery_mode` и `morning_summary_enabled` (digest ⇔ true, per_plant ⇔ false);
+        сводка отправляется только в digest, индивидуальные push — только в per_plant
+        (без двойных уведомлений в 09:00). Растения с `notify_morning=false`,
+        `reminder_weekdays` и приостановленными напоминаниями в сводку не попадают;
+        растения с `notify_day_before=true` дополнительно попадают в строку «Завтра полить».
+        quiet_hours_* — локальное окно, в котором не отправляются push, боты и письма
+        (in-app уведомление сохраняется, а push досылается после окончания окна);
+        окно может переходить через полночь (22:00–08:00). quiet_hours_timezone — read-only:
+        часовой пояс пользователя, в нём считаются границы тихих часов.
       responses:
         '200':
           description: настройки
@@ -546,11 +559,26 @@ paths:
                   type: boolean
                 care_advice_enabled:
                   type: boolean
+                weekly_recap_enabled:
+                  type: boolean
                 dark_theme_enabled:
                   type: boolean
                 theme_mode:
                   type: string
                   enum: [system, light, dark]
+                delivery_mode:
+                  type: string
+                  enum: [digest, per_plant]
+                  description: 'F41: digest — одна сводка в день, per_plant — напоминание на растение'
+                quiet_hours_enabled:
+                  type: boolean
+                  description: 'F43: включить тихие часы'
+                quiet_hours_start:
+                  type: string
+                  example: '22:00'
+                quiet_hours_end:
+                  type: string
+                  example: '08:00'
       responses:
         '200':
           description: сохранённые настройки
@@ -912,6 +940,8 @@ paths:
                     const: true
                   user:
                     $ref: '#/components/schemas/User'
+                  guestLink:
+                    $ref: '#/components/schemas/GuestLinkSummary'
         '400':
           description: челлендж истёк, подпись не проверена, ключ не соответствует аккаунту
           content:
@@ -1092,6 +1122,46 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/popular-species:
+    get:
+      tags: [plants]
+      operationId: listPopularPlantSpecies
+      summary: Популярные виды растений
+      description: >-
+        Виды (`plants.species`), которые реально добавляют пользователи: агрегат по
+        активным растениям, сортировка по числу уникальных пользователей, затем по числу
+        добавлений. Ответ кэшируется в процессе backend на 5 минут; `items` может быть
+        пустым (тогда клиент показывает резервный список из справочника).
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 20
+            default: 8
+      responses:
+        '200':
+          description: 'объект `{items: [{species, addedCount, usersCount, avgIntervalDays}], totalSpecies, generatedAt}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PopularPlantSpecies'
+                  totalSpecies:
+                    type: integer
+                  generatedAt:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/plants/need-watering:
     get:
       tags: [plants]
@@ -1235,6 +1305,78 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/suggest-species-photo:
+    post:
+      tags: [plants]
+      operationId: suggestSpeciesFromPhoto
+      summary: 'F25: подсказка вида растения по фото'
+      description: |
+        multipart/form-data, одно фото в поле photo (до 5 МБ, JPEG/PNG/WebP/HEIC).
+        Использует vision-сервис ИИ; при недоступности ИИ — 503, и клиент прячет блок
+        «Похоже на...». Битое/нечитаемое изображение — 400 (BE-11).
+        Лимит — 20 запросов в час на пользователя.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: 'подсказки вида (может быть пустым списком)'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [suggestions, isPlant, source, generatedAt]
+                properties:
+                  suggestions:
+                    type: array
+                    items:
+                      type: object
+                      required: [name, species]
+                      properties:
+                        name:
+                          type: string
+                        latin:
+                          type: [string, 'null']
+                        species:
+                          type: [string, 'null']
+                        confidence:
+                          type: [number, 'null']
+                          minimum: 0
+                          maximum: 1
+                  isPlant:
+                    type: boolean
+                  source:
+                    type: string
+                    enum: [ai, cache]
+                  generatedAt:
+                    type: string
+                    format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          description: 'ИИ недоступен — фичу нужно скрыть/деградировать'
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
   /api/plants/watering-advice:
     post:
       tags: [plants]
@@ -1325,6 +1467,100 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/care-actions/latest:
+    get:
+      tags: [plants]
+      operationId: getLatestCareActions
+      summary: Последнее действие ухода по каждому растению
+      description: |
+        Берёт логи ухода пользователя (`limit` последних записей, 1–200) и возвращает
+        первую (самую свежую) запись для каждого `plant_id`.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 200
+      responses:
+        '200':
+          description: 'объект `{items: [{plant_id, action_code, title, product_name, dose, performed_at}]}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [plant_id, action_code, title, performed_at]
+                      properties:
+                        plant_id:
+                          type: integer
+                        action_code:
+                          type: string
+                          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+                        title:
+                          type: [string, 'null']
+                        product_name:
+                          type: [string, 'null']
+                          maxLength: 160
+                        dose:
+                          type: [string, 'null']
+                          maxLength: 120
+                        performed_at:
+                          type: string
+                          format: date-time
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/care-schedule:
+    get:
+      tags: [plants]
+      operationId: getCareSchedule
+      summary: Календарь планового ухода
+      description: |
+        Для каждого активного растения и каждого действия из его плана ухода возвращает
+        ближайшую плановую дату: последняя отметка (или сейчас) + `minIntervalDays`,
+        просроченное действие переносится на сегодня. Учитываются сезоны из плана и
+        часовой пояс пользователя; `maxPerMonth: 0` исключает действие.
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 180
+            default: 90
+      responses:
+        '200':
+          description: 'объект `{items: [CareScheduleItem], days}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, days]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CareScheduleItem'
+                  days:
+                    type: integer
+                    minimum: 1
+                    maximum: 180
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/plants/{id}:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1400,13 +1636,112 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
-  /api/plants/{id}/photos:
+  /api/plants/{id}/health-check:
     parameters:
       - $ref: '#/components/parameters/Id'
     post:
       tags: [plants]
+      operationId: checkPlantHealth
+      summary: 'F29/F34: проверка здоровья растения по фото (ИИ)'
+      description: |
+        Принимает одно фото двумя способами:
+        * `multipart/form-data` — поле `photo` (до 5 МБ, JPEG/PNG/WebP/HEIC);
+        * `application/json` — `{photoUrl, question}`, где `photoUrl` — уже загруженный
+          в `/uploads/plants/<32hex>.<ext>` файл (как в `POST /api/plants/{id}/photos`).
+
+        Результат vision-анализа сохраняется на сервере: последняя проверка пишется в
+        `plants.metadata.health_check`, а у совпадающего по URL `plant_photos` дописываются
+        `metadata.diagnosis` и `metadata.diagnosis_text`. `GET /api/plants` и
+        `GET /api/plants/{id}` возвращают `metadata.health_check`.
+
+        Ответ на `200` — строго `{text, diagnosis, photoUrl, createdAt, saved: true}`.
+        Если на фото не растение, `diagnosis.isPlant = false` и всё равно `200`.
+        Битое/нечитаемое изображение — `400`, `503` только при недоступности ИИ-провайдера.
+        Лимит: 30 проверок в час на пользователя; запись — 120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [photo]
+              properties:
+                photo:
+                  type: string
+                  format: binary
+                question:
+                  type: string
+                  maxLength: 500
+          application/json:
+            schema:
+              type: object
+              required: [photoUrl]
+              properties:
+                photoUrl:
+                  type: string
+                  maxLength: 2048
+                  description: '/uploads/plants/<32hex>.<ext> или абсолютный URL того же файла'
+                question:
+                  type: string
+                  maxLength: 500
+      responses:
+        '200':
+          description: 'результат проверки (saved: true)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlantHealthCheck'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+
+  /api/plants/{id}/photos:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: listPlantPhotos
+      summary: 'F30: галерея фото роста'
+      description: |
+        Сортировка: главное фото, затем taken_at (новые выше), затем sort_order/id.
+        У каждого фото есть thumb_url; у старых записей taken_at = null — клиент берёт created_at.
+      responses:
+        '200':
+          description: 'объект {plant_id, items: PlantPhoto[]}'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [plant_id, items]
+                properties:
+                  plant_id:
+                    type: integer
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PlantPhoto'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [plants]
       operationId: addPlantPhotos
       summary: Привязка загруженных фотографий к растению
+      description: |
+        До 10 фото за запрос; общая галерея растения ограничена
+        `PLANT_PHOTO_GALLERY_MAX = 200` — при превышении `400`.
       requestBody:
         required: true
         content:
@@ -1430,6 +1765,47 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/PlantPhoto'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/photos/{photoId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - name: photoId
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+    delete:
+      tags: [plants]
+      operationId: deletePlantPhoto
+      summary: 'F30: удалить фото роста'
+      description: |
+        Удаляет запись галереи; файл и миниатюру удаляет, только если на этот URL больше
+        не ссылается ни один `plant_photos` (BE-06). Если удалено главное фото — главным
+        становится следующее.
+      responses:
+        '200':
+          description: '{deleted: true, id}'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deleted, id]
+                properties:
+                  deleted:
+                    type: boolean
+                  id:
+                    type: integer
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1680,6 +2056,111 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/plants/{id}/care-actions:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [plants]
+      operationId: listCareActions
+      summary: Журнал ухода растения
+      description: Записи журнала ухода растения, сортировка по `performed_at` DESC.
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        '200':
+          description: журнал ухода
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareActionList'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [plants]
+      operationId: createCareAction
+      summary: Отметка действия ухода
+      description: |
+        Валидация: `action_code` обязателен; `product_name` обязателен для `fertilize`
+        (до 160 символов); `dose` до 120; `note` до 500; `method` только для `spray`
+        (`spray_bottle` по умолчанию или `humidifier`); `performed_at` — ISO-дата не в
+        будущем (допуск 5 минут) и не старше 365 дней. Если передан `notification_id`,
+        уведомление помечается прочитанным и получает `payload.done_at`. Лимит записи:
+        120 операций за 15 минут.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CareActionInput'
+      responses:
+        '201':
+          description: 'объект `{item}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item:
+                    $ref: '#/components/schemas/CareAction'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/plants/{id}/care-actions/{logId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/LogId'
+    delete:
+      tags: [plants]
+      operationId: deleteCareAction
+      summary: Удаление отметки ухода
+      description: Удаляет запись журнала ухода, принадлежащую растению пользователя. Лимит записи — 120 операций за 15 минут.
+      responses:
+        '200':
+          description: 'объект `{removed: true}`'
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed]
+                properties:
+                  removed:
+                    type: boolean
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
   /api/chat/chat:
     post:
       tags: [chat]
@@ -1902,6 +2383,16 @@ paths:
             type: string
             enum: [all, unread, read]
             default: all
+        - name: category
+          in: query
+          schema:
+            type: string
+            enum: [all, watering, care]
+            default: all
+          description: >-
+            Категория ленты: watering — напоминания о поливе и сводки,
+            care — напоминания и советы по уходу (care_reminder + care_tip),
+            all — без фильтра.
         - name: limit
           in: query
           schema:
@@ -2006,6 +2497,39 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/notifications/{id}/click:
+    post:
+      tags: [notifications]
+      operationId: markNotificationClicked
+      summary: Клик по push-уведомлению (F03)
+      description: |
+        Идемпотентная отметка клика: `clicked_at` ставится только при первом клике
+        (`COALESCE(clicked_at, now())`), `read_at` проставляется, если уведомление
+        ещё не прочитано, `click_count` инкрементируется при каждом вызове.
+        Доступно только владельцу уведомления; чужое или несуществующее — `404`.
+        Лимит изменений уведомлений — 120 запросов в минуту на пользователя.
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: клик отмечен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationClickResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
         '404':
           $ref: '#/components/responses/NotFound'
         '429':
@@ -2139,7 +2663,7 @@ paths:
       summary: Загрузка фотографий растения
       description: |
         Принимает до 2 файлов по 5 МБ (JPEG, PNG, WebP, HEIC) в поле `photos`; проверяет
-        сигнатуру файла и создаёт миниатюру. Лимит — 10 загрузок в час на пользователя.
+        сигнатуру файла и создаёт миниатюру. Лимит — 30 загрузок в час на пользователя (INT-09).
         Полученные `urls` затем передаются в `POST /api/plants` или `/api/plants/{id}/photos`.
       requestBody:
         required: true
@@ -2429,6 +2953,11 @@ paths:
         Вызывается фронтом один раз на загрузку страницы и только при согласии на аналитику.
         Одна строка на посетителя в сутки, `views` инкрементируется; IP не сохраняется.
         Лимит — 180 запросов в час с IP.
+
+        Необязательный `utm` (F03) сохраняется в `site_visit_days.utm_source/medium/campaign`:
+        значения чистятся (≤ 120 символов, без control-символов и HTML), обновление идёт
+        через `COALESCE(EXCLUDED.utm_*, site_visit_days.utm_*)` — первый непустой набор
+        меток сохраняется. Старый формат тела без `utm` продолжает работать.
       security:
         - cookieAuth: []
         - refreshCookie: []
@@ -2450,6 +2979,19 @@ paths:
                   type: string
                   maxLength: 300
                   pattern: '^/'
+                utm:
+                  type: object
+                  description: 'UTM-метки захода (F03); любое поле может отсутствовать'
+                  properties:
+                    source:
+                      type: string
+                      maxLength: 120
+                    medium:
+                      type: string
+                      maxLength: 120
+                    campaign:
+                      type: string
+                      maxLength: 120
       responses:
         '200':
           description: посещение учтено
@@ -2486,6 +3028,245 @@ paths:
                   counted:
                     type: boolean
                     const: false
+
+  /api/system/features:
+    get:
+      tags: [system]
+      operationId: getSystemFeatures
+      summary: Состояние соцфич и feature flags (риск 11)
+      description: |
+        Публичный эндпоинт без авторизации: клиент узнаёт, какие соцфичи включены и
+        почему. Шаринг сада F13 уже запущен и включён по умолчанию
+        (`FEATURE_GARDEN_SHARING=on`). Лента (`FEATURE_SOCIAL_FEED`) и комментарии
+        (`FEATURE_SOCIAL_COMMENTS`) по умолчанию выключены и включаются только если
+        env-флаг явно включён И `criticalMass.current >= criticalMass.threshold`
+        (`SOCIAL_CRITICAL_MASS`, дефолт 50 активных шарингов сада).
+
+        `reason`: `enabled` — включено; `disabled` — выключено env-флагом;
+        `critical_mass` — флаг включён, но критическая масса не достигнута;
+        `unavailable` — не удалось посчитать шаринги (fail-closed: соцфича выключена,
+        ответ остаётся `200`, а не `500`). Секретов не возвращает.
+      security: []
+      responses:
+        '200':
+          description: состояние соцфич
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemFeatureState'
+
+  /api/events:
+    post:
+      tags: [events]
+      operationId: trackProductEvents
+      summary: Приём продуктовых событий (F01)
+      description: |
+        Публичный батч-эндпоинт событийной аналитики. Принимает до 20 событий за
+        запрос; `created_at` ставит сервер (`now()`), `user_id` берётся из сессии
+        при наличии авторизации, `referrer_host` — из заголовка `Referer`.
+        `visitorId` — анонимный идентификатор с фронтенда (тот же формат, что и
+        в `POST /api/system/visit`).
+
+        Allowlist: `landing_view`, `register`, `plant_created`, `watering_marked`,
+        `push_subscribed`, `chat_message`, `photo_added`, `plant_id_started`,
+        `plant_id_success`, `share_clicked`.
+
+        `props` — плоский объект примитивов (string/number/boolean/null), JSON не
+        больше 2048 байт, без ключей `email`/`phone`/`name`/`password`/`token` (и их
+        вариаций). `path` начинается с `/` и не длиннее 300 символов. Если хотя бы
+        одно событие в батче некорректно, отклоняется весь запрос (400).
+
+        Лимит: 60 запросов в минуту в разрезе IP+`visitorId` (без visitorId — по IP).
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+        - {}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductEventsRequest'
+      responses:
+        '202':
+          description: 'батч принят (в том числе пустой — accepted: 0)'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductEventsAccepted'
+        '400':
+          description: некорректный батч событий
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '415':
+          $ref: '#/components/responses/UnsupportedMediaType'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/garden/share:
+    get:
+      tags: [garden]
+      operationId: getGardenShare
+      summary: Текущая ссылка на сад со статистикой
+      description: |
+        Возвращает активную (не отозванную) ссылку шаринга текущего пользователя или
+        `share: null`, если ссылки нет. `viewCount` — просмотры публичной страницы,
+        `signupCount` — регистрации, атрибутированные этой ссылке. Ответ не кешируется
+        (`Cache-Control: no-store`). Лимит чтения: 60 запросов в минуту на пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: 'статус ссылки (`share: null`, если активной ссылки нет)'
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    post:
+      tags: [garden]
+      operationId: createGardenShare
+      summary: Создать ссылку на сад (идемпотентно)
+      description: |
+        Создаёт новую активную ссылку на сад, если у пользователя её нет; повторный
+        вызов возвращает текущую ссылку — токен не меняется. Активная ссылка у
+        пользователя всегда одна: в БД это гарантирует частичный
+        `UNIQUE(user_id) WHERE revoked_at IS NULL`, поэтому конкурентные запросы
+        получают `200` с одной и той же ссылкой (не `409`). Токен — 16 случайных
+        байт в base64url (формат `^[A-Za-z0-9_-]{16,64}$`). Ответ не кешируется
+        (`Cache-Control: no-store`). Лимит: 30 запросов в минуту на пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: активная ссылка на сад
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    delete:
+      tags: [garden]
+      operationId: revokeGardenShare
+      summary: Отозвать ссылку на сад
+      description: |
+        Помечает активные ссылки пользователя отозванными (`revoked_at`); публичная
+        страница после этого отвечает `404`. Операция идемпотентна: повторный вызов
+        возвращает тот же `200`, а не ошибку. Лимит: 30 запросов в минуту на
+        пользователя.
+      security:
+        - cookieAuth: []
+        - refreshCookie: []
+      responses:
+        '200':
+          description: ссылка отозвана (или уже была отозвана)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GardenShareRevoked'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/garden/{token}:
+    get:
+      tags: [garden]
+      operationId: getPublicGarden
+      summary: Публичный сад по ссылке шаринга
+      description: |
+        Публичный просмотр сада по токену из ссылки `/garden/<token>` — без
+        аутентификации. Отдаются только безопасные данные: имя владельца, количество
+        активных растений и до 100 активных растений (`is_active`, порядок
+        `created_at` ASC). Email, `user_id`, телефон и фотографии не возвращаются.
+        `ownerName` — первый токен `users.name`, иначе `username`, иначе «Садовод».
+        Каждый успешный вызов увеличивает `view_count` и `last_viewed_at`, кроме случаев:
+        (а) запрос с сессией владельца сада — свои просмотры не считаются и не порождают
+        уведомление; (б) повторный визит того же IP+UA в течение 24 часов — дедупликация,
+        чтобы перезагрузки/превью мессенджеров не накручивали счётчик. Уведомление
+        владельцу «сад посмотрели N раз» уходит не чаще раза в 24 часа и только после
+        успешного создания in-app записи.
+
+        Токен неверного формата, неизвестный или отозванный токен дают одинаковый
+        `404`, чтобы не подсказывать формат ссылки. Ответы не кешируются
+        (`Cache-Control: no-store`). Лимит: 120 запросов в минуту с IP.
+      security: []
+      parameters:
+        - name: token
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 16
+            maxLength: 64
+            pattern: '^[A-Za-z0-9_-]{16,64}$'
+      responses:
+        '200':
+          description: публичный сад
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PublicGarden'
+        '404':
+          description: 'токен невалиден, неизвестен или ссылка отозвана'
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/Message'
+                  - type: object
+                    example:
+                      message: 'Сад не найден или ссылка отозвана'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
 
   /api/system/metrics:
     get:
@@ -2537,7 +3318,10 @@ paths:
       summary: Телеметрия контейнеров (админ)
       description: |
         Требует `DOCKER_HOST` и `DOCKER_STATS_ENABLED != false`; данные кэшируются на 3 секунды.
-        В Kubernetes (`DOCKER_STATS_ENABLED=false`) отвечает `503`.
+        В Kubernetes (`DOCKER_STATS_ENABLED=false`) отвечает `503` с `reason=disabled`.
+        Для контейнеров не в состоянии `running` `stats()` не запрашивается: `statsAvailable=false`,
+        а `cpu`/`memory`/`network`/`block`/`pids` равны `null`.
+        `problem` — человекочитаемая причина проблемы на русском, `problemLevel` — её уровень.
       responses:
         '200':
           description: статистика контейнеров
@@ -2545,11 +3329,13 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [timestamp, containers]
+                required: [timestamp, summary, containers]
                 properties:
                   timestamp:
                     type: string
                     format: date-time
+                  summary:
+                    $ref: '#/components/schemas/DockerStatsSummary'
                   containers:
                     type: array
                     items:
@@ -2559,15 +3345,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '503':
-          description: Docker недоступен
+          description: Docker недоступен или статистика выключена
           content:
             application/json:
               schema:
-                type: object
-                required: [error]
-                properties:
-                  error:
-                    type: string
+                $ref: '#/components/schemas/DockerUnavailableResponse'
         '500':
           description: ошибка получения статистики
           content:
@@ -2575,8 +3357,73 @@ paths:
               schema:
                 type: object
                 properties:
-                  error:
+                  message:
                     type: string
+
+  /api/system/docker-stats/{id}/logs:
+    get:
+      tags: [admin]
+      operationId: getDockerContainerLogs
+      summary: Логи контейнера (админ)
+      description: |
+        Возвращает stdout+stderr контейнера (`docker logs`) без timestamps.
+        Идентификатор — 12–64 hex-символа; `tail` — 1..200 (по умолчанию 100).
+        Multiplex-поток демультиплексируется, ANSI-escape удаляются, ответ обрезается до 20 000 символов.
+        При недоступном Docker отвечает `503` со структурной причиной, при отсутствии контейнера — `404`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Идентификатор контейнера (12–64 hex-символа)
+          schema:
+            type: string
+            pattern: '^[a-f0-9]{12,64}$'
+        - name: tail
+          in: query
+          required: false
+          description: Количество последних строк (1..200)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 100
+      responses:
+        '200':
+          description: логи контейнера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DockerLogsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: контейнер не найден
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '500':
+          description: ошибка чтения логов (в том числе таймаут 5 с)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+        '503':
+          description: Docker недоступен или статистика выключена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DockerUnavailableResponse'
 
   /api/admin/analytics/overview:
     get:
@@ -2640,11 +3487,94 @@ paths:
         - $ref: '#/components/parameters/Days'
       responses:
         '200':
-          description: 'объект с `topSpecies`, `topUsersByPlants`, `topUsersByWaterings`, `topUsersByChat`, `wateringsByWeekday`, `wateringsByHour`, `plantsByInterval` и др.'
+          description: |
+            Объект с `topSpecies`, `topUsersByPlants`, `topUsersByWaterings`,
+            `topUsersByChat`, `wateringsByWeekday`, `wateringsByHour`,
+            `plantsByInterval`, `consentTypes`, `registrationsByWeekday`,
+            `recentUsers`, `averages`, `visitsTracked`, `userCreatedAtTracked`,
+            `utmTracked` и `utmSources`.
+
+            `utmSources` (F03) — топ-10 `site_visit_days` за период по `visitors`
+            (число строк-визитов) для непустых `utm_source`:
+            `[{source, medium, campaign, visitors}]`. Если колонок UTM нет или
+            посещения не трекаются — пустой массив.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminObject'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/product/analytics:
+    get:
+      tags: [admin]
+      operationId: adminProductAnalytics
+      summary: Продуктовая аналитика F01–F03
+      description: |
+        Агрегаты событийной аналитики за `days` дней (МСК, текущий день включён).
+
+        * `activity` — DAU/WAU/MAU (distinct `user_id` в `product_events` за 1/7/30
+          дней), `activeUsers` за период, `newUsers` (`users.created_at` в периоде),
+          `eventsToday`/`eventsInRange` — количество событий;
+        * `funnel` — по таблицам: `users.created_at`, `plants.created_at`,
+          `watering_logs` (`action='watered'`), `push_subscriptions.created_at`;
+          `rates` — проценты от `registered` с одним знаком;
+        * `retention` — до 8 последних недельных когорт (неделя с понедельника,
+          МСК) по `users.created_at` (role ≠ ADMIN): `d1`/`d7`/`d30` — число
+          пользователей когорты с событием `product_events` ИЛИ визитом
+          `site_visit_days` в окне `reg_day+1..reg_day+N`, `*Rate` — проценты с одним
+          знаком; строки отсортированы от новых к старым, когорты с `size = 0` не
+          выводятся, ещё не наступившие окна дают 0;
+        * `events` — топ-10 событий за период (`count`, distinct `users`);
+        * `push` — уведомления за период, `clicks = SUM(click_count)`,
+          `ctr = clicks/notifications*100` (1 знак), `clickedToday` — клики за сегодня (МСК);
+        * `metrics` — 12 продуктовых метрик листа «Метрики» (TTFV, Activation rate,
+          доля аккаунтов с ≥2 растениями, D1/D7/D30 retention, Push CTR, возвраты без
+          push, использование ИИ, стоимость ИИ на активного, конверсия в Premium,
+          органика из шаринга): `items` в фиксированном порядке и `summary` со
+          счётчиками статусов. У каждой метрики `status`: `measured` — посчитана по
+          данным, `partial` — считается частично (нет тарифа/телеметрии/биллинга/
+          миграции или неподходящих данных), `unavailable` — нет источника. `value` —
+          число в `unit` (`seconds`/`percent`/`rub`), `display` — готовое к показу
+          значение с запятой и суффиксом (`142 с`, `38,9%`, `2,1 ₽`, `—`), `targetMet` —
+          достигнута ли цель (`null`, если значения нет). `premium` всегда `partial`
+          (биллинг F15 не внедрён). `share_organic` — `measured`, если есть таблицы
+          `garden_shares`/`garden_share_signups` и за период были регистрации:
+          `value` — доля регистраций (role ≠ ADMIN) с записью в
+          `garden_share_signups`; `detail` содержит «регистрации из шаринга X из Y;
+          просмотров сада Z; кликов «Поделиться» N» (клики — события
+          `product_events.event = 'share_clicked'` за период, только если
+          `product_events` есть). Без таблиц шаринга (миграция F13 не применена) или
+          без регистраций за период метрика остаётся `partial`. `ai_cost` —
+          `partial`, если тариф `AI_PRICE_*` не задан или за период нет телеметрии ИИ.
+          `ai_cost` — средний расход ИИ за день на DAU (₽/DAU в день: суммарный расход
+          периода ÷ активные user-дни), `ai_usage` — средняя по дням доля DAU,
+          использовавших чат/диагностику.
+
+        Если таблицы `product_events` нет, ответ `200` с `eventsTracked: false`:
+        `activity` и `events` нулевые или пустые, `retention` считается по
+        `site_visit_days` (если они есть) и пуст, если нет ни одного источника; `funnel`
+        и `push` работают. Отсутствующие таблицы/колонки для `metrics` не дают `500`:
+        соответствующие метрики получают `status: unavailable` или `partial` и
+        `display: —`, остальные считаются по доступным данным.
+        Если нет колонок `clicked_at`/`click_count` — `push.clicks = 0`, `ctr = 0`.
+      parameters:
+        - $ref: '#/components/parameters/Days'
+      responses:
+        '200':
+          description: продуктовая аналитика
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductAnalyticsResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -2797,6 +3727,33 @@ paths:
       responses:
         '200':
           description: 'объект `{total, limit, offset, kind, byKind, kindLabels, sourceLabels, items}`'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObject'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/reminder-metrics:
+    get:
+      tags: [admin]
+      operationId: adminReminderMetrics
+      summary: Метрики cron-движка напоминаний
+      description: >-
+        In-memory ring buffer последних 50 тиков процесса:
+        `{maxTicks, count, lastTickAt, ticks: [{startedAt, durationMs, batches,
+        plantsProcessed, notificationsCreated, errors}]}`. При нескольких инстансах
+        показывает срез процесса, обслужившего запрос; после рестарта сбрасывается.
+        Используется для контроля риска «рост числа растений замедляет циклы».
+      responses:
+        '200':
+          description: метрики тиков
           content:
             application/json:
               schema:
@@ -3701,6 +4658,291 @@ paths:
         '500':
           $ref: '#/components/responses/ServerError'
 
+  /api/bots:
+    get:
+      tags: [bots]
+      summary: Каналы мессенджеров пользователя
+      description: Статус привязки Telegram/MAX, ник бота и настройки доставки. Требует cookie-сессии.
+      operationId: getBotChannels
+      responses:
+        '200':
+          description: Каналы и их состояние
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotChannelsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/link-code:
+    post:
+      tags: [bots]
+      summary: Одноразовый код привязки мессенджера
+      description: Создаёт код с TTL (по умолчанию 15 минут) и deep link для Telegram/MAX. Лимит — 10 запросов в час на пользователя.
+      operationId: createBotLinkCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+      responses:
+        '200':
+          description: Код и deep link
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BotLinkCodeResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: канал не настроен на сервере (нет токена/секрета или бот недоступен)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/unlink:
+    post:
+      tags: [bots]
+      summary: Отвязать мессенджер
+      operationId: unlinkBotChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+      responses:
+        '200':
+          description: Канал отвязан
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel, linked]
+                properties:
+                  channel:
+                    type: string
+                    enum: [telegram, max]
+                  linked:
+                    type: boolean
+                    const: false
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/preferences:
+    patch:
+      tags: [bots]
+      summary: Включить или выключить доставку в канал
+      operationId: updateBotChannelPreferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channel, notificationsEnabled]
+              properties:
+                channel:
+                  type: string
+                  enum: [telegram, max]
+                notificationsEnabled:
+                  type: boolean
+      responses:
+        '200':
+          description: Настройка применена
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [channel, notificationsEnabled]
+                properties:
+                  channel:
+                    type: string
+                    enum: [telegram, max]
+                  notificationsEnabled:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/bots/telegram/webhook:
+    post:
+      tags: [bots]
+      summary: Вебхук Telegram Bot API
+      description: Публичный endpoint платформы; авторизация — заголовок `X-Telegram-Bot-Api-Secret-Token`. Всегда быстро возвращает 200, обработка — асинхронно, дедуп по `update_id`.
+      operationId: telegramBotWebhook
+      security: []
+      parameters:
+        - name: X-Telegram-Bot-Api-Secret-Token
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Обновление принято
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '401':
+          description: неверный секрет вебхука
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: вебхук не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/bots/max/webhook:
+    post:
+      tags: [bots]
+      summary: Вебхук MAX Bot API
+      description: Публичный endpoint платформы; авторизация — заголовок `X-Max-Bot-Api-Secret`. Отвечает 200 до обработки (требование MAX ≤30 с), дедуп по `marker`/id события.
+      operationId: maxBotWebhook
+      security: []
+      parameters:
+        - name: X-Max-Bot-Api-Secret
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Обновление принято
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+        '401':
+          description: неверный секрет вебхука
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+        '503':
+          description: вебхук не настроен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Message'
+
+  /api/users/me/care-streak:
+    get:
+      tags: [notifications]
+      summary: Серия ухода и статистика недели (F10)
+      description: |
+        Текущая серия «поливов вовремя» (вовремя = hours_late ≤ 24), личный рекорд,
+        статистика текущей локальной недели и последний weekly recap.
+
+        INT-03: `freeze` дополнительно отдаёт `available`, `canFreeze`, `used` (boolean),
+        `usedFreezes` (массив; раньше назывался `used`), `frozenDates` (`used[].localDate`)
+        и `daysLeft`. В корне есть `breakReason` = `streakBreak.reason` или пустая строка;
+        старые поля `enabled/perWeek/weekStart/usedThisWeek/availableThisWeek/usedTotal`
+        сохранены.
+      operationId: getCareStreak
+      responses:
+        '200':
+          description: Серия, неделя и последний recap
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CareStreakResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
+  /api/admin/bots/analytics:
+    get:
+      tags: [admin, bots]
+      summary: Метрики ботов и recap (только ADMIN)
+      description: Подключения, доставки и ошибки по каналам и дням, конверсия link-кодов, доля напоминаний в мессенджерах, метрики weekly recap и серии. При отсутствии таблиц возвращает `tablesReady:false` и нули.
+      operationId: getAdminBotAnalytics
+      parameters:
+        - name: days
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 365
+            default: 30
+      responses:
+        '200':
+          description: Метрики ботов
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminBotAnalytics'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          $ref: '#/components/responses/ServerError'
+
 components:
   securitySchemes:
     cookieAuth:
@@ -3829,6 +5071,399 @@ components:
         message:
           type: string
 
+    ProductEventInput:
+      type: object
+      required: [event]
+      properties:
+        event:
+          type: string
+          enum:
+            - landing_view
+            - register
+            - plant_created
+            - watering_marked
+            - push_subscribed
+            - chat_message
+            - photo_added
+            - plant_id_started
+            - plant_id_success
+            - share_clicked
+        props:
+          type: object
+          additionalProperties:
+            type: [string, number, boolean, 'null']
+          description: |
+            Плоский объект примитивов. JSON не больше 2048 байт. Запрещены ключи
+            `email`, `phone`, `name`, `password`, `token` и их вариации
+            (`user_email`, `userEmail`, `auth_token` и т.п.).
+        path:
+          type: string
+          maxLength: 300
+          pattern: '^/'
+
+    ProductEventsRequest:
+      type: object
+      required: [events]
+      properties:
+        visitorId:
+          type: string
+          minLength: 8
+          maxLength: 64
+          pattern: '^[A-Za-z0-9._:-]{8,64}$'
+        events:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/ProductEventInput'
+
+    ProductEventsAccepted:
+      type: object
+      required: [accepted]
+      properties:
+        accepted:
+          type: integer
+          minimum: 0
+          maximum: 20
+
+    NotificationClickResponse:
+      type: object
+      required: [ok]
+      properties:
+        ok:
+          type: boolean
+          const: true
+
+    UtmSource:
+      type: object
+      required: [source, medium, campaign, visitors]
+      properties:
+        source:
+          type: string
+        medium:
+          type: [string, 'null']
+        campaign:
+          type: [string, 'null']
+        visitors:
+          type: integer
+          minimum: 0
+          description: 'Число строк site_visit_days с этой комбинацией UTM за период'
+
+    ProductAnalyticsResponse:
+      type: object
+      required: [generatedAt, timezone, days, eventsTracked, usersCreatedAtTracked, activity, funnel, retention, events, push, metrics]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        timezone:
+          type: string
+          description: 'IANA-пояс расчёта (Europe/Moscow)'
+        days:
+          type: integer
+          minimum: 1
+          maximum: 365
+        eventsTracked:
+          type: boolean
+          description: 'false, если таблицы product_events нет: activity/retention/events нулевые или пустые'
+        usersCreatedAtTracked:
+          type: boolean
+        activity:
+          type: object
+          required: [dau, wau, mau, activeUsers, newUsers, eventsToday, eventsInRange]
+          properties:
+            dau:
+              type: integer
+              minimum: 0
+            wau:
+              type: integer
+              minimum: 0
+            mau:
+              type: integer
+              minimum: 0
+            activeUsers:
+              type: integer
+              minimum: 0
+            newUsers:
+              type: integer
+              minimum: 0
+            eventsToday:
+              type: integer
+              minimum: 0
+            eventsInRange:
+              type: integer
+              minimum: 0
+        funnel:
+          type: object
+          required: [registered, plantCreated, wateringMarked, pushSubscribed, rates]
+          properties:
+            registered:
+              type: integer
+              minimum: 0
+              description: 'users.created_at в периоде, role ≠ ADMIN'
+            plantCreated:
+              type: integer
+              minimum: 0
+              description: 'distinct plants.user_id за plants.created_at в периоде'
+            wateringMarked:
+              type: integer
+              minimum: 0
+              description: 'distinct watering_logs.user_id (action=watered) в периоде'
+            pushSubscribed:
+              type: integer
+              minimum: 0
+              description: 'distinct push_subscriptions.user_id за created_at в периоде'
+            rates:
+              type: object
+              required: [plantCreated, wateringMarked, pushSubscribed]
+              properties:
+                plantCreated:
+                  type: number
+                  description: 'процент от registered, 1 знак'
+                wateringMarked:
+                  type: number
+                pushSubscribed:
+                  type: number
+        retention:
+          type: array
+          description: 'До 8 последних недельных когорт, от новых к старым; когорты с size=0 отброшены'
+          items:
+            type: object
+            required: [cohort, cohortLabel, size, d1, d7, d30, d1Rate, d7Rate, d30Rate]
+            properties:
+              cohort:
+                type: string
+                format: date
+                description: 'Начало недели когорты (понедельник, МСК)'
+              cohortLabel:
+                type: string
+                pattern: '^[0-9]{2}\.[0-9]{2}$'
+                description: 'DD.MM начала недели'
+              size:
+                type: integer
+                minimum: 0
+              d1:
+                type: integer
+                minimum: 0
+              d7:
+                type: integer
+                minimum: 0
+              d30:
+                type: integer
+                minimum: 0
+              d1Rate:
+                type: number
+              d7Rate:
+                type: number
+              d30Rate:
+                type: number
+        events:
+          type: array
+          description: 'Топ-10 событий за период; пустой массив, если product_events нет'
+          items:
+            type: object
+            required: [event, count, users]
+            properties:
+              event:
+                type: string
+              count:
+                type: integer
+                minimum: 0
+              users:
+                type: integer
+                minimum: 0
+                description: 'distinct user_id'
+        push:
+          type: object
+          required: [notifications, clicks, ctr, clickedToday]
+          properties:
+            notifications:
+              type: integer
+              minimum: 0
+            clicks:
+              type: integer
+              minimum: 0
+              description: 'SUM(click_count) по уведомлениям за период'
+            ctr:
+              type: number
+              description: 'clicks / notifications * 100, 1 знак'
+            clickedToday:
+              type: integer
+              minimum: 0
+              description: 'count(clicked_at за сегодня, МСК)'
+        metrics:
+          $ref: '#/components/schemas/ProductMetrics'
+
+    ProductMetrics:
+      type: object
+      required: [items, summary]
+      properties:
+        items:
+          type: array
+          minItems: 12
+          maxItems: 12
+          description: '12 метрик в фиксированном порядке: ttfv, activation, plants2, d1, d7, d30, push_ctr, returns_no_push, ai_usage, ai_cost, premium, share_organic'
+          items:
+            $ref: '#/components/schemas/ProductMetricItem'
+        summary:
+          $ref: '#/components/schemas/ProductMetricsSummary'
+
+    ProductMetricsSummary:
+      type: object
+      required: [total, measured, partial, unavailable]
+      properties:
+        total:
+          type: integer
+          const: 12
+        measured:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом measured'
+        partial:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом partial'
+        unavailable:
+          type: integer
+          minimum: 0
+          description: 'Метрики со статусом unavailable'
+
+    ProductMetricItem:
+      type: object
+      required: [id, label, priority, horizon, target, status, value, unit, display, detail, source, targetMet]
+      properties:
+        id:
+          type: string
+          enum: [ttfv, activation, plants2, d1, d7, d30, push_ctr, returns_no_push, ai_usage, ai_cost, premium, share_organic]
+          description: 'Идентификатор метрики из листа «Метрики»'
+        label:
+          type: string
+          description: 'Название строго из листа «Метрики»'
+        priority:
+          type: string
+          enum: [P0, P1, P2]
+        horizon:
+          type: string
+          description: 'Горизонт достижения цели'
+        target:
+          type: string
+          description: 'Целевое значение в человекочитаемом виде'
+        status:
+          type: string
+          enum: [measured, partial, unavailable]
+          description: 'measured — считается по данным; partial — считается частично (нет тарифа/телеметрии/биллинга/миграции шаринга или данных); unavailable — нет источника'
+        value:
+          type: [number, 'null']
+          description: 'Значение в единицах unit; null, если метрика недоступна или нет данных'
+        unit:
+          type: string
+          enum: [seconds, percent, rub]
+        display:
+          type: string
+          description: 'Готовое к показу значение: «142 с», «38,9%», «2,1 ₽»; «—» при отсутствии данных'
+        detail:
+          type: string
+          description: 'Короткая методика/ограничение, например «медиана; n=42; 41% ≤ 60 с»'
+        source:
+          type: string
+          description: 'Источник данных из листа «Метрики»'
+        targetMet:
+          type: [boolean, 'null']
+          description: 'Достигнута ли цель; null, если значение неизвестно'
+
+    GardenShare:
+      type: object
+      required: [token, path, createdAt, viewCount, signupCount]
+      properties:
+        token:
+          type: string
+          minLength: 16
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+          description: 'Случайный токен ссылки (16 random bytes в base64url)'
+        path:
+          type: string
+          description: 'Путь публичной страницы на фронтенде: `/garden/<token>`'
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+          description: 'Когда ссылка создана'
+        viewCount:
+          type: integer
+          minimum: 0
+          description: 'Просмотры публичной страницы сада'
+        signupCount:
+          type: integer
+          minimum: 0
+          description: 'Регистрации, атрибутированные этой ссылке'
+
+    GardenShareStatus:
+      type: object
+      required: [share]
+      properties:
+        share:
+          oneOf:
+            - $ref: '#/components/schemas/GardenShare'
+            - type: 'null'
+          description: 'Активная (не отозванная) ссылка; null, если ссылки нет'
+
+    GardenShareRevoked:
+      type: object
+      required: [share, revoked]
+      properties:
+        share:
+          type: 'null'
+          description: 'После отзыва активной ссылки нет'
+        revoked:
+          type: boolean
+          const: true
+
+    PublicGardenPlant:
+      type: object
+      required: [id, name, species, intervalDays]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        species:
+          type: [string, 'null']
+        intervalDays:
+          type: [integer, 'null']
+          description: 'Интервал полива в днях (`watering_interval_days`)'
+
+    PublicGarden:
+      type: object
+      required: [garden]
+      properties:
+        garden:
+          type: object
+          required: [token, ownerName, plantCount, plants, sharedAt, viewCount]
+          properties:
+            token:
+              type: string
+              pattern: '^[A-Za-z0-9_-]{16,64}$'
+            ownerName:
+              type: string
+              description: 'Первый токен users.name, иначе username, иначе «Садовод»'
+            plantCount:
+              type: integer
+              minimum: 0
+              description: 'Всего активных растений; в plants — не больше 100'
+            plants:
+              type: array
+              maxItems: 100
+              description: 'Активные растения (is_active), порядок created_at ASC'
+              items:
+                $ref: '#/components/schemas/PublicGardenPlant'
+            sharedAt:
+              type: [string, 'null']
+              format: date-time
+              description: 'Когда ссылка создана'
+            viewCount:
+              type: integer
+              minimum: 0
+              description: 'Просмотры после инкремента текущего вызова'
+
     Health:
       type: object
       required: [status, timestamp]
@@ -3891,10 +5526,14 @@ components:
         marketing_email_opt_in:
           type: boolean
           description: согласие на маркетинговые письма (по умолчанию false)
+        createdAt:
+          type: [string, 'null']
+          format: date-time
+          description: дата регистрации; нужна профилю (достижение «Месяц с „Лейкой“»)
         created_at:
           type: string
           format: date-time
-          description: есть в админ-выборках; в `/api/users/me` не возвращается
+          description: есть в админ-выборках; в `/api/users/me` дата регистрации отдаётся в `createdAt`
 
     RegistrationRequest:
       type: object
@@ -3926,6 +5565,16 @@ components:
         marketingConsent:
           type: boolean
           description: отдельное (необязательное) согласие на маркетинговые письма
+        shareToken:
+          type: string
+          minLength: 16
+          maxLength: 64
+          pattern: '^[A-Za-z0-9_-]{16,64}$'
+          description: |
+            Необязательный токен публичной ссылки на сад (F13, из `/garden/<token>`):
+            регистрация атрибутируется к шарингу (`garden_share_signups`). Неверный
+            формат — `400`; неизвестный или отозванный токен молча игнорируется и не
+            мешает регистрации.
 
     RegistrationResponse:
       type: object
@@ -3935,6 +5584,8 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/User'
+        guestLink:
+          $ref: '#/components/schemas/GuestLinkSummary'
 
     LoginRequest:
       type: object
@@ -3957,6 +5608,32 @@ components:
           type: string
         user:
           $ref: '#/components/schemas/User'
+        guestLink:
+          $ref: '#/components/schemas/GuestLinkSummary'
+
+    GuestLinkSummary:
+      type: object
+      description: |
+        Результат переноса гостевых данных (F09) при регистрации/входе. Поле всегда
+        присутствует в новых ответах; `linked` = `chatMessages + consents > 0`. Счётчики
+        отражают только реально перенесённые записи: при частичном сбое линковки ошибки
+        не ломают регистрацию/вход, но и не считаются перенесёнными.
+      required: [linked, chatMessages, chatSessions, diagnoses, consents]
+      properties:
+        linked:
+          type: boolean
+        chatMessages:
+          type: integer
+          minimum: 0
+        chatSessions:
+          type: integer
+          minimum: 0
+        diagnoses:
+          type: integer
+          minimum: 0
+        consents:
+          type: integer
+          minimum: 0
 
     UpdateProfileRequest:
       type: object
@@ -4028,6 +5705,30 @@ components:
           items:
             type: object
             additionalProperties: true
+            required: [id, plantId, action, wateredAt, scheduledFor, hoursLate, daysLate, comment, metadata]
+            description: 'отметки полива: `wateredAt` = `watering_logs.action_at`, `hoursLate` = `hours_late`, `daysLate` = floor(hoursLate / 24), `comment` = `note`'
+            properties:
+              id:
+                type: integer
+              plantId:
+                type: [integer, 'null']
+              action:
+                type: [string, 'null']
+              wateredAt:
+                type: [string, 'null']
+                format: date-time
+              scheduledFor:
+                type: [string, 'null']
+                format: date-time
+              hoursLate:
+                type: [integer, 'null']
+              daysLate:
+                type: [integer, 'null']
+              comment:
+                type: [string, 'null']
+              metadata:
+                type: object
+                additionalProperties: true
         chatMessages:
           type: array
           items:
@@ -4090,11 +5791,92 @@ components:
           type: boolean
         care_advice_enabled:
           type: boolean
+        weekly_recap_enabled:
+          type: boolean
+          description: 'F10: присылать недельный recap (по умолчанию true)'
         dark_theme_enabled:
           type: boolean
         theme_mode:
           type: string
           enum: [system, light, dark]
+        delivery_mode:
+          type: string
+          enum: [digest, per_plant]
+          description: 'F41: digest по умолчанию — одна сводка вместо N сообщений'
+        quiet_hours_enabled:
+          type: boolean
+          description: 'F43: тихие часы включены'
+        quiet_hours_start:
+          type: string
+          example: '22:00'
+        quiet_hours_end:
+          type: string
+          example: '08:00'
+        quiet_hours_timezone:
+          type: string
+          description: read-only; часовой пояс пользователя для границ тихих часов
+
+    PlantWateringState:
+      type: object
+      description: |
+        F14: объяснимое состояние полива. overdue=true — слот уже в прошлом относительно
+        локальной полуночи следующего дня (та же семантика, что `is_missed` в
+        `/api/plants/schedule`), поэтому для просроченного растения status никогда не
+        бывает `scheduled`. missed=true — календарная просрочка (status=missed), т.е.
+        наступает уже при overdue; `missed_since`/`grace_hours` описывают окно, в котором
+        авто-пропуск ещё не подтверждён, а `can_backfill` — можно ли отметить полив за
+        прошедший слот. В режиме preserve план не сдвигается автоматически.
+      required: [status, policy, overdue, missed, can_backfill]
+      properties:
+        status:
+          type: string
+          enum: [scheduled, due_today, missed, paused]
+        policy:
+          type: string
+          enum: [preserve, auto_skip]
+        scheduled_for:
+          type: [string, 'null']
+          format: date-time
+          description: текущий запланированный слот (next_watering_at)
+        overdue:
+          type: boolean
+          description: 'BE-07: просрочено с локальной полуночи (true → status=missed)'
+        missed:
+          type: boolean
+        missed_since:
+          type: [string, 'null']
+          format: date-time
+          description: первый неполитый слот
+        missed_slots:
+          type: integer
+          minimum: 0
+        hours_late:
+          type: integer
+          minimum: 0
+        days_late:
+          type: integer
+          minimum: 0
+        can_backfill:
+          type: boolean
+          description: можно ли ещё отметить пропуск как «полил позже»
+        backfill_until:
+          type: [string, 'null']
+          format: date-time
+          description: до какого момента доступен backfill (30 дней от слота)
+        reason:
+          type: [string, 'null']
+          enum: [missed_slot, auto_skipped, reminders_paused, null]
+        grace_hours:
+          type: integer
+          minimum: 0
+          description: 'BE-07: окно подтверждения пропуска, после которого растёт missed_slots (24 ч)'
+        consecutive_skips:
+          type: integer
+          minimum: 0
+        reminders_paused:
+          type: boolean
+        timezone:
+          type: string
 
     PasskeyCreationOptions:
       type: object
@@ -4182,7 +5964,7 @@ components:
         metadata:
           type: object
           additionalProperties: true
-          description: 'в т.ч. `prediction` (адаптивная модель) и `notifications` (прогресс напоминаний)'
+          description: 'в т.ч. `prediction` (адаптивная модель), `notifications` (прогресс напоминаний) и `health_check` (последняя проверка здоровья: text/diagnosis/photoUrl/createdAt)'
         created_at:
           type: string
           format: date-time
@@ -4193,6 +5975,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlantPhoto'
+        watering_state:
+          $ref: '#/components/schemas/PlantWateringState'
+          description: 'F14: пропущен ли полив и что можно сделать (аддитивное поле)'
 
     PlantPhoto:
       type: object
@@ -4213,12 +5998,46 @@ components:
         metadata:
           type: object
           additionalProperties: true
+          description: 'может содержать diagnosis (структура разбора ИИ) и diagnosis_text (текстовый разбор)'
+        thumb_url:
+          type: [string, 'null']
+          description: 'F30: миниатюра 160x160 (если sharp доступен)'
+        taken_at:
+          type: [string, 'null']
+          format: date-time
+          description: 'F30: дата съёмки роста; у старых фото null — клиент берёт created_at'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+          description: 'F30: заметка к фото роста'
         created_at:
           type: string
           format: date-time
         updated_at:
           type: string
           format: date-time
+
+    PlantHealthCheck:
+      type: object
+      description: 'INT-01/INT-04: результат проверки здоровья по фото, сохранённый на сервере.'
+      required: [text, diagnosis, photoUrl, createdAt, saved]
+      properties:
+        text:
+          type: string
+          description: текстовый разбор (formatPlantDiagnosisText)
+        diagnosis:
+          type: [object, 'null']
+          additionalProperties: true
+          description: 'структура разбора ИИ (isPlant, plantName, visibleSymptoms, likelyProblems, severity, careAdvice, photoQuality, needsAnotherPhoto, summary); isPlant=false, если на фото не растение'
+        photoUrl:
+          type: string
+          description: URL проверенного фото; пустая строка для multipart (файл не сохраняется)
+        createdAt:
+          type: string
+          format: date-time
+        saved:
+          type: boolean
+          const: true
 
     PhotoInput:
       oneOf:
@@ -4239,6 +6058,36 @@ components:
             metadata:
               type: object
               additionalProperties: true
+            taken_at:
+              type: string
+              format: date-time
+              description: 'F30: когда сделан снимок (необязательно)'
+            note:
+              type: string
+              maxLength: 500
+              description: 'F30: заметка к фото роста'
+
+    PopularPlantSpecies:
+      type: object
+      required: [species, addedCount, usersCount]
+      properties:
+        species:
+          type: string
+          maxLength: 160
+          description: Вид растения так, как его сохранили пользователи (обычно латынь).
+        addedCount:
+          type: integer
+          minimum: 0
+          description: Сколько активных растений этого вида добавлено.
+        usersCount:
+          type: integer
+          minimum: 0
+          description: Сколько уникальных пользователей добавили этот вид.
+        avgIntervalDays:
+          type: [integer, 'null']
+          minimum: 1
+          maximum: 365
+          description: Средний интервал полива по этому виду в днях.
 
     PlantCreateRequest:
       type: object
@@ -4423,6 +6272,29 @@ components:
                       type: [string, 'null']
                     is_missed:
                       type: boolean
+                    scheduled_for:
+                      type: string
+                      format: date-time
+                    missed_since:
+                      type: [string, 'null']
+                      format: date-time
+                    missed_slots:
+                      type: integer
+                      minimum: 0
+                    can_backfill:
+                      type: boolean
+                    backfill_until:
+                      type: [string, 'null']
+                      format: date-time
+                    days_late:
+                      type: integer
+                      minimum: 0
+                    reason:
+                      type: [string, 'null']
+                      enum: [missed_slot, auto_skipped, reminders_paused, null]
+                    missed_policy:
+                      type: string
+                      enum: [preserve, auto_skip]
 
     HistoryAllResponse:
       type: object
@@ -4492,11 +6364,13 @@ components:
               events:
                 type: array
                 description: |
-                  Событие содержит `kind` (`overdue` | `skipped` | `watered`) и `plant`
+                  Событие содержит `kind` (`overdue` | `skipped` | `watered` | `care`) и `plant`
                   (`id`, `name`, `species`, `location`, `photo_url`). Для `overdue` —
                   `scheduled_for`, `hours_late`, `days_late`; для `skipped` — `id`,
                   `scheduled_for`, `skipped_at`, `hours_late`, `days_late`, `note`;
-                  для `watered` — `id`, `watered_at`, `scheduled_for`, `hours_late`, `note`.
+                  для `watered` — `id`, `watered_at`, `scheduled_for`, `hours_late`, `note`;
+                  для `care` — `action_code`, `title`, `product_name`, `dose`, `method`,
+                  `log_id`, `performed_at`.
                 items:
                   type: object
                   required: [kind, plant]
@@ -4504,7 +6378,7 @@ components:
                   properties:
                     kind:
                       type: string
-                      enum: [overdue, skipped, watered]
+                      enum: [overdue, skipped, watered, care]
                     plant:
                       type: object
                       additionalProperties: true
@@ -4544,6 +6418,105 @@ components:
           type: number
         avg_hours_late:
           type: number
+
+    CareActionInput:
+      type: object
+      required: [action_code]
+      description: Отметка действия ухода. Пустые строки сохраняются как `null`.
+      properties:
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        product_name:
+          type: [string, 'null']
+          maxLength: 160
+          description: Обязателен для `fertilize`.
+        dose:
+          type: [string, 'null']
+          maxLength: 120
+        method:
+          type: [string, 'null']
+          enum: [spray_bottle, humidifier]
+          description: 'Только для `spray`; по умолчанию `spray_bottle`.'
+        note:
+          type: [string, 'null']
+          maxLength: 500
+        performed_at:
+          type: [string, 'null']
+          format: date-time
+          description: Не в будущем (допуск 5 минут) и не старше 365 дней; по умолчанию — сейчас.
+        notification_id:
+          type: [integer, 'null']
+          minimum: 1
+          description: Уведомление, по которому отмечен уход; помечается прочитанным, в `payload` добавляется `done_at`.
+
+    CareAction:
+      type: object
+      required: [id, plant_id, action_code, title, performed_at]
+      properties:
+        id:
+          type: integer
+        plant_id:
+          type: integer
+        plant_name:
+          type: [string, 'null']
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        title:
+          type: [string, 'null']
+          description: 'Человекочитаемое название действия, например «Подкормка».'
+        product_name:
+          type: [string, 'null']
+          maxLength: 160
+        dose:
+          type: [string, 'null']
+          maxLength: 120
+        method:
+          type: [string, 'null']
+          enum: [spray_bottle, humidifier]
+        note:
+          type: [string, 'null']
+          maxLength: 500
+        performed_at:
+          type: string
+          format: date-time
+        created_at:
+          type: [string, 'null']
+          format: date-time
+
+    CareActionList:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CareAction'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    CareScheduleItem:
+      type: object
+      required: [date, action_code, title, plant_id, plant_name]
+      properties:
+        date:
+          type: string
+          format: date
+          description: Локальная дата ближайшего планового действия.
+        action_code:
+          type: string
+          enum: [fertilize, spray, leaf_clean, rotate, pest_check, humidity_support]
+        title:
+          type: [string, 'null']
+        plant_id:
+          type: integer
+        plant_name:
+          type: [string, 'null']
 
     WateringAdviceRequest:
       type: object
@@ -4773,7 +6746,8 @@ components:
           type: [integer, 'null']
         type:
           type: string
-          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip]
+          enum: [watering_due, watering_day_before, morning_summary, care_reminder, care_tip, weekly_recap, garden_view]
+          description: 'garden_view (F50) — владельцу о просмотрах публичного сада, не чаще 1 раза в 24 ч.'
         title:
           type: string
           maxLength: 120
@@ -4783,19 +6757,31 @@ components:
         url:
           type: string
           maxLength: 2048
+        payload:
+          type: object
+          additionalProperties: true
+          description: 'Данные уведомления: для ухода — action_code, action_title, topic, done_at.'
         scheduled_for:
           type: [string, 'null']
           format: date-time
         read_at:
           type: [string, 'null']
           format: date-time
+        clicked_at:
+          type: [string, 'null']
+          format: date-time
+          description: 'Первый клик по push-уведомлению (F03)'
+        click_count:
+          type: integer
+          minimum: 0
+          description: 'Суммарное число кликов по уведомлению (F03)'
         created_at:
           type: string
           format: date-time
 
     NotificationList:
       type: object
-      required: [items, total, unreadCount, status, limit, offset]
+      required: [items, total, unreadCount, unreadByCategory, category, status, limit, offset]
       properties:
         items:
           type: array
@@ -4805,6 +6791,22 @@ components:
           type: integer
         unreadCount:
           type: integer
+        unreadByCategory:
+          type: object
+          required: [all, watering, care, garden]
+          properties:
+            all:
+              type: integer
+            watering:
+              type: integer
+            care:
+              type: integer
+            garden:
+              type: integer
+          description: 'Непрочитанные по категориям ленты: care включает care_reminder/care_tip, garden — garden_view (F50).'
+        category:
+          type: string
+          enum: [all, watering, care, garden]
         status:
           type: string
           enum: [all, unread, read]
@@ -4909,6 +6911,7 @@ components:
 
     DockerContainerStats:
       type: object
+      required: [id, name, state, problemLevel]
       properties:
         id:
           type: string
@@ -4916,10 +6919,41 @@ components:
           type: string
         state:
           type: string
+          description: Состояние из списка контейнеров (running, exited, restarting, paused, dead, created, ...)
         status:
           type: string
         image:
           type: string
+        service:
+          type: [string, 'null']
+          description: Имя сервиса docker compose (`com.docker.compose.service`), если есть
+        healthStatus:
+          type: string
+          enum: [healthy, unhealthy, starting, none]
+          description: Статус healthcheck из `inspect().State.Health.Status`; `none` — healthcheck не задан
+        restartCount:
+          type: integer
+          minimum: 0
+        startedAt:
+          type: [string, 'null']
+          format: date-time
+        uptimeSeconds:
+          type: [integer, 'null']
+          description: Время работы для `state=running`; для остальных — `null`
+        exitCode:
+          type: [integer, 'null']
+          description: Код выхода для `exited`/`dead`; для остальных — `null`
+        oomKilled:
+          type: boolean
+        error:
+          type: [string, 'null']
+          description: Текст `State.Error` из inspect, если был
+        problem:
+          type: [string, 'null']
+          description: Человекочитаемая причина проблемы на русском; `null`, если проблем нет
+        problemLevel:
+          type: string
+          enum: [ok, warn, error]
         statsAvailable:
           type: boolean
         cpu:
@@ -4949,6 +6983,70 @@ components:
               type: [integer, 'null']
         pids:
           type: [integer, 'null']
+
+    DockerStatsSummary:
+      type: object
+      required: [available, ok, total, running, stopped, unhealthy, restarting, healthy, problems]
+      properties:
+        available:
+          type: boolean
+        ok:
+          type: boolean
+          description: true, если у контейнеров нет проблем (`problems=0`)
+        total:
+          type: integer
+          minimum: 0
+        running:
+          type: integer
+          minimum: 0
+        stopped:
+          type: integer
+          minimum: 0
+          description: exited/dead/created/removing
+        unhealthy:
+          type: integer
+          minimum: 0
+        restarting:
+          type: integer
+          minimum: 0
+        healthy:
+          type: integer
+          minimum: 0
+          description: running без проблем
+        problems:
+          type: integer
+          minimum: 0
+
+    DockerUnavailableResponse:
+      type: object
+      required: [available, reason, message]
+      properties:
+        available:
+          type: boolean
+          enum: [false]
+        reason:
+          type: string
+          enum: [not_configured, disabled, unreachable]
+          description: |
+            `not_configured` — не задан `DOCKER_HOST`; `disabled` — `DOCKER_STATS_ENABLED=false`
+            (типично для Kubernetes); `unreachable` — Docker-демон не отвечает.
+        message:
+          type: string
+          description: Готовое для показа сообщение (совместимо с прежним полем `message`)
+
+    DockerLogsResponse:
+      type: object
+      required: [id, name, tail, logs]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        tail:
+          type: integer
+        logs:
+          type: string
+          description: Очищенный вывод stdout+stderr (ANSI удалены, не более ~20 000 символов)
 
     PushBroadcastRequest:
       type: object
@@ -5048,3 +7146,390 @@ components:
         фиксирует только факт JSON-объекта и коды ответов. Для полей, которые нужно
         использовать программно, опирайтесь на `Backend/controllers/admin*.js`
         (админка — единственный потребитель этих эндпоинтов).
+
+    SystemFeatureState:
+      type: object
+      required: [gardenSharing, socialFeed, socialComments, criticalMass]
+      description: Состояние соцфич для публичного клиента (риск 11).
+      properties:
+        gardenSharing:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        socialFeed:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        socialComments:
+          $ref: '#/components/schemas/SocialFeatureFlagState'
+        criticalMass:
+          type: object
+          required: [current, threshold, reached]
+          properties:
+            current:
+              type: [integer, 'null']
+              description: 'активных шарингов сада; null — посчитать не удалось (fail-closed)'
+            threshold:
+              type: integer
+              minimum: 0
+              default: 50
+            reached:
+              type: boolean
+
+    SocialFeatureFlagState:
+      type: object
+      required: [enabled, reason]
+      properties:
+        enabled:
+          type: boolean
+        reason:
+          type: string
+          enum: [enabled, disabled, critical_mass, unavailable]
+
+    BotChannelStatus:
+      type: object
+      required: [channel, configured, linked, notificationsEnabled]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, max]
+        title:
+          type: string
+        configured:
+          type: boolean
+          description: задан ли токен бота на сервере
+        botUsername:
+          type: [string, 'null']
+        botName:
+          type: [string, 'null']
+        botUrl:
+          type: [string, 'null']
+          description: 'https://t.me/<bot> или https://max.ru/<bot>'
+        linked:
+          type: boolean
+        externalUsername:
+          type: [string, 'null']
+        linkedAt:
+          type: [string, 'null']
+          format: date-time
+        notificationsEnabled:
+          type: boolean
+        lastDeliveryAt:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+
+    BotChannelsResponse:
+      type: object
+      required: [channels, linkCodeTtlMinutes]
+      properties:
+        channels:
+          type: array
+          items:
+            $ref: '#/components/schemas/BotChannelStatus'
+        linkCodeTtlMinutes:
+          type: integer
+          minimum: 1
+
+    BotLinkCodeResponse:
+      type: object
+      required: [channel, code, deepLink, expiresAt]
+      properties:
+        channel:
+          type: string
+          enum: [telegram, max]
+        code:
+          type: string
+        deepLink:
+          type: string
+          format: uri
+        botUsername:
+          type: [string, 'null']
+        expiresAt:
+          type: string
+          format: date-time
+
+    CareStreakWeekDay:
+      type: object
+      required: [date, status]
+      properties:
+        date:
+          type: string
+          format: date
+        status:
+          type: string
+          enum: [watered, late, skipped, none]
+
+    CareStreakWeek:
+      type: object
+      required: [wateredOnTime, wateredLate, skipped, scheduled, photos, careActions, startDate, days]
+      properties:
+        wateredOnTime:
+          type: integer
+        wateredLate:
+          type: integer
+        skipped:
+          type: integer
+        scheduled:
+          type: integer
+        photos:
+          type: integer
+        careActions:
+          type: integer
+        startDate:
+          type: string
+          format: date
+        days:
+          type: array
+          items:
+            $ref: '#/components/schemas/CareStreakWeekDay'
+
+    WeeklyRecapSummary:
+      type: object
+      required: [id, title, body]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        body:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+
+    CareStreakResponse:
+      type: object
+      required: [current, best, week, lastWateredAt, latestRecap, updatedAt]
+      properties:
+        current:
+          type: integer
+          minimum: 0
+        best:
+          type: integer
+          minimum: 0
+        lastWateredAt:
+          type: [string, 'null']
+          format: date-time
+        week:
+          $ref: '#/components/schemas/CareStreakWeek'
+        latestRecap:
+          oneOf:
+            - $ref: '#/components/schemas/WeeklyRecapSummary'
+            - type: 'null'
+        updatedAt:
+          type: string
+          format: date-time
+        freeze:
+          $ref: '#/components/schemas/CareStreakFreeze'
+        streakBreak:
+          oneOf:
+            - $ref: '#/components/schemas/CareStreakBreak'
+            - type: 'null'
+        breakReason:
+          type: string
+          description: 'INT-03: streakBreak.reason (skipped/late_watering) или пустая строка'
+          enum: ['', skipped, late_watering]
+
+    CareStreakFreeze:
+      type: object
+      description: 'F16: заморозка серии — 1 день в неделю не обрывает серию.'
+      required: [enabled, perWeek, weekStart, usedThisWeek, availableThisWeek, usedTotal, used, available, canFreeze, frozenDates]
+      properties:
+        available:
+          type: boolean
+          description: 'INT-03: availableThisWeek > 0'
+        canFreeze:
+          type: boolean
+          description: 'INT-03: availableThisWeek > 0'
+        frozenDates:
+          type: array
+          description: 'INT-03: локальные даты (YYYY-MM-DD), сохранённые заморозкой'
+          items:
+            type: string
+            format: date
+        daysLeft:
+          type: integer
+          minimum: 0
+          description: 'INT-03: сколько заморозок ещё доступно на этой неделе'
+        enabled:
+          type: boolean
+        perWeek:
+          type: integer
+          minimum: 0
+        weekStart:
+          type: string
+          format: date
+        usedThisWeek:
+          type: integer
+          minimum: 0
+        availableThisWeek:
+          type: integer
+          minimum: 0
+        usedTotal:
+          type: integer
+          minimum: 0
+        usedFreezes:
+          type: array
+          description: 'прежний массив used (по одной записи на заморозку)'
+          items:
+            type: object
+            required: [at, localDate, weekStart, kind]
+            properties:
+              at:
+                type: string
+                format: date-time
+              localDate:
+                type: string
+                format: date
+              weekStart:
+                type: string
+                format: date
+              kind:
+                type: string
+                enum: [skipped, late_watering]
+              hoursLate:
+                type: integer
+                minimum: 0
+        used:
+          type: boolean
+          description: 'INT-03: заморозка потрачена на этой неделе (usedThisWeek > 0)'
+
+    CareStreakBreak:
+      type: object
+      description: 'F16: почему серия оборвалась (пропуск или поздний полив исчерпали заморозку).'
+      required: [reason, at, localDate]
+      properties:
+        reason:
+          type: string
+          enum: [skipped, late_watering]
+        at:
+          type: string
+          format: date-time
+        localDate:
+          type: string
+          format: date
+        hoursLate:
+          type: integer
+          minimum: 0
+        weekStart:
+          type: string
+          format: date
+        freezeAvailable:
+          type: boolean
+
+    AdminBotChannelMetrics:
+      type: object
+      additionalProperties: true
+      required: [configured, linkedActive, linkedTotal, messagesSent, messagesFailed, deliveryRate, remindersSent]
+      properties:
+        configured:
+          type: boolean
+        botUsername:
+          type: [string, 'null']
+        linkedActive:
+          type: integer
+        linkedTotal:
+          type: integer
+        linkedInRange:
+          type: integer
+        unlinkedInRange:
+          type: integer
+        notificationsDisabled:
+          type: integer
+        codesCreated:
+          type: integer
+        codesUsed:
+          type: integer
+        codeConversion:
+          type: number
+          description: доля 0…1
+        messagesSent:
+          type: integer
+        messagesFailed:
+          type: integer
+        messagesSkipped:
+          type: integer
+        deliveryRate:
+          type: number
+          description: доля 0…1
+        remindersSent:
+          type: integer
+        lastSentAt:
+          type: [string, 'null']
+          format: date-time
+        lastError:
+          type: [string, 'null']
+
+    AdminBotAnalytics:
+      type: object
+      required: [generatedAt, days, timezone, tablesReady, channels, totals, series, linkFunnel, recentErrors, commands, recap, streak]
+      properties:
+        generatedAt:
+          type: string
+          format: date-time
+        days:
+          type: integer
+        timezone:
+          type: string
+        tablesReady:
+          type: boolean
+          description: false — миграции ботов ещё не применены
+        channels:
+          type: object
+          required: [telegram, max]
+          properties:
+            telegram:
+              $ref: '#/components/schemas/AdminBotChannelMetrics'
+            max:
+              $ref: '#/components/schemas/AdminBotChannelMetrics'
+        totals:
+          type: object
+          additionalProperties: true
+        series:
+          type: array
+          items:
+            type: object
+            required: [day]
+            properties:
+              day:
+                type: string
+                format: date
+              telegramSent:
+                type: integer
+              telegramFailed:
+                type: integer
+              maxSent:
+                type: integer
+              maxFailed:
+                type: integer
+        linkFunnel:
+          type: object
+          required: [codesCreated, codesUsed, conversion]
+          properties:
+            codesCreated:
+              type: integer
+            codesUsed:
+              type: integer
+            conversion:
+              type: number
+              description: доля 0…1
+        recentErrors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        commands:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        recap:
+          type: object
+          additionalProperties: true
+          description: 'F10: notificationsCreated, delivered, failed, users, telegram, max'
+        streak:
+          type: object
+          additionalProperties: true
+          description: 'F10: usersWithStreak, avgCurrentStreak, bestCurrentStreak'
+

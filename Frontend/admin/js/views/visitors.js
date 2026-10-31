@@ -24,14 +24,43 @@ function dayRows(visits) {
     }))
 }
 
+function utmCard(breakdown) {
+    const sources = Array.isArray(breakdown?.utmSources) ? breakdown.utmSources : []
+    if (!sources.length) return null
+
+    return card('UTM-источники', 'Первое касание: source / medium / campaign',
+        table({
+            columns: [
+                { key: 'source', label: 'Источник', render: row => row.source || '—' },
+                { key: 'medium', label: 'Канал', render: row => row.medium || '—' },
+                { key: 'campaign', label: 'Кампания', render: row => row.campaign || '—' },
+                {
+                    key: 'visitors',
+                    label: 'Посетителей',
+                    align: 'right',
+                    render: row => formatNumber(row.visitors)
+                }
+            ],
+            rows: sources,
+            emptyText: 'UTM-метки ещё не встречались',
+            label: 'UTM-источники'
+        }))
+}
+
 export const visitorsView = {
     id: 'visitors',
     title: 'Посетители',
     subtitle: 'Уникальные визиты, просмотры, источники и устройства',
     needsRange: true,
     async render(root, ctx) {
-        await loadInto(root, () => api.visits({ from: ctx.from, to: ctx.to }),
-            visits => {
+        await loadInto(root, () => Promise.all([
+            api.visits({ from: ctx.from, to: ctx.to }),
+            api.breakdown(ctx.days).catch(error => {
+                if (error?.status === 401) throw error
+                return null
+            })
+        ]).then(([visits, breakdown]) => ({ visits, breakdown })),
+            ({ visits, breakdown }) => {
                 if (!visits.tracked) {
                     return h('div', { class: 'stack' }, [
                         h('div', { class: 'notice notice-warn' }, [
@@ -140,6 +169,8 @@ export const visitorsView = {
                             }))
                     ]),
 
+                    utmCard(breakdown),
+
                     card('Страницы входа', 'Первая страница посетителя за день',
                         hBarChart({
                             items: visits.pages.map(item => ({ label: item.path, value: item.views })),
@@ -176,6 +207,7 @@ export const visitorsView = {
                             )
                         }))
                 ])
-            }, 'Считаем посещения…')
+            },
+            'Считаем посещения…')
     }
 }

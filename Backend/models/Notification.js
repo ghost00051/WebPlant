@@ -30,7 +30,9 @@ const Notification = sequelize.define('notification', {
                 'watering_day_before',
                 'morning_summary',
                 'care_reminder',
-                'care_tip'
+                'care_tip',
+                'weekly_recap',
+                'garden_view'
             ]]
         }
     },
@@ -54,7 +56,8 @@ const Notification = sequelize.define('notification', {
     payload: {
         type: DataTypes.JSONB,
         allowNull: false,
-        defaultValue: {}
+        defaultValue: {},
+        comment: 'BE-05: push_pending=true — push отложен тихими часами, досылается фоновым тиком'
     },
     scheduled_for: {
         type: DataTypes.DATE,
@@ -63,6 +66,17 @@ const Notification = sequelize.define('notification', {
     read_at: {
         type: DataTypes.DATE,
         allowNull: true
+    },
+    clicked_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'Первый клик по push-уведомлению (F03)'
+    },
+    click_count: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+        comment: 'Суммарное число кликов по уведомлению (F03)'
     }
 }, {
     tableName: 'notifications',

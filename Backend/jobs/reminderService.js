@@ -3,6 +3,7 @@ import { Op } from 'sequelize'
 import sequelize from '../db.js'
 import Plant from '../models/Plant.js'
 import WateringLog from '../models/WateringLog.js'
+import Notification from '../models/Notification.js'
 import NotificationPreference from '../models/NotificationPreference.js'
 import {
     storeNotification,
@@ -22,8 +23,30 @@ import {
 import { withDistributedLock } from '../utils/distributedLock.js'
 import User from '../models/userModels.js'
 import { DEFAULT_TIME_ZONE, resolveTimeZone } from '../utils/timeZone.js'
-import { isRemindersPaused, registerAutoSkip } from '../utils/plantMetadata.js'
+import { isRemindersPaused, markWateringMissed, registerAutoSkip } from '../utils/plantMetadata.js'
+import {
+    MISSED_ACTION,
+    MISSED_POLICY,
+    buildMissedWateringNotification,
+    planMissedWateringHandling,
+    resolveMissedPolicy
+} from '../utils/missedWatering.js'
 import { readPrediction } from '../utils/wateringPrediction.js'
+import {
+    forEachInChunks,
+    iterateActiveDuePlants,
+    iterateBatchesById,
+    readReminderBatchConfig,
+    readReminderPushConcurrency
+} from '../utils/plantBatching.js'
+import { recordReminderTick } from '../utils/reminderTickMetrics.js'
+import {
+    DELIVERY_MODE,
+    isQuietTime,
+    quietHoursFromPreference,
+    resolveDeliveryMode,
+    resolveDigestHour
+} from '../utils/quietHours.js'
 
 const MINUTE = 60 * 1000
 const HOUR = 60 * MINUTE
@@ -46,6 +69,9 @@ const MAX_SUMMARY_PLANTS = 5
 const SUMMARY_NAME_MAX_LENGTH = 40
 const SUMMARY_LOCATION_MAX_LENGTH = 40
 const NOTIFY_NAME_MAX_LENGTH = 80
+const DEFERRED_PUSH_TTL_MS = 48 * HOUR
+const MAX_DEFERRED_PUSHES_PER_TICK = 1000
+const DEFERRED_PUSH_PAYLOAD_KEY = 'push_pending'
 const TICK_LOCK = 'job:reminder-tick'
 const SUMMARY_TICK_LOCK = 'job:morning-summary-tick'
 const CARE_ADVICE_TICK_LOCK = 'job:care-advice-tick'
@@ -149,8 +175,7 @@ export function truncateText(value, maxLength) {
     return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`
 }
 
-export function buildMorningSummaryBody(plants = []) {
-    const list = Array.isArray(plants) ? plants : []
+function formatSummaryNames(list) {
     const names = list.slice(0, MAX_SUMMARY_PLANTS).map(plant => {
         const name = truncateText(plant.name || 'Растение', SUMMARY_NAME_MAX_LENGTH)
         const location = plant.location
@@ -159,11 +184,68 @@ export function buildMorningSummaryBody(plants = []) {
         return `${name}${location}`
     })
     const extraCount = list.length - names.length
-    const text = list.length
-        ? `Сегодня полить: ${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
-        : 'На сегодня полив не запланирован 🌱'
+    return `${names.join(', ')}${extraCount > 0 ? ` и ещё ${extraCount}` : ''}`
+}
 
-    return truncateText(text, NOTIFICATION_BODY_MAX_LENGTH)
+function hasMissedMetadata(metadata) {
+    const value = metadata && typeof metadata === 'object' ? metadata.missed_since : null
+    return typeof value === 'string' && value.length > 0
+}
+
+export function buildMorningSummaryBody(plants = [], { tomorrow = [] } = {}) {
+    const todayList = Array.isArray(plants) ? plants : []
+    const tomorrowList = Array.isArray(tomorrow) ? tomorrow : []
+    const parts = []
+
+    if (todayList.length) parts.push(`Сегодня полить: ${formatSummaryNames(todayList)}`)
+    if (tomorrowList.length) parts.push(`Завтра полить: ${formatSummaryNames(tomorrowList)}`)
+
+    if (!parts.length) return 'На сегодня полив не запланирован 🌱'
+    return truncateText(parts.join('\n'), NOTIFICATION_BODY_MAX_LENGTH)
+}
+
+export function collectMorningSummaryPlants(plants, {
+    now = new Date(),
+    end,
+    timeZone = DEFAULT_TIME_ZONE
+} = {}) {
+    const todayEnd = end instanceof Date && Number.isFinite(end.getTime())
+        ? end
+        : getDayBounds(now, timeZone).end
+    const tomorrowKey = localTomorrowKey(now, timeZone)
+    const today = []
+    const tomorrow = []
+
+    for (const plant of Array.isArray(plants) ? plants : []) {
+        if (!plant) continue
+        if (isRemindersPaused(plant.metadata)) continue
+        if (plant.notify_morning === false) continue
+        if (!matchesWeekdayForSlot(plant, plant.next_watering_at, timeZone)) continue
+
+        const nextAt = new Date(plant.next_watering_at)
+        const hasNextAt = Number.isFinite(nextAt.getTime())
+        const missed = hasMissedMetadata(plant.metadata)
+
+        if ((hasNextAt && nextAt.getTime() < todayEnd.getTime()) || missed) {
+            today.push(plant)
+            continue
+        }
+        if (
+            plant.notify_day_before === true &&
+            hasNextAt &&
+            zonedDayKey(nextAt, timeZone) === tomorrowKey
+        ) {
+            tomorrow.push(plant)
+        }
+    }
+
+    return { today, tomorrow }
+}
+
+export function shouldSendMorningSummary({ today = [], tomorrow = [] } = {}) {
+    const todayCount = Array.isArray(today) ? today.length : 0
+    const tomorrowCount = Array.isArray(tomorrow) ? tomorrow.length : 0
+    return todayCount + tomorrowCount > 0
 }
 
 export function formatSlotLabel(slot, timeZone = DEFAULT_TIME_ZONE) {
@@ -253,6 +335,36 @@ export function withSlotNotification(metadata, key, slot) {
     return next
 }
 
+export function buildDeferredPushPayload({ tag = null, deferredAt = new Date() } = {}) {
+    const at = deferredAt instanceof Date ? deferredAt : new Date(deferredAt)
+    return {
+        [DEFERRED_PUSH_PAYLOAD_KEY]: true,
+        push_deferred_at: Number.isFinite(at.getTime()) ? at.toISOString() : null,
+        push_tag: typeof tag === 'string' && tag ? tag : null
+    }
+}
+
+export function isDeferredPushPayload(payload) {
+    return Boolean(
+        payload &&
+        typeof payload === 'object' &&
+        payload[DEFERRED_PUSH_PAYLOAD_KEY] === true
+    )
+}
+
+export function readDeferredPushTag(payload, fallback = 'reminder') {
+    const tag = payload?.push_tag
+    return typeof tag === 'string' && tag ? tag : fallback
+}
+
+export function markPushDeliveredPayload(payload, { sentAt = new Date() } = {}) {
+    const at = sentAt instanceof Date ? sentAt : new Date(sentAt)
+    const next = { ...(payload && typeof payload === 'object' ? payload : {}) }
+    next[DEFERRED_PUSH_PAYLOAD_KEY] = false
+    next.push_sent_at = Number.isFinite(at.getTime()) ? at.toISOString() : null
+    return next
+}
+
 class ReminderService {
     start() {
         cron.schedule(TICK_CRON, () => this.runReminderTick(), { timezone: 'UTC' })
@@ -309,161 +421,402 @@ class ReminderService {
     }
 
     async reminderTick(now = new Date()) {
+        const tickStartedAt = new Date()
         console.log(`\n🔔 ReminderService.reminderTick() @ ${now.toISOString()}`)
+
+        const totals = this.createTickCounters()
 
         for (const [name, run] of [
             ['autoSkipOverdue', () => this.autoSkipOverdue(now)],
             ['sendDayBefore', () => this.sendDayBefore(now)],
-            ['sendOnDay', () => this.sendOnDay(now)]
+            ['sendOnDay', () => this.sendOnDay(now)],
+            ['flushDeferredPushes', () => this.flushDeferredPushes(now)]
         ]) {
             const startedAt = Date.now()
             try {
-                await run()
+                const result = await run()
+                totals.batches += Number(result?.batches) || 0
+                totals.plantsProcessed += Number(result?.plantsProcessed) || 0
+                totals.notificationsCreated += Number(result?.notificationsCreated) || 0
+                totals.pushesSent += Number(result?.pushesSent) || 0
+                totals.deferredPushes += Number(result?.deferredPushes) || 0
+                totals.errors += Number(result?.errors) || 0
             } catch (error) {
+                totals.errors += 1
                 console.error(`❌ ReminderService.${name} error:`, error)
             }
             console.log(`⏱ reminderTick.${name}: ${Date.now() - startedAt} мс`)
+        }
+
+        const metric = recordReminderTick({
+            startedAt: tickStartedAt.toISOString(),
+            durationMs: Date.now() - tickStartedAt.getTime(),
+            batches: totals.batches,
+            plantsProcessed: totals.plantsProcessed,
+            notificationsCreated: totals.notificationsCreated,
+            errors: totals.errors
+        })
+        console.info('[reminder-tick]', JSON.stringify(metric))
+    }
+
+    createTickCounters() {
+        return {
+            batches: 0,
+            plantsProcessed: 0,
+            notificationsCreated: 0,
+            pushesSent: 0,
+            deferredPushes: 0,
+            errors: 0
+        }
+    }
+
+    applyBatchOutcome(counters, outcome, label) {
+        if (!outcome) return counters
+        counters.batches = Number(outcome.batches) || 0
+        counters.plantsProcessed = Number(outcome.plantsProcessed) || 0
+        if (outcome.truncated) {
+            console.warn(
+                `⚠️ ${label}: тик упёрся в REMINDER_TICK_MAX_BATCHES — ` +
+                'остальные растения будут обработаны следующим тиком'
+            )
+        }
+        return counters
+    }
+
+    async processPlantsConcurrently(plants, { failureLabel, failureText, counters, worker }) {
+        const concurrency = readReminderPushConcurrency()
+        const settled = await forEachInChunks(plants, concurrency, async plant => {
+            try {
+                const notificationCreated = await worker(plant)
+                if (notificationCreated) counters.notificationsCreated += 1
+            } catch (error) {
+                counters.errors += 1
+                console.error(`❌ ${failureLabel}: plant#${plant?.id} — ${failureText}:`, error)
+            }
+        })
+
+        for (const result of settled) {
+            if (result.status === 'rejected') {
+                counters.errors += 1
+                console.error(
+                    `❌ ${failureLabel}: непредвиденная ошибка обработки растения:`,
+                    result.reason
+                )
+            }
         }
     }
 
     async autoSkipOverdue(now = new Date()) {
         const cutoff = new Date(now.getTime() - MISSED_GRACE_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
+        const missedPolicy = resolveMissedPolicy()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 next_watering_at: { [Op.lte]: cutoff }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async candidates => {
+                const settingsByUser = await this.loadRecipientSettings(
+                    candidates.map(plant => plant.user_id)
+                )
+                await this.processPlantsConcurrently(candidates, {
+                    failureLabel: 'autoSkipOverdue',
+                    failureText: 'пропуск не выполнен',
+                    counters,
+                    worker: candidate => this.handleOverduePlant(candidate, {
+                        now,
+                        cutoff,
+                        settingsByUser,
+                        missedPolicy
+                    })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        if (missedPolicy === MISSED_POLICY.PRESERVE) {
+            console.log(
+                '💧 REMINDER_MISSED_POLICY=preserve: пропуски не сдвигают план, ' +
+                'растение ждёт решения пользователя (полил позже / пропустить)'
+            )
+        }
 
-        for (const candidate of plants) {
-            let transaction
-            try {
-                transaction = await Plant.sequelize.transaction()
+        return this.applyBatchOutcome(counters, outcome, 'autoSkipOverdue')
+    }
 
-                const plant = await Plant.findOne({
-                    where: {
-                        id: candidate.id,
-                        is_active: true,
-                        next_watering_at: { [Op.lte]: cutoff }
-                    },
-                    transaction,
-                    lock: transaction.LOCK.UPDATE
-                })
-                if (!plant) {
-                    await transaction.rollback()
-                    transaction = null
-                    continue
-                }
+    async handleOverduePlant(candidate, { now, cutoff, settingsByUser, missedPolicy }) {
+        if (missedPolicy === MISSED_POLICY.AUTO_SKIP) {
+            return this.autoSkipPlant(candidate, { now, cutoff, settingsByUser })
+        }
+        return this.preserveMissedPlant(candidate, { now, cutoff, settingsByUser })
+    }
 
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                const scheduledFor = new Date(plant.next_watering_at)
-                const intervalDays = intervalDaysOf(plant)
+    async preserveMissedPlant(candidate, { now, cutoff, settingsByUser }) {
+        let transaction
+        try {
+            transaction = await Plant.sequelize.transaction()
 
-                const { missed, next } = splitMissedWaterings(
-                    scheduledFor,
-                    intervalDays,
-                    wateringHour(plant),
-                    timeZone,
-                    now
-                )
-
-                if (!missed.length || !next || !Number.isFinite(next.getTime())) {
-                    await transaction.rollback()
-                    transaction = null
-                    continue
-                }
-
-                const wasPaused = isRemindersPaused(plant.metadata)
-                const metadata = registerAutoSkip(plant.metadata, { missedSince: missed[0] })
-                const becamePaused = !wasPaused && metadata.reminders_paused === true
-
-                await plant.update({
-                    next_watering_at: next,
-                    metadata
-                }, { transaction })
-
-                const truncated = missed.length > MAX_SKIP_LOGS_PER_TICK
-                const logged = truncated
-                    ? missed.slice(-MAX_SKIP_LOGS_PER_TICK)
-                    : missed
-
-                if (truncated) {
-                    console.warn(
-                        `⚠️ autoSkip plant#${plant.id}: ${missed.length} пропущенных слотов, ` +
-                        `в watering_logs сохранены последние ${logged.length}`
-                    )
-                }
-
-                for (const slot of logged) {
-                    await WateringLog.create({
-                        plant_id: plant.id,
-                        user_id: plant.user_id,
-                        action: 'skipped',
-                        action_at: now,
-                        scheduled_for: slot,
-                        hours_late: Math.max(0, Math.round((now.getTime() - slot.getTime()) / HOUR)),
-                        note: AUTO_SKIP_NOTE
-                    }, { transaction })
-                }
-
-                await transaction.commit()
+            const plant = await Plant.findOne({
+                where: {
+                    id: candidate.id,
+                    is_active: true,
+                    next_watering_at: { [Op.lte]: cutoff }
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (!plant) {
+                await transaction.rollback()
                 transaction = null
-
-                console.log(
-                    `⏭ plant#${plant.id} «${plant.name}»: пропущено ${missed.length}, ` +
-                    `слоты: ${logged.map(slot => slot.toISOString()).join(', ')}, ` +
-                    `следующий полив ${next.toISOString()}`
-                )
-
-                await this.notifyAutoSkipOutcome(plant, {
-                    missed,
-                    timeZone,
-                    wasPaused,
-                    becamePaused,
-                    consecutiveSkips: metadata.consecutive_skips
-                })
-            } catch (error) {
-                if (transaction && !transaction.finished) await transaction.rollback()
-                console.error(
-                    `❌ autoSkipOverdue: plant#${candidate.id} — пропуск не выполнен:`,
-                    error
-                )
+                return false
             }
+
+            const settings = this.deliverySettingsFor(settingsByUser, plant.user_id)
+            const timeZone = settings.timeZone
+            const plan = planMissedWateringHandling({
+                policy: MISSED_POLICY.PRESERVE,
+                plant,
+                now,
+                timeZone
+            })
+
+            if (plan.action !== MISSED_ACTION.MARK_MISSED) {
+                await transaction.rollback()
+                transaction = null
+                return false
+            }
+
+            const metadata = markWateringMissed(plant.metadata, plan.missedSince)
+            await plant.update({ metadata }, { transaction })
+            await transaction.commit()
+            transaction = null
+
+            console.log(
+                `💧 plant#${plant.id} «${plant.name}»: пропуск сохранён ` +
+                `(слот ${plan.missedSince.toISOString()}), план не сдвинут — ждём решения пользователя`
+            )
+
+            return await this.notifyPreservedMiss(plant, {
+                missed: plan.missed,
+                timeZone,
+                now,
+                settings
+            })
+        } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
+            throw error
         }
     }
 
-    async notifyAutoSkipOutcome(plant, { missed, timeZone, wasPaused, becamePaused, consecutiveSkips }) {
-        if (becamePaused) {
-            await this.notifyRemindersPaused(plant, {
-                slot: missed[0],
-                consecutiveSkips
+    async notifyPreservedMiss(plant, { missed, timeZone, now = new Date(), settings }) {
+        if (isRemindersPaused(plant.metadata)) {
+            console.log(
+                `ℹ️ preserveMissed plant#${plant.id}: напоминания на паузе — уведомление не отправляется`
+            )
+            return false
+        }
+        if (plant.notify_morning === false) {
+            console.log(
+                `ℹ️ preserveMissed plant#${plant.id}: notify_morning=false — уведомление не отправляется`
+            )
+            return false
+        }
+        const first = missed[0]
+        if (!matchesWeekdayForSlot(plant, first, timeZone)) {
+            console.log(
+                `ℹ️ preserveMissed plant#${plant.id}: день недели не выбран — уведомление не отправляется`
+            )
+            return false
+        }
+
+        const { title, body } = buildMissedWateringNotification(plant, {
+            missedSince: first,
+            timeZone,
+            now
+        })
+
+        try {
+            const deferPush = this.shouldSkipPush(settings, now)
+            const { notification, created } = await storeNotification({
+                userId: plant.user_id,
+                plantId: plant.id,
+                type: 'watering_due',
+                title,
+                body,
+                dedupeKey: `plant:${plant.id}:missed:${first.toISOString()}`,
+                scheduledFor: first,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'missed_watering', deferredAt: now })
+                    : {}
             })
-            return
+            if (!created) return false
+
+            if (deferPush) {
+                console.log(
+                    `🌙 preserveMissed plant#${plant.id}: тихие часы — push отложен до их окончания`
+                )
+                return true
+            }
+
+            await sendNotificationPush({
+                userId: plant.user_id,
+                title,
+                body,
+                data: {
+                    plantId: plant.id,
+                    url: '/home',
+                    tag: 'missed_watering',
+                    notificationId: notification.id
+                }
+            })
+            return true
+        } catch (error) {
+            console.error(
+                `❌ Не удалось отправить уведомление о сохранённом пропуске plant#${plant.id}:`,
+                error
+            )
+            return false
+        }
+    }
+
+    async autoSkipPlant(candidate, { now, cutoff, settingsByUser }) {
+        let transaction
+        try {
+            transaction = await Plant.sequelize.transaction()
+
+            const plant = await Plant.findOne({
+                where: {
+                    id: candidate.id,
+                    is_active: true,
+                    next_watering_at: { [Op.lte]: cutoff }
+                },
+                transaction,
+                lock: transaction.LOCK.UPDATE
+            })
+            if (!plant) {
+                await transaction.rollback()
+                transaction = null
+                return false
+            }
+
+            const settings = this.deliverySettingsFor(settingsByUser, plant.user_id)
+            const timeZone = settings.timeZone
+            const scheduledFor = new Date(plant.next_watering_at)
+            const intervalDays = intervalDaysOf(plant)
+
+            const { missed, next } = splitMissedWaterings(
+                scheduledFor,
+                intervalDays,
+                wateringHour(plant),
+                timeZone,
+                now
+            )
+
+            if (!missed.length || !next || !Number.isFinite(next.getTime())) {
+                await transaction.rollback()
+                transaction = null
+                return false
+            }
+
+            const wasPaused = isRemindersPaused(plant.metadata)
+            const metadata = registerAutoSkip(plant.metadata, { missedSince: missed[0] })
+            const becamePaused = !wasPaused && metadata.reminders_paused === true
+
+            await plant.update({
+                next_watering_at: next,
+                metadata
+            }, { transaction })
+
+            const truncated = missed.length > MAX_SKIP_LOGS_PER_TICK
+            const logged = truncated
+                ? missed.slice(-MAX_SKIP_LOGS_PER_TICK)
+                : missed
+
+            if (truncated) {
+                console.warn(
+                    `⚠️ autoSkip plant#${plant.id}: ${missed.length} пропущенных слотов, ` +
+                    `в watering_logs сохранены последние ${logged.length}`
+                )
+            }
+
+            for (const slot of logged) {
+                await WateringLog.create({
+                    plant_id: plant.id,
+                    user_id: plant.user_id,
+                    action: 'skipped',
+                    action_at: now,
+                    scheduled_for: slot,
+                    hours_late: Math.max(0, Math.round((now.getTime() - slot.getTime()) / HOUR)),
+                    note: AUTO_SKIP_NOTE
+                }, { transaction })
+            }
+
+            await transaction.commit()
+            transaction = null
+
+            console.log(
+                `⏭ plant#${plant.id} «${plant.name}»: пропущено ${missed.length}, ` +
+                `слоты: ${logged.map(slot => slot.toISOString()).join(', ')}, ` +
+                `следующий полив ${next.toISOString()}`
+            )
+
+            return await this.notifyAutoSkipOutcome(plant, {
+                missed,
+                timeZone,
+                now,
+                settings,
+                wasPaused,
+                becamePaused,
+                consecutiveSkips: metadata.consecutive_skips
+            })
+        } catch (error) {
+            if (transaction && !transaction.finished) await transaction.rollback()
+            throw error
+        }
+    }
+
+    async notifyAutoSkipOutcome(plant, {
+        missed,
+        timeZone,
+        wasPaused,
+        becamePaused,
+        consecutiveSkips,
+        now = new Date(),
+        settings
+    }) {
+        if (becamePaused) {
+            return this.notifyRemindersPaused(plant, {
+                slot: missed[0],
+                consecutiveSkips,
+                now,
+                settings
+            })
         }
         if (wasPaused) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: напоминания на паузе — уведомление не отправляется`)
-            return
+            return false
         }
         if (plant.notify_morning === false) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: notify_morning=false — уведомление не отправляется`)
-            return
+            return false
         }
         if (!matchesWeekdayForSlot(plant, missed[0], timeZone)) {
             console.log(`ℹ️ autoSkip plant#${plant.id}: день недели не выбран — уведомление не отправляется`)
-            return
+            return false
         }
-        await this.notifyAutoSkip(plant, missed)
+        return this.notifyAutoSkip(plant, missed, { now, settings })
     }
 
-    async notifyAutoSkip(plant, missed) {
+    async notifyAutoSkip(plant, missed, { now = new Date(), settings } = {}) {
         const first = missed[0]
         const { title, body } = buildAutoSkipNotification(plant, missed.length)
 
         try {
+            const deferPush = this.shouldSkipPush(settings, now)
             const { notification, created } = await storeNotification({
                 userId: plant.user_id,
                 plantId: plant.id,
@@ -471,24 +824,37 @@ class ReminderService {
                 title,
                 body,
                 dedupeKey: `plant:${plant.id}:auto_skip:${first.toISOString()}`,
-                scheduledFor: first
+                scheduledFor: first,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'auto_skip', deferredAt: now })
+                    : {}
             })
-            if (!created) return
+            if (!created) return false
+            if (deferPush) {
+                console.log(
+                    `🌙 autoSkip plant#${plant.id}: тихие часы — push отложен до их окончания`
+                )
+                return true
+            }
             await sendNotificationPush({
                 userId: plant.user_id,
                 title,
                 body,
                 data: { plantId: plant.id, url: '/home', tag: 'auto_skip', notificationId: notification.id }
             })
+            return true
         } catch (error) {
             console.error(`❌ Не удалось отправить уведомление о пропуске plant#${plant.id}:`, error)
+            return false
         }
     }
 
-    async notifyRemindersPaused(plant, { slot, consecutiveSkips }) {
+    async notifyRemindersPaused(plant, { slot, consecutiveSkips, now = new Date(), settings }) {
         const { title, body } = buildRemindersPausedNotification(plant, { consecutiveSkips })
 
         try {
+            const pushAllowed = plant.notify_morning !== false
+            const deferPush = pushAllowed && this.shouldSkipPush(settings, now)
             const { notification, created } = await storeNotification({
                 userId: plant.user_id,
                 plantId: plant.id,
@@ -496,20 +862,89 @@ class ReminderService {
                 title,
                 body,
                 dedupeKey: `plant:${plant.id}:reminders_paused:${slot.toISOString()}`,
-                scheduledFor: slot
+                scheduledFor: slot,
+                payload: deferPush
+                    ? buildDeferredPushPayload({ tag: 'reminders_paused', deferredAt: now })
+                    : {}
             })
-            if (!created) return
+            if (!created) return false
 
-            if (plant.notify_morning === false) return
+            if (!pushAllowed) return true
+            if (deferPush) {
+                console.log(
+                    `🌙 remindersPaused plant#${plant.id}: тихие часы — push отложен до их окончания`
+                )
+                return true
+            }
             await sendNotificationPush({
                 userId: plant.user_id,
                 title,
                 body,
                 data: { plantId: plant.id, url: '/home', tag: 'reminders_paused', notificationId: notification.id }
             })
+            return true
         } catch (error) {
             console.error(`❌ Не удалось отправить уведомление о паузе plant#${plant.id}:`, error)
+            return false
         }
+    }
+
+    async loadRecipientSettings(userIds) {
+        const ids = [...new Set((userIds || []).map(Number).filter(id => Number.isInteger(id) && id > 0))]
+        if (!ids.length) return new Map()
+
+        const zones = await loadTimeZones(ids)
+        const result = new Map()
+        for (const id of ids) {
+            result.set(id, {
+                timeZone: zones.get(id) ?? DEFAULT_TIME_ZONE,
+                deliveryMode: DELIVERY_MODE.PER_PLANT,
+                quietHours: quietHoursFromPreference({})
+            })
+        }
+
+        try {
+            const preferences = await NotificationPreference.findAll({
+                where: { user_id: { [Op.in]: ids } },
+                attributes: [
+                    'user_id',
+                    'delivery_mode',
+                    'quiet_hours_enabled',
+                    'quiet_hours_start',
+                    'quiet_hours_end'
+                ],
+                raw: true
+            })
+            for (const preference of Array.isArray(preferences) ? preferences : []) {
+                const entry = result.get(Number(preference.user_id))
+                if (!entry) continue
+                entry.deliveryMode = resolveDeliveryMode(preference.delivery_mode)
+                entry.quietHours = quietHoursFromPreference(preference)
+            }
+        } catch (error) {
+            console.warn(
+                '⚠️ reminderService: настройки доставки недоступны, работаем без тихих часов:',
+                error?.message || error
+            )
+        }
+
+        return result
+    }
+
+    deliverySettingsFor(settingsByUser, userId) {
+        return settingsByUser?.get?.(userId) ?? {
+            timeZone: DEFAULT_TIME_ZONE,
+            deliveryMode: DELIVERY_MODE.PER_PLANT,
+            quietHours: quietHoursFromPreference({})
+        }
+    }
+
+    shouldSkipPush(settings, now = new Date()) {
+        return isQuietTime({
+            now,
+            timeZone: settings?.timeZone ?? DEFAULT_TIME_ZONE,
+            quietHours: settings?.quietHours
+        })
     }
 
     async morningSummaryTick(now = new Date()) {
@@ -523,51 +958,138 @@ class ReminderService {
     }
 
     async sendMorningSummary(now = new Date()) {
-        const preferences = await NotificationPreference.findAll({
-            where: { morning_summary_enabled: true }
-        })
-        if (!preferences.length) return
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const zonesByUser = await loadTimeZones(
-            preferences.map(preference => preference.user_id)
-        )
-
-        for (const preference of preferences) {
-            try {
-                const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
-                const localTime = getDateParts(now, timeZone)
-
-                if (localTime.hour !== SUMMARY_HOUR) continue
-
-                const { date, end } = getDayBounds(now, timeZone)
-                if (preference.last_morning_summary_date === date) continue
-
-                await this.sendMorningSummaryTo(preference, { date, end })
-            } catch (error) {
-                console.error(
-                    `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
-                    error
+        const outcome = await iterateBatchesById({
+            model: NotificationPreference,
+            idColumn: 'user_id',
+            where: { delivery_mode: DELIVERY_MODE.DIGEST },
+            batchSize,
+            maxBatches,
+            onBatch: async preferences => {
+                const zonesByUser = await loadTimeZones(
+                    preferences.map(preference => preference.user_id)
                 )
+
+                for (const preference of preferences) {
+                    try {
+                        if (resolveDeliveryMode(preference.delivery_mode) !== DELIVERY_MODE.DIGEST) {
+                            continue
+                        }
+                        const timeZone = zonesByUser.get(preference.user_id) ?? DEFAULT_TIME_ZONE
+                        const localTime = getDateParts(now, timeZone)
+                        const quietHours = quietHoursFromPreference(preference)
+                        const digestHour = resolveDigestHour({
+                            digestHour: SUMMARY_HOUR,
+                            quietHours
+                        })
+
+                        if (localTime.hour !== digestHour) continue
+                        if (isQuietTime({ now, timeZone, quietHours })) continue
+
+                        const { date, end } = getDayBounds(now, timeZone)
+                        if (preference.last_morning_summary_date === date) continue
+                        if (!(await this.resolveMorningSummaryEnabled(preference))) continue
+
+                        await this.sendMorningSummaryTo(preference, { date, end, now, timeZone })
+                    } catch (error) {
+                        console.error(
+                            `❌ Не удалось отправить утреннюю сводку пользователю ${preference.user_id}:`,
+                            error
+                        )
+                    }
+                }
             }
+        })
+
+        if (outcome.truncated) {
+            console.warn(
+                '⚠️ sendMorningSummary: тик упёрся в REMINDER_TICK_MAX_BATCHES — ' +
+                'часть пользователей будет обработана следующим тиком'
+            )
         }
+
+        return outcome
     }
 
-    async sendMorningSummaryTo(preference, { date, end }) {
+    async resolveMorningSummaryEnabled(preference) {
+        if (preference.morning_summary_enabled !== false) return true
+
+        try {
+            const [updated] = await NotificationPreference.update(
+                { morning_summary_enabled: true },
+                {
+                    where: {
+                        user_id: preference.user_id,
+                        delivery_mode: DELIVERY_MODE.DIGEST,
+                        morning_summary_enabled: false
+                    }
+                }
+            )
+            if (Number(updated) > 0) {
+                preference.morning_summary_enabled = true
+                console.log(
+                    `🌅 morningSummary user#${preference.user_id}: legacy digest+summary=false — флаг синхронизирован`
+                )
+                return true
+            }
+        } catch (error) {
+            console.error(
+                `❌ morningSummary user#${preference.user_id}: не удалось синхронизировать флаг:`,
+                error
+            )
+        }
+
+        return false
+    }
+
+    async sendMorningSummaryTo(preference, {
+        date,
+        end,
+        now = new Date(),
+        timeZone = DEFAULT_TIME_ZONE
+    } = {}) {
         const missedCondition = sequelize.literal("(metadata->>'missed_since') IS NOT NULL")
+        const endOfTomorrow = zonedDayHourAfter(now, 2, 0, timeZone) ??
+            new Date(end.getTime() + 24 * HOUR)
         const plants = await Plant.findAll({
             where: {
                 user_id: preference.user_id,
                 is_active: true,
                 [Op.or]: [
-                    { next_watering_at: { [Op.lt]: end } },
+                    { next_watering_at: { [Op.lt]: endOfTomorrow } },
                     missedCondition
                 ]
             },
-            attributes: ['id', 'name', 'location'],
+            attributes: [
+                'id',
+                'name',
+                'location',
+                'next_watering_at',
+                'notify_morning',
+                'notify_day_before',
+                'reminder_weekdays',
+                'watering_interval_days',
+                'metadata'
+            ],
             order: [['next_watering_at', 'ASC']]
         })
 
-        const body = buildMorningSummaryBody(plants)
+        const { today, tomorrow } = collectMorningSummaryPlants(plants, {
+            now,
+            end,
+            timeZone
+        })
+
+        if (!shouldSendMorningSummary({ today, tomorrow })) {
+            await preference.update({ last_morning_summary_date: date })
+            console.log(
+                `🌅 morningSummary user#${preference.user_id}: напоминаний нет — пустой push не отправляем`
+            )
+            return { created: false, skipped: 'empty' }
+        }
+
+        const body = buildMorningSummaryBody(today, { tomorrow })
         const { notification, created } = await storeNotification({
             userId: preference.user_id,
             type: 'morning_summary',
@@ -578,7 +1100,7 @@ class ReminderService {
 
         await preference.update({ last_morning_summary_date: date })
 
-        if (!created) return
+        if (!created) return { created: false, notification }
 
         await sendNotificationPush({
             userId: preference.user_id,
@@ -586,6 +1108,8 @@ class ReminderService {
             body,
             data: { url: '/home', tag: 'morning-summary', notificationId: notification.id }
         })
+
+        return { created: true, notification }
     }
 
     async careAdviceTick(now = new Date()) {
@@ -635,109 +1159,268 @@ class ReminderService {
     async sendDayBefore(now) {
         const from = new Date(now.getTime() + DAY_BEFORE_QUERY_FROM_MS)
         const to = new Date(now.getTime() + DAY_BEFORE_QUERY_TO_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 notify_day_before: true,
                 next_watering_at: { [Op.between]: [from, to] }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async plants => {
+                const settingsByUser = await this.loadRecipientSettings(
+                    plants.map(plant => plant.user_id)
+                )
+                await this.processPlantsConcurrently(plants, {
+                    failureLabel: 'sendDayBefore',
+                    failureText: 'напоминание не отправлено',
+                    counters,
+                    worker: plant => this.sendDayBeforeTo(plant, { now, settingsByUser })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        return this.applyBatchOutcome(counters, outcome, 'sendDayBefore')
+    }
 
-        for (const plant of plants) {
-            try {
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                if (isRemindersPaused(plant.metadata)) continue
-                if (!this.matchesWeekday(plant, timeZone)) continue
-
-                const localHour = getDateParts(now, timeZone).hour
-                if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) continue
-                if (zonedDayKey(plant.next_watering_at, timeZone) !== localTomorrowKey(now, timeZone)) continue
-
-                const slot = new Date(plant.next_watering_at)
-                if (this.alreadyNotified(plant, 'day_before', slot)) continue
-
-                const result = await this.notify(plant, {
-                    title: '🌿 Напоминание',
-                    body: `Завтра полить «${truncateText(plant.name || 'Растение', NOTIFY_NAME_MAX_LENGTH)}»` +
-                        `${plant.location ? ` (${truncateText(plant.location, SUMMARY_LOCATION_MAX_LENGTH)})` : ''}`,
-                    tag: 'day_before',
-                    type: 'watering_day_before',
-                    slot
-                })
-
-                if (result.notification) {
-                    await this.markNotified(plant, 'day_before', slot)
-                }
-            } catch (error) {
-                console.error(
-                    `❌ sendDayBefore: plant#${plant.id} — напоминание не отправлено:`,
-                    error
-                )
-            }
+    async sendDayBeforeTo(plant, { now, settingsByUser }) {
+        const settings = this.deliverySettingsFor(settingsByUser, plant.user_id)
+        const timeZone = settings.timeZone
+        if (isRemindersPaused(plant.metadata)) return false
+        if (!this.matchesWeekday(plant, timeZone)) return false
+        if (settings.deliveryMode === DELIVERY_MODE.DIGEST) {
+            console.log(`📬 sendDayBefore plant#${plant.id}: режим digest — напоминание войдёт в сводку`)
+            return false
         }
+
+        const localHour = getDateParts(now, timeZone).hour
+        if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) return false
+        if (zonedDayKey(plant.next_watering_at, timeZone) !== localTomorrowKey(now, timeZone)) return false
+
+        const slot = new Date(plant.next_watering_at)
+        if (this.alreadyNotified(plant, 'day_before', slot)) return false
+
+        const result = await this.notify(plant, {
+            title: '🌿 Напоминание',
+            body: `Завтра полить «${truncateText(plant.name || 'Растение', NOTIFY_NAME_MAX_LENGTH)}»` +
+                `${plant.location ? ` (${truncateText(plant.location, SUMMARY_LOCATION_MAX_LENGTH)})` : ''}`,
+            tag: 'day_before',
+            type: 'watering_day_before',
+            slot,
+            now,
+            skipPush: this.shouldSkipPush(settings, now)
+        })
+
+        if (result.notification) {
+            await this.markNotified(plant, 'day_before', slot)
+        }
+        return Boolean(result.created)
     }
 
     async sendOnDay(now) {
-
         const catchupFrom = new Date(
             now.getTime() - (MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS)
         )
         const to = new Date(now.getTime() + ON_DAY_EARLY_MS)
+        const counters = this.createTickCounters()
+        const { batchSize, maxBatches } = readReminderBatchConfig()
 
-        const plants = await Plant.findAll({
+        const outcome = await iterateActiveDuePlants({
+            model: Plant,
             where: {
                 is_active: true,
                 notify_morning: true,
                 next_watering_at: { [Op.between]: [catchupFrom, to] }
+            },
+            batchSize,
+            maxBatches,
+            onBatch: async plants => {
+                const settingsByUser = await this.loadRecipientSettings(
+                    plants.map(plant => plant.user_id)
+                )
+                await this.processPlantsConcurrently(plants, {
+                    failureLabel: 'sendOnDay',
+                    failureText: 'напоминание не отправлено',
+                    counters,
+                    worker: plant => this.sendOnDayTo(plant, { now, to, settingsByUser })
+                })
             }
         })
-        if (!plants.length) return
 
-        const zonesByUser = await loadTimeZones(plants.map(plant => plant.user_id))
+        return this.applyBatchOutcome(counters, outcome, 'sendOnDay')
+    }
 
-        for (const plant of plants) {
-            try {
-                const timeZone = zonesByUser.get(plant.user_id) ?? DEFAULT_TIME_ZONE
-                if (isRemindersPaused(plant.metadata)) continue
-                if (!this.matchesWeekday(plant, timeZone)) continue
+    async sendOnDayTo(plant, { now, to, settingsByUser }) {
+        const settings = this.deliverySettingsFor(settingsByUser, plant.user_id)
+        const timeZone = settings.timeZone
+        if (isRemindersPaused(plant.metadata)) return false
+        if (!this.matchesWeekday(plant, timeZone)) return false
+        if (settings.deliveryMode === DELIVERY_MODE.DIGEST) {
+            console.log(`📬 sendOnDay plant#${plant.id}: режим digest — напоминание войдёт в сводку`)
+            return false
+        }
 
-                const slot = new Date(plant.next_watering_at)
-                if (!Number.isFinite(slot.getTime())) continue
-                if (slot.getTime() > to.getTime()) continue
-                const lateness = now.getTime() - slot.getTime()
-                if (lateness > MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS) continue
+        const slot = new Date(plant.next_watering_at)
+        if (!Number.isFinite(slot.getTime())) return false
+        if (slot.getTime() > to.getTime()) return false
+        const lateness = now.getTime() - slot.getTime()
+        if (lateness > MISSED_GRACE_MS + ON_DAY_CATCHUP_MARGIN_MS) return false
 
-                if (lateness > ON_DAY_LATE_MS) {
-                    const localHour = getDateParts(now, timeZone).hour
-                    if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) {
-                        continue
-                    }
+        if (lateness > ON_DAY_LATE_MS) {
+            const localHour = getDateParts(now, timeZone).hour
+            if (localHour < DAY_BEFORE_START_HOUR || localHour > DAY_BEFORE_END_HOUR) {
+                return false
+            }
+        }
+        if (this.alreadyNotified(plant, 'on_day', slot)) return false
+
+        const { title, body } = buildOnDayNotification(plant, { slot, timeZone, now })
+        const result = await this.notify(plant, {
+            title,
+            body,
+            tag: 'on_day',
+            type: 'watering_due',
+            slot,
+            now,
+            skipPush: this.shouldSkipPush(settings, now)
+        })
+
+        if (result.notification) {
+            await this.markNotified(plant, 'on_day', slot)
+        }
+        return Boolean(result.created)
+    }
+
+    async findDeferredPushes(now = new Date()) {
+        const since = new Date(now.getTime() - DEFERRED_PUSH_TTL_MS)
+        const rows = await Notification.findAll({
+            where: {
+                created_at: { [Op.gte]: since },
+                [Op.and]: [
+                    sequelize.literal(`(payload->>'${DEFERRED_PUSH_PAYLOAD_KEY}') = 'true'`)
+                ]
+            },
+            order: [['created_at', 'ASC'], ['id', 'ASC']],
+            limit: MAX_DEFERRED_PUSHES_PER_TICK
+        })
+        return Array.isArray(rows) ? rows : []
+    }
+
+    async claimDeferredPush(notification) {
+        const [claimed] = await Notification.update(
+            {
+                payload: sequelize.literal(
+                    `jsonb_set(coalesce(payload, '{}'::jsonb), '{${DEFERRED_PUSH_PAYLOAD_KEY}}', 'false'::jsonb)`
+                )
+            },
+            {
+                where: {
+                    id: notification.id,
+                    [Op.and]: [
+                        sequelize.literal(`(payload->>'${DEFERRED_PUSH_PAYLOAD_KEY}') = 'true'`)
+                    ]
                 }
-                if (this.alreadyNotified(plant, 'on_day', slot)) continue
+            }
+        )
+        return Number(claimed) > 0
+    }
 
-                const { title, body } = buildOnDayNotification(plant, { slot, timeZone, now })
-                const result = await this.notify(plant, {
-                    title,
-                    body,
-                    tag: 'on_day',
-                    type: 'watering_due',
-                    slot
-                })
+    async completeDeferredPush(notification, now = new Date()) {
+        const payload = markPushDeliveredPayload(notification.payload, { sentAt: now })
+        await Notification.update({ payload }, { where: { id: notification.id } })
+        notification.payload = payload
+    }
 
-                if (result.notification) {
-                    await this.markNotified(plant, 'on_day', slot)
+    async restoreDeferredPush(notification) {
+        const payload = {
+            ...(notification.payload && typeof notification.payload === 'object'
+                ? notification.payload
+                : {}),
+            [DEFERRED_PUSH_PAYLOAD_KEY]: true
+        }
+        await Notification.update({ payload }, { where: { id: notification.id } })
+        notification.payload = payload
+    }
+
+    async sendDeferredPush(notification) {
+        const data = {
+            url: notification.url || '/home',
+            tag: readDeferredPushTag(notification.payload),
+            notificationId: notification.id
+        }
+        const plantId = Number(notification.plant_id)
+        if (Number.isInteger(plantId) && plantId > 0) data.plantId = plantId
+
+        await sendNotificationPush({
+            userId: Number(notification.user_id),
+            title: notification.title,
+            body: notification.body,
+            data
+        })
+    }
+
+    async flushDeferredPushes(now = new Date()) {
+        const counters = this.createTickCounters()
+        let pending = []
+
+        try {
+            pending = await this.findDeferredPushes(now)
+        } catch (error) {
+            counters.errors += 1
+            console.error('❌ flushDeferredPushes: не удалось прочитать отложенные push:', error)
+            return counters
+        }
+        if (!pending.length) return counters
+
+        let settingsByUser
+        try {
+            settingsByUser = await this.loadRecipientSettings(
+                pending.map(notification => notification.user_id)
+            )
+        } catch (error) {
+            counters.errors += 1
+            console.error('❌ flushDeferredPushes: не удалось прочитать настройки доставки:', error)
+            return counters
+        }
+
+        for (const notification of pending) {
+            try {
+                const settings = this.deliverySettingsFor(settingsByUser, notification.user_id)
+                if (this.shouldSkipPush(settings, now)) {
+                    counters.deferredPushes += 1
+                    continue
+                }
+                if (!(await this.claimDeferredPush(notification))) continue
+
+                try {
+                    await this.sendDeferredPush(notification)
+                    await this.completeDeferredPush(notification, now)
+                    counters.pushesSent += 1
+                    console.log(
+                        `📤 flushDeferredPushes: отложенный push notification#${notification.id} доставлен`
+                    )
+                } catch (error) {
+                    counters.errors += 1
+                    console.error(
+                        `❌ flushDeferredPushes: push notification#${notification.id} не отправлен:`,
+                        error
+                    )
+                    await this.restoreDeferredPush(notification)
                 }
             } catch (error) {
+                counters.errors += 1
                 console.error(
-                    `❌ sendOnDay: plant#${plant.id} — напоминание не отправлено:`,
+                    `❌ flushDeferredPushes: ошибка notification#${notification?.id}:`,
                     error
                 )
             }
         }
+
+        return counters
     }
 
     matchesWeekday(plant, timeZone = DEFAULT_TIME_ZONE) {
@@ -778,7 +1461,7 @@ class ReminderService {
         }
     }
 
-    async notify(plant, { title, body, tag, type, slot }) {
+    async notify(plant, { title, body, tag, type, slot, skipPush = false, now = new Date() }) {
         const scheduledFor = slot ? new Date(slot) : new Date(plant.next_watering_at)
         const { notification, created } = await storeNotification({
             userId: plant.user_id,
@@ -788,10 +1471,20 @@ class ReminderService {
             body,
             url: '/home',
             dedupeKey: `plant:${plant.id}:${tag}:${scheduledFor.toISOString()}`,
-            scheduledFor
+            scheduledFor,
+            payload: skipPush
+                ? buildDeferredPushPayload({ tag, deferredAt: now })
+                : {}
         })
 
         if (!created) return { notification, created: false, pushResult: null }
+
+        if (skipPush) {
+            console.log(
+                `🌙 notify plant#${plant.id} (${tag}): тихие часы — push отложен до их окончания`
+            )
+            return { notification, created: true, pushResult: null, deferred: true }
+        }
 
         const pushResult = await sendNotificationPush({
             userId: plant.user_id,

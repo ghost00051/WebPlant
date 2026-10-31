@@ -5,18 +5,39 @@ html[data-theme='dark'] .addPlantPage {
 }
 
 html[data-theme='dark'] .formForPlant .addPhotoPlant,
-html[data-theme='dark'] .formForPlant .addNamePlant,
-html[data-theme='dark'] .formForPlant .wateringAdviceMessages,
-html[data-theme='dark'] .formForPlant .wateringRecommendation {
+html[data-theme='dark'] .formForPlant .addNamePlant {
     background: var(--theme-surface);
     border-color: var(--theme-border);
     color: var(--theme-text);
 }
 
 html[data-theme='dark'] .formForPlant .wateringFrequency,
-html[data-theme='dark'] .formForPlant .wateringAdviceDialog {
+html[data-theme='dark'] .formForPlant .presetPlantCheck,
+html[data-theme='dark'] .formForPlant .blocksOfWeekDay {
     background: var(--theme-surface);
     border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .headerOfBlockWatering p,
+html[data-theme='dark'] .formForPlant .blocksOfNotification p:nth-child(1),
+html[data-theme='dark'] .formForPlant .headerfirstStepCheck p:nth-child(1) {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .commentOfPreset,
+html[data-theme='dark'] .formForPlant .blocksOfNotification p:nth-child(2),
+html[data-theme='dark'] .formForPlant .headerfirstStepCheck p:nth-child(2) {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .nextSlidewatering {
+    background-color: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .formForPlant .backSlidewatering {
+    background-color: var(--theme-raised);
     color: var(--theme-text);
 }
 
@@ -51,41 +72,6 @@ html[data-theme='dark'] .formForPlant .wateringWeekdayPreview b {
     color: #9FD8B8;
 }
 
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader {
-    border-color: var(--theme-border);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader h2 {
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceHeader p,
-html[data-theme='dark'] .formForPlant .wateringAdvicePlant {
-    color: var(--theme-muted);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceClose {
-    background: var(--theme-raised);
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceOptions button {
-    background: rgba(127, 209, 160, 0.14);
-    border-color: rgba(127, 209, 160, 0.4);
-    color: #9FD8B8;
-}
-
-html[data-theme='dark'] .formForPlant .wateringAdviceFooter .wateringAdviceSkip,
-html[data-theme='dark'] .formForPlant .wateringRecommendationRefine {
-    background: var(--theme-raised);
-    border-color: var(--theme-border);
-    color: var(--theme-text);
-}
-
-html[data-theme='dark'] .formForPlant .wateringRecommendation .wateringRecommendationConfidence {
-    color: var(--theme-muted);
-}
-
 html[data-theme='dark'] .formForPlant .draftRestoreNotice {
     background: var(--theme-raised);
     border-color: var(--theme-border);
@@ -101,3 +87,140 @@ html[data-theme='dark'] .formForPlant .addNamePlant input[aria-invalid='true'] {
     outline-color: var(--theme-danger);
 }
 
+html[data-theme='dark'] .formForPlant .plantConditions {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .formForPlant .plantConditionsTitle,
+html[data-theme='dark'] .formForPlant .justWateredTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .plantConditionsSubtitle,
+html[data-theme='dark'] .formForPlant .plantConditionField,
+html[data-theme='dark'] .formForPlant .plantLightChoices legend,
+html[data-theme='dark'] .formForPlant .plantLightHint,
+html[data-theme='dark'] .formForPlant .photoSpeciesHint,
+html[data-theme='dark'] .formForPlant .photoSpeciesLoading,
+html[data-theme='dark'] .formForPlant .justWateredHint,
+html[data-theme='dark'] .formForPlant .plantAdviceTextLink {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .plantConditionField input {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .plantLightChoice {
+    background-color: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .plantLightChoice.active {
+    background-color: var(--theme-accent);
+    border-color: var(--theme-accent);
+    color: #101612;
+}
+
+html[data-theme='dark'] .formForPlant .photoSpeciesSuggestion {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .formForPlant .photoSpeciesTitle {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .formForPlant .photoSpeciesChip {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .formForPlant .autoIntervalHint {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .formForPlant .autoIntervalHint--ready {
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .formForPlant .autoIntervalHint--muted {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .formForPlant .autoIntervalEdit {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .formForPlant .justWateredOption {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .addPlantPageMultiButton {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .addPlantPageHeader,
+html[data-theme='dark'] .addPlantPageTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .multiAddDialog {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .multiAddHeader p,
+html[data-theme='dark'] .multiAddItemLatin,
+html[data-theme='dark'] .multiAddProgress,
+html[data-theme='dark'] .multiAddCount {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .multiAddItem {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .multiAddItem.isSelected {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .multiAddItemInterval {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .multiAddItemCheck {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .multiAddItem.isSelected .multiAddItemCheck {
+    background: var(--theme-accent);
+    border-color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .multiAddActions {
+    border-top-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .multiAddCancel {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .multiAddSubmit {
+    background: var(--theme-accent);
+    color: #101612;
+}

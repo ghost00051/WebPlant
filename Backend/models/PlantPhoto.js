@@ -36,6 +36,16 @@ const PlantPhoto = sequelize.define("plant_photo", {
         type: DataTypes.JSONB,
         allowNull: false,
         defaultValue: {}
+    },
+    taken_at: {
+        type: DataTypes.DATE,
+        allowNull: true,
+        comment: 'F30: когда сделан снимок роста (необязательно, старые фото = created_at)'
+    },
+    note: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        comment: 'F30: заметка к фото роста'
     }
 }, {
     tableName: 'plant_photos',

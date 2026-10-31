@@ -1,0 +1,64 @@
+html[data-theme='dark'] .onboardingQuickAdd,
+html[data-theme='dark'] .onboardingChecklist {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .onboardingQuickAddHeader h2,
+html[data-theme='dark'] .onboardingChecklistHeader h2,
+html[data-theme='dark'] .onboardingPlantName,
+html[data-theme='dark'] .onboardingStepTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .onboardingPlantCard {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .onboardingPlantCard:hover:not(:disabled) {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .onboardingStep {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .onboardingStep.is-current {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+}
+
+html[data-theme='dark'] .onboardingStep.is-done {
+    background: transparent;
+}
+
+html[data-theme='dark'] .onboardingStepMark {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .onboardingStep.is-done .onboardingStepMark {
+    background: var(--theme-accent);
+    color: var(--theme-on-accent);
+}
+
+html[data-theme='dark'] .onboardingEyebrow,
+html[data-theme='dark'] .onboardingStep.is-done .onboardingStepStatus,
+html[data-theme='dark'] .onboardingManualLink {
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .onboardingChecklistDismiss {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .onboardingChecklistDismiss:hover {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}

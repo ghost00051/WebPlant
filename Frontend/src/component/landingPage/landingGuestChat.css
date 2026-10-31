@@ -1,0 +1,446 @@
+.landingGuestChat {
+    display: grid;
+    grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+    align-items: start;
+    gap: 56px;
+    padding: 72px 0 76px;
+    border-top: 1px solid #EAE6E0;
+}
+
+.landingGuestChatIntro h2 {
+    max-width: 420px;
+    margin: 0;
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 620;
+    letter-spacing: -0.04em;
+    line-height: 1.2;
+}
+
+.landingGuestChatLead {
+    max-width: 470px;
+    margin: 16px 0 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-base);
+    line-height: 1.65;
+}
+
+.landingGuestChatFacts {
+    display: grid;
+    gap: 10px;
+    margin: 22px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.landingGuestChatFacts li {
+    position: relative;
+    padding-left: 22px;
+    color: #535C54;
+    font-size: var(--font-size-md);
+    line-height: 1.55;
+}
+
+.landingGuestChatFacts li::before {
+    position: absolute;
+    top: 0.55em;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-white-tema);
+    content: '';
+}
+
+.landingChatPanel {
+    display: flex;
+    max-width: 620px;
+    box-sizing: border-box;
+    flex-direction: column;
+    justify-self: stretch;
+    padding: 18px;
+    border: 1px solid #E9E5DF;
+    border-radius: 24px;
+    background: #FFFFFF;
+    box-shadow: 0 24px 70px rgba(66, 76, 66, 0.09);
+}
+
+.landingChatHeader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 14px;
+}
+
+.landingChatAvatar {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 14px;
+    background: #E9EFEA;
+    color: #5C7463;
+    font-size: var(--font-size-xl);
+}
+
+.landingChatHeaderText {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.landingChatHeaderText strong {
+    color: var(--theme-text);
+    font-size: var(--font-size-base);
+    font-weight: 650;
+}
+
+.landingChatHeaderText small {
+    color: var(--theme-muted);
+    font-size: var(--font-size-sm);
+}
+
+.landingChatCounter {
+    margin-left: auto;
+    padding: 6px 11px;
+    border-radius: 999px;
+    background: #F5F7F3;
+    color: #535C54;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.landingChatLog {
+    display: flex;
+    max-height: 322px;
+    min-height: 172px;
+    flex-direction: column;
+    gap: 10px;
+    overflow-y: auto;
+    padding: 14px;
+    border-radius: 16px;
+    background: #F8F7F4;
+    overscroll-behavior: contain;
+}
+
+.landingChatMessage {
+    max-width: 88%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 11px 14px;
+    border-radius: 16px;
+    font-size: var(--font-size-md);
+    line-height: 1.5;
+    white-space: pre-line;
+    overflow-wrap: break-word;
+}
+
+.landingChatMessage-assistant {
+    align-self: flex-start;
+    border: 1px solid #EAE6E0;
+    border-bottom-left-radius: 6px;
+    background: #FFFFFF;
+    color: var(--theme-text);
+}
+
+.landingChatMessage-user {
+    align-self: flex-end;
+    border-bottom-right-radius: 6px;
+    background: #5C7463;
+    color: #FFFFFF;
+}
+
+.landingChatTyping {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--theme-muted);
+}
+
+.landingChatDots {
+    display: inline-flex;
+    gap: 4px;
+}
+
+.landingChatDots i {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--color-white-tema);
+    animation: landingChatDot 1.1s ease-in-out infinite;
+}
+
+.landingChatDots i:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.landingChatDots i:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes landingChatDot {
+    0%,
+    100% {
+        opacity: 0.35;
+        transform: translateY(0);
+    }
+
+    50% {
+        opacity: 1;
+        transform: translateY(-3px);
+    }
+}
+
+.landingChatSuggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.landingChatSuggestion {
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 9px 14px;
+    border: 1px solid #E5E1DA;
+    border-radius: 999px;
+    background: #F5F7F3;
+    color: #4C5A50;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    line-height: 1.3;
+    text-align: left;
+    cursor: pointer;
+}
+
+.landingChatSuggestion:hover {
+    border-color: #C9D4CB;
+    background: #EAF0E9;
+}
+
+.landingChatSuggestion:focus-visible,
+.landingChatSend:focus-visible,
+.landingChatRetry:focus-visible,
+.landingChatSaveAction:focus-visible,
+.landingChatInput:focus-visible {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+.landingChatError {
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid #E7CFCA;
+    border-radius: 14px;
+    background: var(--theme-danger-soft);
+    color: #7C3A34;
+}
+
+.landingChatError p {
+    margin: 0;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.landingChatErrorActions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 16px;
+    margin-top: 10px;
+}
+
+.landingChatRetry {
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid #C9B3AE;
+    border-radius: 12px;
+    background: #FFFFFF;
+    color: #7C3A34;
+    font: inherit;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.landingChatRetry:disabled {
+    opacity: 0.6;
+    cursor: default;
+}
+
+.landingChatRegisterLink {
+    color: var(--theme-accent-text);
+    font-size: var(--font-size-sm);
+    font-weight: 650;
+}
+
+.landingChatForm {
+    margin-top: 12px;
+}
+
+.landingChatInputLabel {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.landingChatFormRow {
+    display: flex;
+    gap: 8px;
+}
+
+.landingChatInput {
+    min-width: 0;
+    min-height: 48px;
+    flex: 1 1 auto;
+    box-sizing: border-box;
+    padding: 0 14px;
+    border: 1px solid #DEDAD2;
+    border-radius: 14px;
+    background: #FFFFFF;
+    color: var(--theme-text);
+    font: inherit;
+    font-size: var(--font-size-md);
+}
+
+.landingChatInput::placeholder {
+    color: #8C908A;
+}
+
+.landingChatSend {
+    min-height: 48px;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    padding: 0 18px;
+    border: 1px solid #5C7463;
+    border-radius: 14px;
+    background: #5C7463;
+    color: #FFFFFF;
+    font: inherit;
+    font-size: var(--font-size-md);
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.landingChatSend:hover:not(:disabled) {
+    background: #4A6B56;
+}
+
+.landingChatSend:disabled {
+    border-color: #C2CCC4;
+    background: #C2CCC4;
+    cursor: default;
+}
+
+.landingChatSave {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px 18px;
+    margin-top: 12px;
+    padding: 14px;
+    border-radius: 16px;
+    background: #E9EFEA;
+}
+
+.landingChatSave p {
+    min-width: 220px;
+    flex: 1 1 240px;
+    margin: 0;
+    color: #3F4F44;
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
+.landingChatSave p strong {
+    font-weight: 650;
+}
+
+.landingChatSaveAction {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 0 16px;
+    border-radius: 12px;
+    background: #5C7463;
+    color: #FFFFFF;
+    font-size: var(--font-size-sm);
+    font-weight: 650;
+    text-decoration: none;
+    white-space: nowrap;
+}
+
+.landingChatSaveAction:hover {
+    background: #4A6B56;
+}
+
+.landingChatPolicy {
+    margin: 12px 0 0;
+    color: var(--theme-muted);
+    font-size: var(--font-size-xs);
+    line-height: 1.5;
+}
+
+.landingChatPolicy a {
+    color: var(--theme-accent-text);
+    font-weight: 600;
+}
+
+@media (max-width: 980px) {
+    .landingGuestChat {
+        grid-template-columns: 1fr;
+        gap: 28px;
+        padding: 52px 0 58px;
+    }
+
+    .landingChatPanel {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 620px) {
+    .landingGuestChat {
+        padding: 40px 0 46px;
+    }
+
+    .landingChatPanel {
+        padding: 14px;
+        border-radius: 20px;
+    }
+
+    .landingChatLog {
+        max-height: 286px;
+        min-height: 150px;
+        padding: 12px;
+    }
+
+    .landingChatMessage {
+        max-width: 94%;
+    }
+
+    .landingChatFormRow {
+        flex-direction: column;
+    }
+
+    .landingChatSend {
+        width: 100%;
+    }
+
+    .landingChatSaveAction {
+        width: 100%;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .landingChatDots i {
+        animation: none;
+        opacity: 0.7;
+    }
+}

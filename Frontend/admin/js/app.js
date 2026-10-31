@@ -11,6 +11,13 @@ const VIEWS = [
         load: () => import('./views/overview.js').then(module => module.overviewView)
     },
     {
+        id: 'product',
+        title: 'Продукт',
+        subtitle: 'DAU/WAU/MAU, активация, воронка и удержание',
+        needsRange: true,
+        load: () => import('./views/product.js').then(module => module.productView)
+    },
+    {
         id: 'visitors',
         title: 'Посетители',
         subtitle: 'Уникальные визиты, просмотры, источники и устройства',
@@ -46,6 +53,13 @@ const VIEWS = [
         title: 'Чат с ИИ',
         subtitle: 'История сообщений пользователей и ответов ассистента',
         load: () => import('./views/resources.js').then(module => module.chatView)
+    },
+    {
+        id: 'bots',
+        title: 'Боты',
+        subtitle: 'Telegram и MAX: подключения, доставки, ошибки, recap и серия',
+        needsRange: true,
+        load: () => import('./views/bots.js').then(module => module.botsView)
     },
     {
         id: 'system',

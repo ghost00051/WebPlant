@@ -29,6 +29,121 @@ export async function hasSiteVisitDays() {
     return Boolean(columns && columns.day)
 }
 
+export async function hasSiteVisitUtm() {
+    return hasColumn('site_visit_days', 'utm_source')
+}
+
+export async function hasProductEvents() {
+    const columns = await describe('product_events')
+    return Boolean(columns && columns.event && columns.created_at)
+}
+
+export async function hasNotificationClicks() {
+    const columns = await describe('notifications')
+    return Boolean(columns && columns.click_count && columns.clicked_at)
+}
+
+export async function hasNotifications() {
+    const columns = await describe('notifications')
+    return Boolean(columns && columns.created_at && columns.user_id)
+}
+
+export async function hasChatLogs() {
+    const columns = await describe('chat_logs')
+    return Boolean(columns && columns.user_id && columns.role && columns.created_at)
+}
+
+export async function hasAiAdviceLogs() {
+    const columns = await describe('ai_advice_logs')
+    return Boolean(columns && columns.user_id && columns.created_at)
+}
+
+export async function hasUsersPrivilegeLevel() {
+    return hasColumn('users', 'privilege_level')
+}
+
+export async function hasUserLegalConsents() {
+    const columns = await describe('user_legal_consents')
+    return Boolean(columns && columns.user_id && columns.accepted_at && columns.source)
+}
+
+export async function hasGardenShares() {
+    const columns = await describe('garden_shares')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.user_id &&
+        columns.token &&
+        columns.view_count &&
+        columns.revoked_at
+    )
+}
+
+export async function hasGardenShareSignups() {
+    const columns = await describe('garden_share_signups')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.share_id &&
+        columns.user_id &&
+        columns.created_at
+    )
+}
+
+export async function hasBotLinks() {
+    const columns = await describe('bot_links')
+    return Boolean(
+        columns &&
+        columns.id &&
+        columns.user_id &&
+        columns.channel &&
+        columns.external_user_id &&
+        columns.is_active &&
+        columns.notifications_enabled &&
+        columns.created_at
+    )
+}
+
+export async function hasBotLinkCodes() {
+    const columns = await describe('bot_link_codes')
+    return Boolean(
+        columns &&
+        columns.code &&
+        columns.user_id &&
+        columns.channel &&
+        columns.expires_at &&
+        columns.used_at
+    )
+}
+
+export async function hasBotMessages() {
+    const columns = await describe('bot_messages')
+    return Boolean(
+        columns &&
+        columns.channel &&
+        columns.direction &&
+        columns.status &&
+        columns.created_at
+    )
+}
+
+export async function hasBotChannelTables() {
+    const [links, codes, messages] = await Promise.all([
+        hasBotLinks(),
+        hasBotLinkCodes(),
+        hasBotMessages()
+    ])
+    return Boolean(links && codes && messages)
+}
+
+export async function hasWeeklyRecap() {
+    const [weeklyRecapEnabled, lastRecapDate] = await Promise.all([
+        hasColumn('notification_preferences', 'weekly_recap_enabled'),
+        hasColumn('notification_preferences', 'last_weekly_recap_date')
+    ])
+    return Boolean(weeklyRecapEnabled || lastRecapDate)
+}
+
 export function resetAdminSchemaCache() {
     cache.clear()
 }

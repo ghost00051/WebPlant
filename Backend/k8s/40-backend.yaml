@@ -56,7 +56,8 @@ spec:
         app: webplant-backend
     spec:
       serviceAccountName: webplant-backend
-      automountServiceAccountToken: false
+      # Токен ServiceAccount нужен для чтения подов namespace в админке (Role в 05-serviceaccount.yaml).
+      automountServiceAccountToken: true
       terminationGracePeriodSeconds: 30
       securityContext:
         runAsUser: 1001
@@ -81,27 +82,30 @@ spec:
               mountPath: /app/uploads
             - name: tmp
               mountPath: /tmp
+          # Пробы терпимы к просадке диска/CPU: deploy.ps1 раскладывает ~135-МБ образ на
+          # все ноды, и WSL2 на это время отвечает медленнее, чем 5 с. /health делает
+          # roundtrip в PostgreSQL, поэтому 5 с давали ложные NotReady (2026-10-22).
           startupProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 5
-            timeoutSeconds: 5
+            timeoutSeconds: 10
             failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
               port: http
             periodSeconds: 10
-            timeoutSeconds: 5
-            failureThreshold: 3
+            timeoutSeconds: 10
+            failureThreshold: 6
           livenessProbe:
             httpGet:
               path: /livez
               port: http
             periodSeconds: 20
-            timeoutSeconds: 5
-            failureThreshold: 4
+            timeoutSeconds: 10
+            failureThreshold: 6
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

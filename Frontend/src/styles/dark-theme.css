@@ -317,7 +317,6 @@ html[data-theme='dark'] .wateringAdviceMessage {
     color: var(--theme-text);
 }
 
-html[data-theme='dark'] .headerNotificiotinsOfHomePAge,
 html[data-theme='dark'] .HeaderOfAllPlants,
 html[data-theme='dark'] .editProfileHeader,
 html[data-theme='dark'] .addPlantPageHeader {

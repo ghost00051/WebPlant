@@ -1,0 +1,79 @@
+html[data-theme='dark'] .careStreakCard {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careStreakRetry {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careStreakDayDot {
+  background: var(--theme-raised);
+  box-shadow: inset 0 0 0 1px var(--theme-border);
+}
+
+html[data-theme='dark'] .careStreakDay.is-on-time .careStreakDayDot {
+  background: #7fd1a0;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .careStreakDay.is-late .careStreakDayDot {
+  background: #e8c98c;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .careStreakDay.is-skipped .careStreakDayDot {
+  background: #f0b3ac;
+  box-shadow: none;
+}
+
+html[data-theme='dark'] .careStreakDay.is-planned .careStreakDayDot {
+  background: var(--theme-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--theme-accent);
+}
+
+html[data-theme='dark'] .careStreakDay.is-today .careStreakDayDot {
+  outline-color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careStreakProgress {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+html[data-theme='dark'] .careStreakProgressFill {
+  background: linear-gradient(90deg, #7fd1a0, #a5c0ae);
+}
+
+html[data-theme='dark'] .careStreakRecap {
+  background: var(--theme-accent-soft);
+}
+
+html[data-theme='dark'] .careStreakFreeze {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .careStreakFreezeTitle {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careStreakFreezeText p:last-child {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .careStreakFreezeButton {
+    background: #6f8376;
+    color: #101612;
+}
+
+html[data-theme='dark'] .careStreakBreak {
+    background: var(--theme-danger-soft);
+    color: var(--theme-danger);
+}
+
+html[data-theme='dark'] .careStreakRecapDate {
+  color: var(--theme-muted);
+}

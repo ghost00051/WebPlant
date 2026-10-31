@@ -8,8 +8,8 @@
 
 .addPlantPageHeader {
     display: flex;
-    align-items: center;
-    gap: 12px;
+    flex-direction: column;
+    gap: 10px;
     min-height: 52px;
     padding: 0 20px;
     color: #2D2D2D;
@@ -19,6 +19,67 @@
     margin-top: 2%;
 }
 
+.addPlantPageHeaderTop {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.addPlantPageMultiButton {
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    gap: 8px;
+    min-height: 44px;
+    box-sizing: border-box;
+    padding: 8px 14px;
+    border: 1px solid #CBD8CF;
+    border-radius: 12px;
+    background: #EDF4EF;
+    color: #2F6B47;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.addPlantPageMultiButton img {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+}
+
+.addPlantPageMultiButton:hover {
+    background: #E3EFE7;
+    border-color: #A9C2B2;
+}
+
+.addPlantPageMultiButton:active {
+    background: #D9E8DF;
+}
+
+.addPlantPageMultiButton:focus-visible {
+    outline: 3px solid var(--theme-focus-ring);
+    outline-offset: 2px;
+}
+
+@media (min-width: 640px) {
+    .addPlantPageHeader {
+        flex-direction: row;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+    }
+
+    .addPlantPageMultiButton {
+        align-self: center;
+    }
+}
+
 .addPlantPageTitle {
     margin: 0;
     font: inherit;
@@ -26,7 +87,7 @@
     line-height: 1.3;
 }
 
-.addPlantPageHeader button {
+.addPlantPageHeaderTop button {
     display: grid;
     width: 40px;
     height: 40px;
@@ -38,7 +99,7 @@
     cursor: pointer;
 }
 
-.addPlantPageHeader img {
+.addPlantPageHeaderTop img {
     width: 24px;
     height: 24px;
 }
@@ -54,4 +115,15 @@
     padding: 32px 20px;
     color: #5A5A5A;
     font-family: 'Inter', sans-serif;
+}
+
+.addPlantPageHandoffNote {
+    margin: 12px 20px 0;
+    padding: 10px 14px;
+    border-radius: 12px;
+    background: rgba(46, 125, 50, 0.08);
+    color: inherit;
+    font-family: 'Inter', sans-serif;
+    font-size: var(--font-size-sm, 14px);
+    line-height: 1.45;
 }

@@ -14,7 +14,7 @@ import {
     requestOverlay,
     subscribeOverlays
 } from '../../utils/overlayQueue.js'
-import { COOKIE_SETTINGS_EVENT } from '../../utils/cookieConsentSettings.js'
+import { COOKIE_SETTINGS_EVENT, notifyCookieConsentSaved } from '../../utils/cookieConsentSettings.js'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import './CookieConsentManager.css'
 import './dark-theme.css'
@@ -381,6 +381,13 @@ function CookieConsentManager() {
         location.search
     ])
 
+    // Оповещаем маяк посещений: визит должен уйти сразу после согласия на аналитику,
+    // в том числе если его дали позже загрузки страницы или согласие уже было на сервере.
+    useEffect(() => {
+        if (!consentLoaded || !analyticsAccepted) return
+        notifyCookieConsentSaved(true)
+    }, [analyticsAccepted, consentLoaded])
+
     useEffect(() => {
         if (typeof document === 'undefined') return undefined
         if (!isAuthPath) return undefined
@@ -435,6 +442,9 @@ function CookieConsentManager() {
         saveLocalConsent(buildLocalConsent(acceptOptionalCookies))
         try {
             await saveConsentToServer(acceptOptionalCookies)
+
+            // Маяк посещений: сохранили согласие — можно отправить визит без перезагрузки.
+            notifyCookieConsentSaved(acceptOptionalCookies)
 
             const wasAnalyticsAccepted = analyticsAccepted
             setAnalyticsAccepted(acceptOptionalCookies)

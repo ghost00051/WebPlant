@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import './addPlants.css'
 import './dark-theme.css'
 import camera from '../../assets/camera.svg'
@@ -8,16 +8,40 @@ import sparkles from '../../assets/sparkles.svg'
 import plus from '../../assets/plus.svg'
 import minus from '../../assets/minus.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
+import WateringAdviceDialog from '../wateringAdvice/WateringAdviceDialog.jsx'
 import { API_URL } from '../../utils/api.js'
+import { describeAiRequestError, fetchWithTimeout } from '../../utils/aiRequest.js'
+import { trackEvent } from '../../utils/productEvents.js'
+import { saveFirstPlantPending } from '../../utils/onboarding.js'
+import { PLANTS } from '../../data/plants.js'
+import {
+    POPULAR_SPECIES_LIMIT,
+    mapPopularSpecies
+} from '../../utils/popularSpecies.js'
 import {
     reminderWeekdaysForInterval,
     upcomingWateringDays,
     weekdayRestrictionApplies
 } from '../../utils/date.js'
+import {
+    LIGHT_OPTIONS,
+    ROOM_SUGGESTIONS,
+    buildConditionsMetadata,
+    clampIntervalDays,
+    conditionsSummary,
+    normalizeLight,
+    normalizeRoom,
+    resolveAddPlantPrefill
+} from '../../utils/plantConditions.js'
+import {
+    isFeatureUnavailable,
+    suggestSpeciesFromPhoto
+} from '../../utils/plantsExtraApi.js'
 
 const MAX_PHOTOS = 2
 const DRAFT_STORAGE_KEY = 'webplant-add-plant-draft'
 const DRAFT_TTL_MS = 12 * 60 * 60 * 1000
+const ROOM_SUGGESTIONS_ID = 'plantRoomSuggestions'
 
 function getSessionStorage() {
     try {
@@ -63,25 +87,6 @@ function clearDraft() {
     } catch {
         return
     }
-}
-
-const AI_REQUEST_TIMEOUT_MS = 35000
-
-async function fetchWithTimeout(url, options = {}, timeoutMs = AI_REQUEST_TIMEOUT_MS) {
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-    try {
-        return await fetch(url, { ...options, signal: controller.signal })
-    } finally {
-        window.clearTimeout(timer)
-    }
-}
-
-function describeAiRequestError(error, fallbackMessage) {
-    if (error?.name === 'AbortError') {
-        return 'Сервис не ответил вовремя. Попробуйте ещё раз — данные не потеряны.'
-    }
-    return error?.message || fallbackMessage
 }
 
 const PRESETS = [
@@ -132,27 +137,44 @@ function everyDaysLabel(intervalDays) {
     return `каждые ${value} ${pluralDays(value)}`
 }
 
+function intervalPresetFor(intervalDays) {
+    return PRESETS.find(preset => preset.days === intervalDays)?.id || 'custom'
+}
+
 function AddPlants() {
     const navigate = useNavigate()
-    const [initialDraft] = useState(readDraft)
+    const [searchParams] = useSearchParams()
+    const [queryPrefill] = useState(() => resolveAddPlantPrefill(searchParams))
+    const hasQueryPrefill = Boolean(
+        queryPrefill.matchedGuide ||
+        queryPrefill.name ||
+        queryPrefill.species ||
+        Number.isInteger(queryPrefill.intervalDays)
+    )
+    const [initialDraft] = useState(() => (hasQueryPrefill ? null : readDraft()))
+    const prefilledDays = (() => {
+        const restored = Number(initialDraft?.days)
+        if (Number.isInteger(restored) && restored >= 1 && restored <= 365) return restored
+        if (Number.isInteger(queryPrefill.intervalDays)) return queryPrefill.intervalDays
+        return 7
+    })()
     const [previews, setPreviews] = useState([])
     const filesRef = useRef([])
     const urlsRef = useRef([])
     const timeoutRef = useRef(null)
     const nameInputRef = useRef(null)
+    const intervalEditorRef = useRef(null)
     const [saveCompleted, setSaveCompleted] = useState(false)
 
     const [step, setStep] = useState(1)
     const [leaving, setLeaving] = useState(null)
-    const [days, setDays] = useState(() => {
-        const restored = Number(initialDraft?.days)
-        return Number.isInteger(restored) && restored >= 1 && restored <= 365 ? restored : 7
+    const [days, setDays] = useState(prefilledDays)
+    const [selectedPreset, setSelectedPreset] = useState(() => {
+        if (PRESETS.some(preset => preset.id === initialDraft?.selectedPreset)) {
+            return initialDraft.selectedPreset
+        }
+        return intervalPresetFor(prefilledDays)
     })
-    const [selectedPreset, setSelectedPreset] = useState(() =>
-        PRESETS.some(preset => preset.id === initialDraft?.selectedPreset)
-            ? initialDraft.selectedPreset
-            : 'custom'
-    )
     const [selectedWatering, setSelectedWatering] = useState(() =>
         WATERING.some(option => option.id === initialDraft?.selectedWatering)
             ? initialDraft.selectedWatering
@@ -162,8 +184,7 @@ function AddPlants() {
         if (Array.isArray(initialDraft?.selectedDays)) {
             return initialDraft.selectedDays.filter(id => Number.isInteger(id) && id >= 0 && id <= 6)
         }
-        const restored = Number(initialDraft?.days)
-        return getReminderWeekdays(Number.isInteger(restored) && restored >= 1 ? restored : 7)
+        return getReminderWeekdays(prefilledDays)
     })
     const [notifyMorning, setNotifyMorning] = useState(() =>
         typeof initialDraft?.notifyMorning === 'boolean' ? initialDraft.notifyMorning : true
@@ -171,31 +192,53 @@ function AddPlants() {
     const [notifyDayBefore, setNotifyDayBefore] = useState(() =>
         typeof initialDraft?.notifyDayBefore === 'boolean' ? initialDraft.notifyDayBefore : false
     )
-    const [name, setName] = useState(() =>
-        typeof initialDraft?.name === 'string' ? initialDraft.name : ''
+    const [justWatered, setJustWatered] = useState(() =>
+        typeof initialDraft?.justWatered === 'boolean' ? initialDraft.justWatered : true
     )
-    const [species, setSpecies] = useState(() =>
-        typeof initialDraft?.species === 'string' ? initialDraft.species : ''
-    )
+    const [name, setName] = useState(() => {
+        if (typeof initialDraft?.name === 'string' && initialDraft.name) return initialDraft.name
+        return queryPrefill.name.slice(0, 255)
+    })
+    const [species, setSpecies] = useState(() => {
+        if (typeof initialDraft?.species === 'string' && initialDraft.species) return initialDraft.species
+        return queryPrefill.species
+    })
+    const [room, setRoom] = useState(() => {
+        if (typeof initialDraft?.room === 'string') return initialDraft.room
+        return queryPrefill.room
+    })
+    const [light, setLight] = useState(() => {
+        if (typeof initialDraft?.light === 'string' && normalizeLight(initialDraft.light)) {
+            return normalizeLight(initialDraft.light)
+        }
+        return queryPrefill.light
+    })
     const [draftRestored, setDraftRestored] = useState(Boolean(initialDraft))
     const [nameError, setNameError] = useState('')
     const [isSuggestingSpecies, setIsSuggestingSpecies] = useState(false)
     const [speciesSuggestionError, setSpeciesSuggestionError] = useState('')
+    const [popularSpecies, setPopularSpecies] = useState(() =>
+        mapPopularSpecies([], { plants: PLANTS })
+    )
+    const [popularSpeciesLoading, setPopularSpeciesLoading] = useState(true)
     const [isWateringDialogOpen, setIsWateringDialogOpen] = useState(false)
     const [wateringAnswers, setWateringAnswers] = useState([])
-    const [wateringMessages, setWateringMessages] = useState([])
-    const [wateringAnswer, setWateringAnswer] = useState('')
-    const [wateringRecommendation, setWateringRecommendation] = useState(null)
-    const [wateringMaxQuestions, setWateringMaxQuestions] = useState(6)
     const [isAskingWateringTime, setIsAskingWateringTime] = useState(false)
     const [isWateringTimeDialogOpen, setIsWateringTimeDialogOpen] = useState(false)
     const [wateringTimeAdvice, setWateringTimeAdvice] = useState(null)
     const [wateringTimeAdviceError, setWateringTimeAdviceError] = useState('')
-    const [isAskingWateringAdvice, setIsAskingWateringAdvice] = useState(false)
-    const [wateringAdviceError, setWateringAdviceError] = useState('')
-    const wateringDialogSessionRef = useRef(0)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [submitError, setSubmitError] = useState('')
+
+    const [autoInterval, setAutoInterval] = useState(null)
+    const [autoIntervalState, setAutoIntervalState] = useState('idle')
+    const intervalTouchedRef = useRef(false)
+    const adviceRequestRef = useRef('')
+
+    const [photoSpeciesState, setPhotoSpeciesState] = useState('idle')
+    const [photoSpeciesSuggestions, setPhotoSpeciesSuggestions] = useState([])
+    const photoSpeciesAvailableRef = useRef(true)
+    const photoSpeciesSignatureRef = useRef('')
 
     const [toast, setToast] = useState(null)
     const [toastLeaving, setToastLeaving] = useState(false)
@@ -219,28 +262,48 @@ function AddPlants() {
         )
     }
 
-    const setWateringInterval = intervalDays => {
-        setDays(intervalDays)
-        setSelectedDays(getReminderWeekdays(intervalDays))
+    const applyIntervalDays = useCallback((value, { automatic = false } = {}) => {
+        const interval = clampIntervalDays(value)
+        setDays(interval)
+        setSelectedDays(getReminderWeekdays(interval))
+        setSelectedPreset(intervalPresetFor(interval))
+        intervalTouchedRef.current = !automatic
+    }, [])
+
+    const setManualInterval = (value) => {
+        applyIntervalDays(value)
+        setAutoIntervalState(current => current === 'applied' ? 'ready' : current)
     }
 
     const dec = () => {
-        setSelectedPreset('custom')
-        setWateringInterval(Math.max(1, days - 1))
+        setManualInterval(Math.max(1, days - 1))
     }
 
     const inc = () => {
-        setSelectedPreset('custom')
-        setWateringInterval(Math.min(365, days + 1))
+        setManualInterval(Math.min(365, days + 1))
+    }
+
+    const focusIntervalEditor = () => {
+        const node = intervalEditorRef.current
+        if (!node) return
+        node.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+        node.focus?.({ preventScroll: true })
     }
 
     const canRestrictWeekdays = weekdayRestrictionApplies(days)
     const weekdayPreview = canRestrictWeekdays ? [] : upcomingWateringDays(days, new Date(), 4)
     const previewWeekdays = new Set(weekdayPreview.map(item => item.weekday))
 
+    const currentRoom = normalizeRoom(room)
+    const currentLight = normalizeLight(light)
+    const conditionsLabel = conditionsSummary(currentRoom, currentLight)
+
     const draftHasContent =
         Boolean(name.trim()) ||
         Boolean(species.trim()) ||
+        Boolean(currentRoom) ||
+        Boolean(currentLight) ||
+        !justWatered ||
         days !== 7 ||
         selectedPreset !== 'custom' ||
         selectedWatering !== 'morning' ||
@@ -284,7 +347,108 @@ function AddPlants() {
         }
         setNameError('')
         setSubmitError('')
+        void requestAutoInterval()
         goToStep(2)
+    }
+
+    const backToIntervalStep = () => {
+        void requestAutoInterval()
+        goToStep(2)
+    }
+
+    const adviceSignature = [
+        name.trim().toLowerCase(),
+        species.trim().toLowerCase(),
+        currentRoom.toLowerCase(),
+        currentLight
+    ].join('|')
+
+    const requestAutoInterval = async () => {
+        if (!name.trim()) return
+        if (adviceRequestRef.current === adviceSignature) return
+        adviceRequestRef.current = adviceSignature
+        setAutoIntervalState('loading')
+        setAutoInterval(null)
+
+        const payload = {
+            name: name.trim(),
+            species: species.trim(),
+            answers: [],
+            mode: 'recommendation'
+        }
+        if (conditionsLabel) payload.location = conditionsLabel
+
+        try {
+            const response = await fetchWithTimeout(`${API_URL}/plants/watering-advice`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify(payload)
+            })
+            const data = await response.json().catch(() => ({}))
+            if (!response.ok) {
+                setAutoIntervalState('unavailable')
+                return
+            }
+            const intervalDays = Number(data?.intervalDays)
+            if (
+                data?.type === 'recommendation' &&
+                Number.isInteger(intervalDays) &&
+                intervalDays >= 1 &&
+                intervalDays <= 365
+            ) {
+                setAutoInterval({
+                    intervalDays,
+                    reason: typeof data.reason === 'string' ? data.reason.trim() : '',
+                    confidence: typeof data.confidence === 'string' ? data.confidence : ''
+                })
+                if (intervalTouchedRef.current) {
+                    setAutoIntervalState('ready')
+                    return
+                }
+                applyIntervalDays(intervalDays, { automatic: true })
+                setAutoIntervalState('applied')
+                return
+            }
+            setAutoIntervalState('unavailable')
+        } catch (error) {
+            console.warn('Не удалось подобрать интервал автоматически:', error)
+            setAutoIntervalState('unavailable')
+        }
+    }
+
+    const runPhotoSpeciesSuggestion = async file => {
+        if (!file || !photoSpeciesAvailableRef.current) return
+        const signature = `${file.name}|${file.size}|${file.lastModified}`
+        if (photoSpeciesSignatureRef.current === signature) return
+        photoSpeciesSignatureRef.current = signature
+        setPhotoSpeciesState('loading')
+
+        try {
+            const items = await suggestSpeciesFromPhoto(file)
+            if (!Array.isArray(items) || !items.length) {
+                setPhotoSpeciesSuggestions([])
+                setPhotoSpeciesState('empty')
+                return
+            }
+            setPhotoSpeciesSuggestions(items)
+            setPhotoSpeciesState('ready')
+        } catch (error) {
+            if (isFeatureUnavailable(error)) {
+                photoSpeciesAvailableRef.current = false
+                setPhotoSpeciesSuggestions([])
+                setPhotoSpeciesState('hidden')
+                return
+            }
+            console.warn('Не удалось подобрать вид по фото:', error)
+            setPhotoSpeciesSuggestions([])
+            setPhotoSpeciesState('hidden')
+        }
+    }
+
+    const applyPhotoSpeciesSuggestion = suggestion => {
+        setSpecies(suggestion.species || suggestion.latin || suggestion.name)
+        setPhotoSpeciesState('applied')
     }
 
     const handleSuggestSpecies = async () => {
@@ -316,61 +480,6 @@ function AddPlants() {
         }
     }
 
-    const requestWateringAdvice = async (answers, sessionId, mode = 'auto') => {
-        setIsAskingWateringAdvice(true)
-        setWateringAdviceError('')
-        try {
-            const response = await fetchWithTimeout(`${API_URL}/plants/watering-advice`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                credentials: 'include',
-                body: JSON.stringify({
-                    name: name.trim(),
-                    species: species.trim(),
-                    answers,
-                    mode
-                })
-            })
-            const data = await response.json().catch(() => ({}))
-            if (!response.ok) {
-                throw new Error(data.message || 'Не удалось получить рекомендацию')
-            }
-            if (wateringDialogSessionRef.current !== sessionId) return
-
-            if (Number.isInteger(data.maxQuestions) && data.maxQuestions > 0) {
-                setWateringMaxQuestions(data.maxQuestions)
-            }
-
-            if (data.type === 'question' && typeof data.question === 'string') {
-                setWateringMessages(messages => [...messages, {
-                    role: 'assistant',
-                    text: data.question,
-                    options: Array.isArray(data.options)
-                        ? data.options.filter(option => typeof option === 'string' && option.trim()).slice(0, 4)
-                        : []
-                }])
-            } else if (
-                data.type === 'recommendation' &&
-                Number.isInteger(data.intervalDays) &&
-                data.intervalDays >= 1 &&
-                data.intervalDays <= 365 &&
-                typeof data.reason === 'string'
-            ) {
-                setWateringRecommendation(data)
-            } else {
-                throw new Error('ИИ прислал некорректную рекомендацию. Попробуйте ещё раз.')
-            }
-        } catch (error) {
-            if (wateringDialogSessionRef.current !== sessionId) return
-            console.error('Ошибка рекомендации частоты полива:', error)
-            setWateringAdviceError(describeAiRequestError(error, 'Не удалось получить рекомендацию'))
-        } finally {
-            if (wateringDialogSessionRef.current === sessionId) {
-                setIsAskingWateringAdvice(false)
-            }
-        }
-    }
-
     const requestWateringTimeAdvice = async () => {
         if (!name.trim() || isAskingWateringTime) return
 
@@ -379,15 +488,17 @@ function AddPlants() {
         setWateringTimeAdvice(null)
         setWateringTimeAdviceError('')
         try {
+            const payload = {
+                name: name.trim(),
+                species: species.trim(),
+                intervalDays: days
+            }
+            if (conditionsLabel) payload.location = conditionsLabel
             const response = await fetchWithTimeout(`${API_URL}/plants/watering-time-advice`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
-                body: JSON.stringify({
-                    name: name.trim(),
-                    species: species.trim(),
-                    intervalDays: days
-                })
+                body: JSON.stringify(payload)
             })
             const data = await response.json().catch(() => ({}))
             if (!response.ok) {
@@ -417,91 +528,18 @@ function AddPlants() {
     }
 
     const openWateringAdvice = () => {
-        if (!name.trim() || isAskingWateringAdvice) return
-        const sessionId = wateringDialogSessionRef.current + 1
-        wateringDialogSessionRef.current = sessionId
+        if (!name.trim()) return
         setIsWateringDialogOpen(true)
-        setWateringAnswers([])
-        setWateringMessages([])
-        setWateringAnswer('')
-        setWateringRecommendation(null)
-        setWateringAdviceError('')
-        requestWateringAdvice([], sessionId)
     }
 
     const closeWateringAdvice = () => {
-        wateringDialogSessionRef.current++
         setIsWateringDialogOpen(false)
-        setIsAskingWateringAdvice(false)
     }
 
-    const sendWateringAnswer = (rawAnswer, mode = 'auto') => {
-        const answer = String(rawAnswer || '').trim()
-        const lastQuestion = [...wateringMessages].reverse().find(
-            message => message.role === 'assistant'
-        )?.text
-        const skip = mode === 'recommendation' && !answer
-        if (!lastQuestion || isAskingWateringAdvice) return
-        if (!answer && !skip) return
-
-        const answerText = answer || 'Пропустить вопрос'
-        const nextAnswers = [...wateringAnswers, {
-            question: lastQuestion,
-            answer: answerText
-        }]
-        const sessionId = wateringDialogSessionRef.current
-        setWateringAnswers(nextAnswers)
-        setWateringMessages(messages => [
-            ...messages.map(message => ({ ...message, options: [] })),
-            { role: 'user', text: answerText }
-        ])
-        setWateringAnswer('')
-        setWateringAdviceError('')
-        setWateringRecommendation(null)
-        requestWateringAdvice(nextAnswers, sessionId, mode)
+    const applyWateringRecommendation = intervalDays => {
+        setManualInterval(intervalDays)
+        setAutoIntervalState('ready')
     }
-
-    const submitWateringAnswer = event => {
-        event.preventDefault()
-        sendWateringAnswer(wateringAnswer)
-    }
-
-    const skipWateringQuestions = () => {
-        sendWateringAnswer('', 'recommendation')
-    }
-
-    const refineWateringAdvice = () => {
-        if (wateringAnswers.length >= wateringMaxQuestions || isAskingWateringAdvice) return
-        setWateringRecommendation(null)
-        setWateringAdviceError('')
-        requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current, 'question')
-    }
-
-    const applyWateringRecommendation = () => {
-        if (!wateringRecommendation) return
-        const matchingPreset = PRESETS.find(
-            preset => preset.days === wateringRecommendation.intervalDays
-        )
-        setWateringInterval(wateringRecommendation.intervalDays)
-        setSelectedPreset(matchingPreset?.id || 'custom')
-        closeWateringAdvice()
-    }
-
-    const lastWateringMessage = wateringMessages[wateringMessages.length - 1]
-    const currentQuestionOptions = lastWateringMessage?.role === 'assistant'
-        ? (lastWateringMessage.options || [])
-        : []
-
-    useEffect(() => {
-        if (isWateringDialogOpen) {
-            wateringMessagesEndRef.current?.scrollIntoView({ block: 'end', behavior: 'smooth' })
-        }
-    }, [
-        isWateringDialogOpen,
-        isAskingWateringAdvice,
-        wateringMessages,
-        wateringRecommendation
-    ])
 
     const handleFileChange = (e) => {
         const newFiles = Array.from(e.target.files)
@@ -532,6 +570,7 @@ function AddPlants() {
         urlsRef.current = [...urlsRef.current, ...newUrls]
         setPreviews([...urlsRef.current])
         setSubmitError('')
+        void runPhotoSpeciesSuggestion(filesRef.current[0])
 
         e.target.value = ''
     }
@@ -541,6 +580,13 @@ function AddPlants() {
         filesRef.current = filesRef.current.filter((_, i) => i !== index)
         urlsRef.current = urlsRef.current.filter((_, i) => i !== index)
         setPreviews([...urlsRef.current])
+        if (!filesRef.current.length) {
+            photoSpeciesSignatureRef.current = ''
+            setPhotoSpeciesSuggestions([])
+            setPhotoSpeciesState('idle')
+            return
+        }
+        if (index === 0) void runPhotoSpeciesSuggestion(filesRef.current[0])
     }
 
     useEffect(() => {
@@ -561,12 +607,15 @@ function AddPlants() {
         writeDraft({
             name,
             species,
+            room,
+            light,
             days,
             selectedPreset,
             selectedWatering,
             selectedDays,
             notifyMorning,
             notifyDayBefore,
+            justWatered,
             step
         })
     }, [
@@ -574,12 +623,15 @@ function AddPlants() {
         saveCompleted,
         name,
         species,
+        room,
+        light,
         days,
         selectedPreset,
         selectedWatering,
         selectedDays,
         notifyMorning,
         notifyDayBefore,
+        justWatered,
         step
     ])
 
@@ -593,6 +645,52 @@ function AddPlants() {
         window.addEventListener('beforeunload', handleBeforeUnload)
         return () => window.removeEventListener('beforeunload', handleBeforeUnload)
     }, [draftHasContent, saveCompleted])
+
+    useEffect(() => {
+        let cancelled = false
+
+        const loadPopularSpecies = async () => {
+            try {
+                const response = await fetchWithTimeout(
+                    `${API_URL}/plants/popular-species?limit=${POPULAR_SPECIES_LIMIT}`,
+                    { method: 'GET', credentials: 'include' }
+                )
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`)
+                }
+                const data = await response.json().catch(() => ({}))
+                if (cancelled) return
+                setPopularSpecies(mapPopularSpecies(data?.items, { plants: PLANTS }))
+            } catch (error) {
+                if (cancelled) return
+                console.warn('Не удалось загрузить популярные виды:', error)
+                setPopularSpecies(mapPopularSpecies([], { plants: PLANTS }))
+            } finally {
+                if (!cancelled) setPopularSpeciesLoading(false)
+            }
+        }
+
+        loadPopularSpecies()
+        return () => {
+            cancelled = true
+        }
+    }, [])
+
+    const markJustWatered = async plantId => {
+        if (!plantId) return false
+        try {
+            const response = await fetchWithTimeout(`${API_URL}/plants/${plantId}/water`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
+                body: JSON.stringify({})
+            })
+            return response.ok
+        } catch (error) {
+            console.warn('Не удалось отметить первый полив:', error)
+            return false
+        }
+    }
 
     const addPlant = async (event) => {
         event.preventDefault()
@@ -629,6 +727,17 @@ function AddPlants() {
                 uploadedUrls = Array.isArray(uploadData.urls) ? uploadData.urls : []
             }
 
+            const metadata = buildConditionsMetadata(
+                currentLight,
+                wateringAnswers.length
+                    ? {
+                        care_hints: {
+                            watering_answers: wateringAnswers
+                        }
+                    }
+                    : {}
+            )
+
             const response = await fetch(`${API_URL}/plants`, {
                 method: 'POST',
                 headers: {
@@ -637,19 +746,15 @@ function AddPlants() {
                 body: JSON.stringify({
                     name: name.trim(),
                     species: species.trim(),
+                    location: currentRoom || null,
+                    light: currentLight || undefined,
                     photos: uploadedUrls,
                     watering_interval_days: days,
                     watering_time_of_day: selectedWatering,
                     notify_morning: notifyMorning,
                     notify_day_before: notifyDayBefore,
                     reminder_weekdays: selectedDays,
-                    metadata: wateringAnswers.length
-                        ? {
-                            care_hints: {
-                                watering_answers: wateringAnswers
-                            }
-                        }
-                        : undefined
+                    metadata: Object.keys(metadata).length ? metadata : undefined
                 }),
                 credentials: 'include'
             })
@@ -657,15 +762,40 @@ function AddPlants() {
             const responseData = await response.json().catch(() => ({}))
 
             if (response.ok) {
+                const createdId = responseData.id ?? responseData.plant?.id ?? null
+                const waterMarked = justWatered ? await markJustWatered(createdId) : false
+                const hasPhoto = uploadedUrls.length > 0
+                trackEvent('plant_created', {
+                    hasPhoto,
+                    hasSpecies: Boolean(species.trim()),
+                    intervalDays: Number(days) || 0,
+                    hasConditions: Boolean(currentRoom || currentLight)
+                })
+                if (hasPhoto) trackEvent('photo_added')
+                if (waterMarked) trackEvent('watering_marked', { onTime: true })
+
+                saveFirstPlantPending({
+                    id: createdId,
+                    name: name.trim(),
+                    intervalDays: Number(days)
+                })
+
                 setSaveCompleted(true)
                 clearDraft()
                 urlsRef.current.forEach(url => URL.revokeObjectURL(url))
                 urlsRef.current = []
                 filesRef.current = []
 
+                let subtitle = name.trim()
+                if (justWatered) {
+                    subtitle = waterMarked
+                        ? `${name.trim()} · первый полив отмечен`
+                        : `${name.trim()} · полив не отмечен — отметьте на главной`
+                }
+
                 setToast({
                     title: 'Растение добавлено',
-                    subtitle: name.trim(),
+                    subtitle,
                 })
 
                 navigateTimerRef.current = setTimeout(() => {
@@ -681,6 +811,11 @@ function AddPlants() {
             setIsSubmitting(false)
         }
     }
+
+    const photoSpeciesVisible =
+        photoSpeciesState === 'loading' ||
+        photoSpeciesState === 'ready' ||
+        (photoSpeciesState === 'applied' && photoSpeciesSuggestions.length > 0)
 
     return (
         <div className='formForPlant'>
@@ -763,6 +898,41 @@ function AddPlants() {
                                     </div>
                                 ))}
                             </div>
+                            {photoSpeciesVisible && (
+                                <div className='photoSpeciesSuggestion' aria-live='polite'>
+                                    {photoSpeciesState === 'loading' && (
+                                        <p className='photoSpeciesLoading' role='status'>
+                                            Смотрю фото и подбираю вид…
+                                        </p>
+                                    )}
+                                    {photoSpeciesState === 'ready' && (
+                                        <>
+                                            <p className='photoSpeciesTitle'>Похоже на…</p>
+                                            <div className='photoSpeciesChips'>
+                                                {photoSpeciesSuggestions.map(suggestion => (
+                                                    <button
+                                                        key={suggestion.species}
+                                                        type='button'
+                                                        className='photoSpeciesChip'
+                                                        onClick={() => applyPhotoSpeciesSuggestion(suggestion)}
+                                                        title={suggestion.latin || suggestion.species}
+                                                    >
+                                                        {suggestion.name}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                            <p className='photoSpeciesHint'>
+                                                Вид можно поменять вручную ниже.
+                                            </p>
+                                        </>
+                                    )}
+                                    {photoSpeciesState === 'applied' && (
+                                        <p className='photoSpeciesLoading'>
+                                            Вид подставлен: {species || '—'}. Можно изменить вручную ниже.
+                                        </p>
+                                    )}
+                                </div>
+                            )}
                         </div>
                         <div className='addNamePlant'>
                             <p className='headerOfaddNamePlant'>Название и вид</p>
@@ -803,7 +973,7 @@ function AddPlants() {
                                             disabled={!name.trim() || isSuggestingSpecies}
                                             aria-busy={isSuggestingSpecies}
                                         >
-                                            {isSuggestingSpecies ? 'Подбираю…' : 'Спросить у ИИ'}
+                                            {isSuggestingSpecies ? 'Подбираю…' : 'Подсказать вид'}
                                         </button>
                                     </div>
                                 </div>
@@ -826,16 +996,71 @@ function AddPlants() {
                                     </p>
                                 )}
                             </div>
+                            <div className='plantConditions'>
+                                <p className='plantConditionsTitle'>Условия содержания</p>
+                                <p className='plantConditionsSubtitle'>
+                                    Подскажем интервал полива с учётом места и света
+                                </p>
+                                <label className='plantConditionField' htmlFor='plantRoom'>
+                                    <span>Комната</span>
+                                    <input
+                                        id='plantRoom'
+                                        type='text'
+                                        maxLength={255}
+                                        list={ROOM_SUGGESTIONS_ID}
+                                        placeholder='Гостиная'
+                                        value={room}
+                                        onChange={event => setRoom(event.target.value)}
+                                    />
+                                </label>
+                                <datalist id={ROOM_SUGGESTIONS_ID}>
+                                    {ROOM_SUGGESTIONS.map(option => (
+                                        <option key={option} value={option} />
+                                    ))}
+                                </datalist>
+                                <fieldset className='plantLightChoices'>
+                                    <legend>Свет</legend>
+                                    <div>
+                                        {LIGHT_OPTIONS.map(option => (
+                                            <label
+                                                key={option.id}
+                                                className={`plantLightChoice ${currentLight === option.id ? 'active' : ''}`}
+                                                title={option.hint}
+                                            >
+                                                <input
+                                                    type='radio'
+                                                    name='plantLight'
+                                                    value={option.id}
+                                                    checked={currentLight === option.id}
+                                                    onChange={() => setLight(option.id)}
+                                                />
+                                                <span>{option.label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <p className='plantLightHint'>
+                                        {LIGHT_OPTIONS.find(option => option.id === currentLight)?.hint
+                                            ?? 'Выберите, сколько света получает растение'}
+                                    </p>
+                                </fieldset>
+                            </div>
                             <div className='popularTypes'>
                                 <p>Популярные виды</p>
-                                <div>
-                                    {[
-                                        ['Монстера', 'Monstera'],
-                                        ['Фикус', 'Ficus'],
-                                        ['Суккулент', 'Succulent']
-                                    ].map(([label, value]) => (
-                                        <button key={value} type="button" onClick={() => setSpecies(value)}>
-                                            {label}
+                                <div
+                                    aria-busy={popularSpeciesLoading || undefined}
+                                    aria-label='Популярные виды растений'
+                                    className='gridPopular'
+                                    role='group'
+                                >
+                                    {popularSpecies.map(item => (
+                                        <button
+                                            key={item.species}
+                                            type="button"
+                                            title={item.species}
+                                            aria-label={`Подставить вид «${item.label}»`}
+                                            onClick={() => setSpecies(item.species)}
+                                        >
+                                            {item.label}
                                         </button>
                                     ))}
                                 </div>
@@ -857,18 +1082,61 @@ function AddPlants() {
                                 <div>
                                     <div className='headerOfBlockWatering'>
                                         <p>Частота полива</p>
-                                        <button
-                                            type="button"
-                                            className='askAI wateringAdviceTrigger'
-                                            onClick={openWateringAdvice}
-                                            disabled={!name.trim() || isAskingWateringAdvice}
-                                        >
-                                            <img src={sparkles} alt="" aria-hidden="true" />
-                                            <span>Спросить ИИ</span>
-                                        </button>
                                     </div>
                                 </div>
-                                <div>
+                                <div className='autoIntervalBlock' aria-live='polite'>
+                                    {autoIntervalState === 'loading' && (
+                                        <p className='autoIntervalHint' role='status'>
+                                            <span className='autoIntervalSpinner' aria-hidden='true' />
+                                            Подбираю интервал по виду и условиям…
+                                        </p>
+                                    )}
+                                    {autoIntervalState === 'applied' && autoInterval && (
+                                        <p className='autoIntervalHint autoIntervalHint--ready'>
+                                            Подставили интервал {everyDaysLabel(autoInterval.intervalDays)}
+                                            {conditionsLabel ? ` — с учётом «${conditionsLabel}»` : ' — по виду растения'}.
+                                        </p>
+                                    )}
+                                    {autoIntervalState === 'ready' && autoInterval && (
+                                        <div className='autoIntervalHint autoIntervalHint--offer'>
+                                            <p>
+                                                ИИ предлагает {everyDaysLabel(autoInterval.intervalDays)}.
+                                                {autoInterval.reason ? ` ${autoInterval.reason}` : ''}
+                                            </p>
+                                            <button
+                                                type='button'
+                                                className='autoIntervalApply'
+                                                onClick={() => {
+                                                    applyIntervalDays(autoInterval.intervalDays, { automatic: true })
+                                                    setAutoIntervalState('applied')
+                                                }}
+                                            >
+                                                Применить
+                                            </button>
+                                        </div>
+                                    )}
+                                    {autoIntervalState === 'unavailable' && (
+                                        <p className='autoIntervalHint autoIntervalHint--muted'>
+                                            Не удалось подобрать интервал автоматически — выберите вручную ниже.
+                                        </p>
+                                    )}
+                                    {autoInterval && (
+                                        <button
+                                            type='button'
+                                            className='autoIntervalEdit'
+                                            onClick={focusIntervalEditor}
+                                        >
+                                            Поправить интервал
+                                        </button>
+                                    )}
+                                </div>
+                                <div
+                                    className='intervalEditor'
+                                    ref={intervalEditorRef}
+                                    tabIndex={-1}
+                                    role='group'
+                                    aria-label='Интервал полива'
+                                >
                                     <div className='buttonHoldWatering'>
                                         {PRESETS.map(p => (
                                             <button
@@ -876,8 +1144,7 @@ function AddPlants() {
                                                 type='button'
                                                 className={`wateringPreset ${selectedPreset === p.id ? 'active' : ''}`}
                                                 onClick={() => {
-                                                    setSelectedPreset(p.id)
-                                                    setWateringInterval(p.days)
+                                                    applyIntervalDays(p.days)
                                                 }}
                                             >
                                                 {p.label}
@@ -899,6 +1166,16 @@ function AddPlants() {
                                         </div>
                                     </div>
                                 </div>
+                                <div className='plantAdviceRow'>
+                                    <button
+                                        type='button'
+                                        className='plantAdviceTextLink'
+                                        onClick={openWateringAdvice}
+                                        disabled={!name.trim()}
+                                    >
+                                        Уточнить у ИИ, если условия необычные
+                                    </button>
+                                </div>
                             </div>
                             <div className='presetPlantCheck'>
                                 <div>
@@ -906,7 +1183,7 @@ function AddPlants() {
                                         <p>Когда поливать</p>
                                         <button
                                             type='button'
-                                            className='askAI wateringAdviceTrigger'
+                                            className='askAI wateringAdviceTrigger plantAdviceLink'
                                             onClick={requestWateringTimeAdvice}
                                             disabled={!name.trim() || isAskingWateringTime}
                                             aria-busy={isAskingWateringTime}
@@ -1003,7 +1280,7 @@ function AddPlants() {
                                     return (
                                         <button
                                             key={w.id}
-                                            type='button'
+                                            type="button"
                                             className={[
                                                 'wateringWeekday',
                                                 isSelected && 'active',
@@ -1029,11 +1306,24 @@ function AddPlants() {
                                 </p>
                             )}
                         </div>
+                        <label className='justWateredOption'>
+                            <input
+                                type='checkbox'
+                                checked={justWatered}
+                                onChange={event => setJustWatered(event.target.checked)}
+                            />
+                            <span>
+                                <span className='justWateredTitle'>Я только что полил</span>
+                                <span className='justWateredHint'>
+                                    Создадим первую запись в истории и отсчитаем график от сегодня
+                                </span>
+                            </span>
+                        </label>
                         <div className='buttonOfslider'>
                             <button
                                 type="button"
                                 className='backSlidewatering'
-                                onClick={() => goToStep(2)}
+                                onClick={backToIntervalStep}
                             >
                                 Назад
                             </button>
@@ -1126,179 +1416,16 @@ function AddPlants() {
                     </div>
                 )}
                 {isWateringDialogOpen && (
-                    <div
-                        className='wateringAdviceOverlay'
-                        onMouseDown={event => {
-                            if (event.target === event.currentTarget && !isAskingWateringAdvice) {
-                                closeWateringAdvice()
-                            }
-                        }}
-                    >
-                        <section
-                            className='wateringAdviceDialog'
-                            role='dialog'
-                            aria-modal='true'
-                            aria-labelledby='wateringAdviceTitle'
-                            aria-describedby='wateringAdviceDescription'
-                        >
-                            <header className='wateringAdviceHeader'>
-                                <div>
-                                    <h2 id='wateringAdviceTitle'>Подберём график полива</h2>
-                                    <p id='wateringAdviceDescription'>
-                                        Ответьте на несколько вопросов. Рекомендация будет ориентировочной.
-                                    </p>
-                                </div>
-                                <button
-                                    type='button'
-                                    className='wateringAdviceClose'
-                                    onClick={closeWateringAdvice}
-                                    aria-label='Закрыть диалог'
-                                >
-                                    ×
-                                </button>
-                            </header>
-                            <div className='wateringAdviceMessages' aria-live='polite'>
-                                <p className='wateringAdvicePlant'>
-                                    Растение: <strong>{name.trim()}</strong>
-                                    {species.trim() && ` · ${species.trim()}`}
-                                </p>
-                                <div className='wateringAdviceMessage assistant'>
-                                    Подберу стартовый интервал с учётом условий. Это не заменяет проверку влажности грунта.
-                                </div>
-                                {wateringMessages.map((message, index) => (
-                                    <div
-                                        key={`${message.role}-${index}`}
-                                        className={`wateringAdviceMessage ${message.role}`}
-                                    >
-                                        {message.text}
-                                    </div>
-                                ))}
-                                {isAskingWateringAdvice && (
-                                    <div className='wateringAdviceMessage assistant' role='status'>
-                                        Подбираю следующий вопрос…
-                                    </div>
-                                )}
-                                {wateringRecommendation && (
-                                    <div className='wateringRecommendation' role='status'>
-                                        <p className='wateringRecommendationInterval'>
-                                            Ориентир: раз в {wateringRecommendation.intervalDays} дн.
-                                        </p>
-                                        <p>{wateringRecommendation.reason}</p>
-                                        <p className='wateringRecommendationConfidence'>
-                                            Уверенность: {
-                                                wateringRecommendation.confidence === 'high'
-                                                    ? 'высокая — условий достаточно для точного ориентира'
-                                                    : wateringRecommendation.confidence === 'medium'
-                                                        ? 'средняя — условия типичные, но уточнены не все'
-                                                        : 'низкая — данных мало, ориентир самый осторожный'
-                                            }. Проверяйте, просох ли грунт, и корректируйте график.
-                                        </p>
-                                        <div className='wateringRecommendationActions'>
-                                            <button
-                                                type='button'
-                                                className='wateringRecommendationApply'
-                                                onClick={applyWateringRecommendation}
-                                            >
-                                                Применить интервал
-                                            </button>
-                                            {wateringAnswers.length < 4 && (
-                                                <button
-                                                    type='button'
-                                                    className='wateringRecommendationRefine'
-                                                    onClick={refineWateringAdvice}
-                                                    disabled={isAskingWateringAdvice}
-                                                >
-                                                    Уточнить условия
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                                <div ref={wateringMessagesEndRef} />
-                            </div>
-                            {wateringAdviceError && (
-                                <div className='wateringAdviceError' role='alert'>
-                                    <p>{wateringAdviceError}</p>
-                                    <button
-                                        type='button'
-                                        onClick={() => requestWateringAdvice(wateringAnswers, wateringDialogSessionRef.current, 'auto')}
-                                        disabled={isAskingWateringAdvice}
-                                    >
-                                        Попробовать ещё раз
-                                    </button>
-                                </div>
-                            )}
-                            {!wateringRecommendation && currentQuestionOptions.length > 0 && (
-                                <div className='wateringAdviceOptions' role='group' aria-label='Варианты ответа'>
-                                    {currentQuestionOptions.map(option => (
-                                        <button
-                                            key={option}
-                                            type='button'
-                                            onClick={() => sendWateringAnswer(option)}
-                                            disabled={isAskingWateringAdvice}
-                                        >
-                                            {option}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                            {!wateringRecommendation && (
-                                <form className='wateringAdviceReply' onSubmit={submitWateringAnswer}>
-                                    <label htmlFor='wateringAdviceAnswer'>
-                                        {wateringAnswers.length >= wateringMaxQuestions
-                                            ? 'Получаем рекомендацию'
-                                            : 'Ваш ответ или свой вариант'}
-                                    </label>
-                                    <textarea
-                                        id='wateringAdviceAnswer'
-                                        value={wateringAnswer}
-                                        onChange={event => setWateringAnswer(event.target.value)}
-                                        maxLength={500}
-                                        rows={3}
-                                        placeholder='Например: стоит на южном окне, грунт просыхает за 4 дня'
-                                        disabled={
-                                            isAskingWateringAdvice ||
-                                            Boolean(wateringAdviceError) ||
-                                            wateringAnswers.length >= wateringMaxQuestions ||
-                                            !wateringMessages.some(message => message.role === 'assistant')
-                                        }
-                                    />
-                                    <div className='wateringAdviceFooter'>
-                                        <span>
-                                            {wateringAnswers.length}/{wateringMaxQuestions} уточнений
-                                            {wateringAnswers.length >= 3 && ' — дальше уже будет рекомендация'}
-                                        </span>
-                                        <div className='wateringAdviceFooterButtons'>
-                                            <button
-                                                type='button'
-                                                className='wateringAdviceSkip'
-                                                onClick={skipWateringQuestions}
-                                                disabled={
-                                                    isAskingWateringAdvice ||
-                                                    Boolean(wateringAdviceError) ||
-                                                    wateringAnswers.length >= wateringMaxQuestions ||
-                                                    !wateringMessages.some(message => message.role === 'assistant')
-                                                }
-                                            >
-                                                Хватит вопросов
-                                            </button>
-                                            <button
-                                                type='submit'
-                                                disabled={
-                                                    !wateringAnswer.trim() ||
-                                                    isAskingWateringAdvice ||
-                                                    Boolean(wateringAdviceError) ||
-                                                    wateringAnswers.length >= wateringMaxQuestions
-                                            }
-                                        >
-                                            Ответить
-                                        </button>
-                                        </div>
-                                    </div>
-                                </form>
-                            )}
-                        </section>
-                    </div>
+                    <WateringAdviceDialog
+                        open
+                        plantName={name}
+                        species={species}
+                        location={conditionsLabel}
+                        currentIntervalDays={days}
+                        onClose={closeWateringAdvice}
+                        onApply={applyWateringRecommendation}
+                        onAnswersChange={setWateringAnswers}
+                    />
                 )}
                 {toast && (
                     <div className={`toast ${toastLeaving ? 'leaving' : ''}`} role="status" aria-live="polite">

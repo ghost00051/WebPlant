@@ -74,3 +74,28 @@ html[data-theme='dark'] .notificationsBottomNav {
 html[data-theme='dark'] .notificationsCard.is-unread {
   border-color: rgba(127, 209, 160, 0.35);
 }
+
+html[data-theme='dark'] .notificationsDetail {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notificationsDetailBody {
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notificationsDetailType,
+html[data-theme='dark'] .notificationsDetailTime {
+  color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .notificationsDetailActions .notificationsDetailPrimary {
+  background: var(--theme-accent);
+  color: #10301f;
+}
+
+html[data-theme='dark'] .notificationsDetailActions .notificationsDetailSecondary {
+  background: var(--theme-raised);
+  color: var(--theme-text);
+}

@@ -17,7 +17,11 @@ import {
     setSessionAuth
 } from '../utils/authTokens.js'
 import { getPasskeyConfig } from '../utils/passkeyConfig.js'
-import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    buildGuestLinkSummary,
+    describeGuestLinkSummary,
+    linkGuestDataToUser
+} from '../utils/linkGuestData.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
@@ -53,7 +57,8 @@ function buildUserPayload(user) {
         phone: user.phone,
         bio: user.bio,
         role: user.role,
-        privilege_level: user.privilege_level
+        privilege_level: user.privilege_level,
+        createdAt: user.created_at ?? null
     }
 }
 
@@ -365,13 +370,30 @@ class PasskeyController {
                     counter: verification.authenticationInfo.newCounter,
                     last_used_at: new Date()
                 }, { transaction })
-                await linkGuestDataToUser(
-                    user.id,
-                    guestToken,
-                    'login_linked',
-                    transaction
-                )
             })
+
+            let guestLink = buildGuestLinkSummary()
+            if (guestToken) {
+                try {
+                    const linked = await linkGuestDataToUser(user.id, guestToken, 'login_linked')
+                    console.log(
+                        `🔗 Гостевые данные → аккаунт #${user.id} (passkey): ` +
+                        describeGuestLinkSummary(linked)
+                    )
+                    for (const error of linked.errors) {
+                        console.warn(
+                            `⚠️ Не удалось перенести часть гостевых данных (${error.step}):`,
+                            error.message
+                        )
+                    }
+                    guestLink = buildGuestLinkSummary(linked)
+                } catch (error) {
+                    console.error(
+                        '⚠️ Перенос гостевых данных после входа по ключу не удался:',
+                        error?.message || error
+                    )
+                }
+            }
 
             await revokeAuthTokens(req.cookies)
             if (rememberMe === true) {
@@ -383,7 +405,8 @@ class PasskeyController {
 
             return res.json({
                 ok: true,
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (error) {
             console.error('❌ finishAuthentication:', error)

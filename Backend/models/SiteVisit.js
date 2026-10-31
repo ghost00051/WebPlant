@@ -37,6 +37,18 @@ const SiteVisit = sequelize.define("site_visit_day", {
     device: {
         type: DataTypes.STRING(16),
         allowNull: true
+    },
+    utm_source: {
+        type: DataTypes.STRING(120),
+        allowNull: true
+    },
+    utm_medium: {
+        type: DataTypes.STRING(120),
+        allowNull: true
+    },
+    utm_campaign: {
+        type: DataTypes.STRING(120),
+        allowNull: true
     }
 }, {
     tableName: 'site_visit_days',

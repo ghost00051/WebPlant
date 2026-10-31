@@ -1,0 +1,212 @@
+.registrationOnboardingOverlay {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 20px;
+  overflow-y: auto;
+  background: rgba(24, 30, 26, 0.55);
+}
+
+.registrationOnboardingCard {
+  width: min(100%, 560px);
+  max-height: calc(100vh - 40px);
+  max-height: calc(100dvh - 40px);
+  box-sizing: border-box;
+  margin: auto;
+  padding: clamp(20px, 4vw, 34px);
+  overflow-y: auto;
+  border: 1px solid rgba(90, 110, 96, 0.16);
+  border-radius: 24px;
+  background: var(--auth-surface);
+  box-shadow: 0 30px 90px rgba(24, 30, 26, 0.28);
+  color: var(--auth-text);
+}
+
+.registrationOnboardingEyebrow {
+  margin: 0 0 10px;
+  color: var(--auth-muted);
+  font-size: var(--font-size-sm);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.registrationOnboardingCard h2 {
+  margin: 0;
+  font-size: clamp(1.375rem, 3vw, 1.75rem);
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.2;
+}
+
+.registrationOnboardingCard>p {
+  margin: 12px 0 0;
+  color: var(--auth-muted);
+  font-size: var(--font-size-base);
+  line-height: 1.6;
+}
+
+.registrationOnboardingCarry,
+.registrationOnboardingGarden {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: var(--auth-panel);
+  color: var(--auth-text) !important;
+  font-size: var(--font-size-sm) !important;
+  line-height: 1.55 !important;
+}
+
+.registrationOnboardingGarden {
+  margin: 12px 0 0;
+}
+
+.registrationOnboardingCarry>span:first-child {
+  color: var(--auth-accent);
+  font-size: var(--font-size-base);
+}
+
+.registrationOnboardingCarry strong {
+  font-weight: 650;
+}
+
+.registrationOnboardingPresets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 22px;
+}
+
+.registrationOnboardingPreset {
+  display: flex;
+  min-height: 96px;
+  box-sizing: border-box;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--auth-border);
+  border-radius: 16px;
+  background: #f8f7f4;
+  color: var(--auth-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.registrationOnboardingPreset:hover {
+  border-color: var(--auth-accent);
+  background: #eef2ee;
+}
+
+.registrationOnboardingPreset:focus-visible,
+.registrationOnboardingChat:focus-visible,
+.registrationOnboardingSkip:focus-visible {
+  outline: 3px solid var(--theme-focus-ring);
+  outline-offset: 3px;
+}
+
+.registrationOnboardingPresetLabel {
+  font-size: var(--font-size-xl);
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.registrationOnboardingPresetHint {
+  color: var(--auth-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.registrationOnboardingActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 22px;
+}
+
+.registrationOnboardingChat {
+  min-height: 44px;
+  box-sizing: border-box;
+  padding: 0 18px;
+  border: 1px solid var(--auth-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--auth-accent-strong);
+  font: inherit;
+  font-size: var(--font-size-md);
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.registrationOnboardingChat:hover {
+  border-color: var(--auth-accent);
+  background: #eef2ee;
+}
+
+.registrationOnboardingSkip {
+  min-height: 44px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: var(--auth-muted);
+  font: inherit;
+  font-size: var(--font-size-md);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.registrationOnboardingSkip:hover {
+  color: var(--auth-text);
+}
+
+@media (max-width: 620px) {
+  .registrationOnboardingOverlay {
+    padding: 14px;
+  }
+
+  .registrationOnboardingCard {
+    padding: 20px;
+    border-radius: 20px;
+  }
+
+  .registrationOnboardingPresets {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .registrationOnboardingPreset {
+    min-height: 64px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .registrationOnboardingActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .registrationOnboardingChat,
+  .registrationOnboardingSkip {
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .registrationOnboardingPreset,
+  .registrationOnboardingChat {
+    transition: none;
+  }
+}

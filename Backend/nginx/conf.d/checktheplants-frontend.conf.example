@@ -1,0 +1,157 @@
+server {
+    listen 80;
+    server_name checktheplants.ru www.checktheplants.ru;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://checktheplants.ru$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name www.checktheplants.ru;
+
+    ssl_certificate /etc/letsencrypt/live/checktheplants.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/checktheplants.ru/privkey.pem;
+
+    return 301 https://checktheplants.ru$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name checktheplants.ru;
+
+    ssl_certificate /etc/letsencrypt/live/checktheplants.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/checktheplants.ru/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    root /var/www/checktheplants/www;
+    index index.html;
+    charset utf-8;
+    server_tokens off;
+    absolute_redirect off;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=(), interest-cohort=()" always;
+
+    gzip on;
+    gzip_comp_level 6;
+    gzip_min_length 1024;
+    gzip_vary on;
+    gzip_types text/plain text/css text/xml application/javascript application/json application/xml image/svg+xml application/manifest+json;
+
+    brotli on;
+    brotli_comp_level 6;
+    brotli_min_length 1024;
+    brotli_types text/plain text/css text/xml application/javascript application/json application/xml image/svg+xml application/manifest+json;
+
+    error_page 404 /404.html;
+
+    location = /404.html {
+        internal;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location = /index.html {
+        return 301 https://checktheplants.ru/;
+    }
+
+    location = /home.html { return 301 https://checktheplants.ru/home; }
+    location = /my-plants.html { return 301 https://checktheplants.ru/my-plants; }
+    location = /notifications.html { return 301 https://checktheplants.ru/notifications; }
+    location = /add-plant.html { return 301 https://checktheplants.ru/add-plant; }
+    location = /edit-profile.html { return 301 https://checktheplants.ru/edit-profile; }
+    location = /login.html { return 301 https://checktheplants.ru/login; }
+    location = /register.html { return 301 https://checktheplants.ru/register; }
+    location = /reset-password.html { return 301 https://checktheplants.ru/reset-password; }
+    location = /plants.html { return 301 https://checktheplants.ru/plants; }
+    location = /care.html { return 301 https://checktheplants.ru/care; }
+
+    location ~ ^/plants-([a-z0-9-]+)\.html$ {
+        return 301 https://checktheplants.ru/plants/$1;
+    }
+
+    location ~ ^/care-([a-z0-9-]+)\.html$ {
+        return 301 https://checktheplants.ru/care/$1;
+    }
+
+    location ~ ^/(?!404\.html$)[^/]*\.html$ {
+        return 404;
+    }
+
+    location = /plants {
+        try_files /plants.html =404;
+    }
+
+    location = /care {
+        try_files /care.html =404;
+    }
+
+    location ~ ^/plants/([a-z0-9-]+)/?$ {
+        try_files /plants-$1.html =404;
+    }
+
+    location ~ ^/care/([a-z0-9-]+)/?$ {
+        try_files /care-$1.html =404;
+    }
+
+    location ~ ^/garden/[A-Za-z0-9_-]{16,64}/?$ {
+        try_files /garden.html =404;
+    }
+
+    location = /home { try_files /home.html =404; }
+    location = /my-plants { try_files /my-plants.html =404; }
+    location = /notifications { try_files /notifications.html =404; }
+    location = /add-plant { try_files /add-plant.html =404; }
+    location = /edit-profile { try_files /edit-profile.html =404; }
+    location = /login { try_files /login.html =404; }
+    location = /register { try_files /register.html =404; }
+    location = /reset-password { try_files /reset-password.html =404; }
+
+    location = /sw.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate" always;
+        add_header Service-Worker-Allowed "/" always;
+    }
+
+    location = /manifest.json {
+        add_header Cache-Control "no-cache, must-revalidate" always;
+    }
+
+    location ~* \.(?:css|js)$ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:png|jpe?g|webp|svg|ico|woff2)$ {
+        add_header Cache-Control "public, max-age=15552000" always;
+        try_files $uri =404;
+    }
+
+    location ~* \.(?:html|xml|txt|json)$ {
+        add_header Cache-Control "public, max-age=0, must-revalidate" always;
+        try_files $uri =404;
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

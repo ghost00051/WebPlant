@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
+import PlantFollowCta from './PlantFollowCta.jsx'
 import { getPlantBySlug } from '../../data/plants.js'
 import {
     PLANTS_PATH,
@@ -83,7 +84,7 @@ function PlantsDetailPage({ slug }) {
                         alt={plant.imageAlt || plant.name}
                         width={800}
                         height={600}
-                        loading='lazy'
+                        fetchPriority='high'
                         decoding='async'
                         style={{ maxWidth: '100%', height: 'auto', filter: 'none' }}
                     />
@@ -121,6 +122,8 @@ function PlantsDetailPage({ slug }) {
             <PlantFieldSection id='plantSoilTitle' title='Грунт' value={plant.soil} />
 
             <PlantFieldSection id='plantSeasonalTitle' title='Сезонный уход' value={plant.seasonal} />
+
+            <PlantFollowCta plant={plant} />
 
             <PlantFieldSection id='plantPestsTitle' title='Вредители и болезни' value={plant.pests} />
 

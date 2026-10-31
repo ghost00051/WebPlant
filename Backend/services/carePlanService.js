@@ -1,7 +1,7 @@
 import { Op } from 'sequelize'
 import PlantCarePlan from '../models/PlantCarePlan.js'
 import { suggestCarePlan } from './aiService.js'
-import { buildDefaultCarePlan } from '../utils/careKnowledge.js'
+import { buildDefaultCarePlan, CARE_KNOWLEDGE_VERSION, sanitizeCarePlan } from '../utils/careKnowledge.js'
 
 const DAY_MS = 24 * 60 * 60 * 1000
 const MAX_PLAN_AGE_DAYS = 90
@@ -9,7 +9,9 @@ const MAX_PLAN_AGE_DAYS = 90
 class CarePlanService {
     isFresh(row, season, now = new Date()) {
         if (!row || !row.plan || typeof row.plan !== 'object') return false
-        if (!Object.keys(row.plan).length) return false
+        const actionKeys = Object.keys(row.plan).filter(key => key !== '_version')
+        if (!actionKeys.length) return false
+        if (row.plan._version !== CARE_KNOWLEDGE_VERSION) return false
         if (row.season !== season) return false
 
         const generatedAt = row.generated_at ? new Date(row.generated_at).getTime() : NaN
@@ -20,6 +22,13 @@ class CarePlanService {
             ? DAY_MS
             : MAX_PLAN_AGE_DAYS * DAY_MS
         return age >= 0 && age < maxAge
+    }
+
+    resolvePlan({ plant, group, row = null, season, now = new Date() } = {}) {
+        if (row && this.isFresh(row, season, now)) {
+            return sanitizeCarePlan(row.plan, { plant, group })
+        }
+        return buildDefaultCarePlan({ plant, group })
     }
 
     async loadPlans(plantIds = []) {
@@ -54,7 +63,7 @@ class CarePlanService {
 
         await PlantCarePlan.upsert({
             plant_id: plant.id,
-            plan,
+            plan: { ...plan, _version: CARE_KNOWLEDGE_VERSION },
             source: generated?.source || 'default',
             season: seasonInfo?.season || null,
             model: generated?.model || null,

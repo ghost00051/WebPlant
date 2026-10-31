@@ -1,4 +1,4 @@
-﻿import { copyFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, readFile, readdir, unlink, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -29,6 +29,7 @@ const keep = new Set([
   'edit-profile.html',
   'my-plants.html',
   'reset-password.html',
+  'garden.html',
   '.htaccess',
   'robots.txt',
   'sitemap.xml',

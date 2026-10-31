@@ -1,5 +1,6 @@
 node_modules/
 state/
+document/
 
 *.log
 
@@ -61,9 +62,10 @@ Bug-Tracker-WebPlant.xlsx
 deploy.config.json
 probe-upload-test.html
 
-state/notif-audit/fixes/*.txt
 Backend/nginx/pending/
 Backend_QA_Checklist.md
 Backend_QA_Checklist.xlsx
 WebPlant_QA_Checklist.md
 WebPlant_QA_Checklist.xlsx
+
+**/*копия с компьютера*

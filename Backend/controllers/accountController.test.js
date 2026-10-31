@@ -64,7 +64,7 @@ function createModel(name, calls, overrides = {}) {
     }
 }
 
-function createHarness({
+function createTestContext({
     user,
     modelOverrides = {},
     queryRows = [],
@@ -190,7 +190,14 @@ test('buildAccountExport не содержит секретов и собира�
         plants: [{ id: 11, name: 'Монстера', user_id: 1, is_active: true, reminder_weekdays: [1] }],
         photos: [{ plant_id: 11, url: PHOTO_URL, thumb_url: PHOTO_URL + '.thumb.jpg', is_main: true }],
         carePlans: [{ plant_id: 11, plan: { watering: 7 } }],
-        wateringLogs: [{ id: 1, plant_id: 11, action: 'watered', watered_at: '2026-10-01' }],
+        wateringLogs: [{
+            id: 1,
+            plant_id: 11,
+            action: 'watered',
+            action_at: '2026-10-01T09:00:00.000Z',
+            hours_late: 26,
+            note: 'Полил позже'
+        }],
         chatMessages: [{ id: 5, session_id: 's1', role: 'user', text: 'Привет' }],
         notifications: [{ id: 9, type: 'watering', title: 'Пора полить', body: 'Монстера' }],
         notificationPreferences: { morning_summary_enabled: true, care_advice_enabled: false },
@@ -207,13 +214,17 @@ test('buildAccountExport не содержит секретов и собира�
     assert.equal(payload.plants[0].photos.length, 1)
     assert.equal(payload.plants[0].carePlan.watering, 7)
     assert.equal(payload.sessions.authSessions, 2)
+    assert.equal(payload.wateringLogs[0].wateredAt, '2026-10-01T09:00:00.000Z')
+    assert.equal(payload.wateringLogs[0].hoursLate, 26)
+    assert.equal(payload.wateringLogs[0].daysLate, 1)
+    assert.equal(payload.wateringLogs[0].comment, 'Полил позже')
     for (const secret of ['HASH', 'p256dh', 'TOKEN', 'AUTH', 'credential', '"public"', 'password']) {
         assert.ok(!serialized.includes(secret), `в экспорте не должно быть «${secret}»`)
     }
 })
 
 test('deleteMe: без слова подтверждения — 400 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({ user: () => ({ id: 1, role: 'USER' }) })
+    const { controller, calls } = createTestContext({ user: () => ({ id: 1, role: 'USER' }) })
     const res = createResponse()
 
     await controller.deleteMe(
@@ -227,7 +238,7 @@ test('deleteMe: без слова подтверждения — 400 и ника
 })
 
 test('deleteMe: без пароля — 400 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({ user: () => ({ id: 1, role: 'USER' }) })
+    const { controller, calls } = createTestContext({ user: () => ({ id: 1, role: 'USER' }) })
     const res = createResponse()
 
     await controller.deleteMe(
@@ -241,7 +252,7 @@ test('deleteMe: без пароля — 400 и никаких удалений',
 })
 
 test('deleteMe: неверный пароль — 403 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 1, role: 'USER', password: 'hash' })
     })
     const res = createResponse()
@@ -256,7 +267,7 @@ test('deleteMe: неверный пароль — 403 и никаких удал
 })
 
 test('deleteMe: администратор удаляется только через админ-панель', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 1, role: 'ADMIN', password: 'hash' })
     })
     const res = createResponse()
@@ -271,7 +282,7 @@ test('deleteMe: администратор удаляется только че�
 })
 
 test('deleteMe: успешное удаление каскадом + файлы + cookie', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         queryRows: [{ url: PHOTO_URL }],
         filesRemoved: 1,
@@ -325,7 +336,7 @@ test('deleteMe: успешное удаление каскадом + файлы 
 test('deleteMe: фото чата собираются из metadata и удаляются после коммита', async () => {
     const firstChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'1'.repeat(32)}.jpg`
     const secondChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'2'.repeat(32)}.jpg`
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         chatPhotoFilesRemoved: 2,
         modelOverrides: {
@@ -356,7 +367,7 @@ test('deleteMe: фото чата собираются из metadata и удал
 
 test('deleteMe: удаление фото чата продолжается, если файлов уже нет', async t => {
     t.mock.method(console, 'warn', () => {})
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         modelOverrides: {
             ChatLog: {
@@ -383,7 +394,7 @@ test('deleteMe: удаление фото чата продолжается, е�
 })
 
 test('exportData: без авторизации — 401', async () => {
-    const { controller } = createHarness()
+    const { controller } = createTestContext()
     const res = createResponse()
     await controller.exportData({ user: null }, res)
     assert.equal(res.statusCode, 401)
@@ -398,7 +409,7 @@ test('exportData: отдаёт JSON-файл со всеми данными и �
         timezone: 'Europe/Moscow',
         role: 'USER'
     }
-    const { controller } = createHarness({
+    const { controller } = createTestContext({
         user: id => (id === 1 ? user : null),
         modelOverrides: {
             Plant: {
@@ -440,6 +451,26 @@ test('exportData: отдаёт JSON-файл со всеми данными и �
     assert.ok(!serialized.includes('HASH'))
     assert.ok(!serialized.includes('TOKEN'))
     assert.ok(!serialized.includes('"pub"'))
+})
+
+test('exportData: сохраняет this, когда роут передаёт метод как обработчик (регресс 500)', async () => {
+    const user = {
+        id: 1,
+        email: 'leaf@example.com',
+        password: 'HASH',
+        role: 'USER'
+    }
+    const { controller } = createTestContext({
+        user: id => (id === 1 ? user : null)
+    })
+    const res = createResponse()
+    const detachedExportData = controller.exportData
+    await detachedExportData({ user: { id: 1 } }, res)
+
+    assert.equal(res.statusCode, 200, 'обработчик не должен терять this')
+    assert.equal(res.body.format, 'webplant-account-export')
+    assert.equal(res.body.account.email, 'leaf@example.com')
+    assert.equal(res.headers.get('Cache-Control'), 'no-store')
 })
 
 test('маршруты LIVE-02 подключены с requireAuth и rate-limit', async () => {

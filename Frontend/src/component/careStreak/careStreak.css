@@ -1,0 +1,345 @@
+.careStreakCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--theme-border, #e5e5df);
+  border-radius: 18px;
+  background: var(--theme-surface, #ffffff);
+  color: var(--theme-text, #2d2d2d);
+  font-family: 'Inter', sans-serif;
+}
+
+.careStreakHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.careStreakCard h2 {
+  margin: 0;
+  color: inherit;
+  font-size: var(--font-size-md, 18px);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.careStreakSubtitle {
+  margin: 3px 0 0;
+  color: var(--theme-muted, #686c66);
+  font-size: var(--font-size-xs, 12px);
+  line-height: 1.4;
+}
+
+.careStreakStatus,
+.careStreakError,
+.careStreakEmpty {
+  margin: 0;
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.5;
+}
+
+.careStreakStatus,
+.careStreakEmpty {
+  color: var(--theme-muted, #686c66);
+}
+
+.careStreakError {
+  color: var(--theme-danger, #b3352c);
+}
+
+.careStreakRetry {
+  align-self: flex-start;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-border, #e5e5df);
+  border-radius: 12px;
+  background: var(--theme-raised, #f5f3ef);
+  color: var(--theme-text, #2d2d2d);
+  font-family: inherit;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.careStreakRetry:focus-visible {
+  outline: 2px solid var(--theme-focus-ring, #52705c);
+  outline-offset: 2px;
+}
+
+.careStreakStats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+}
+
+.careStreakCurrent {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin: 0;
+  color: var(--theme-text, #2d2d2d);
+  font-size: var(--font-size-lg, 16px);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.careStreakFlame {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.careStreakBest {
+  margin: 0;
+  color: var(--theme-muted, #686c66);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.careStreakVisuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  border: 0;
+  white-space: nowrap;
+}
+
+.careStreakWeekText {
+  margin: 0;
+  color: var(--theme-accent-text, #2f6b47);
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.careStreakDays {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.careStreakDay {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.careStreakDayDot {
+  display: block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--theme-raised, #f5f3ef);
+  box-shadow: inset 0 0 0 1px var(--theme-border, #e5e5df);
+}
+
+.careStreakDayLabel {
+  color: var(--theme-muted, #686c66);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.careStreakDay.is-on-time .careStreakDayDot {
+  background: #5f9e6e;
+  box-shadow: none;
+}
+
+.careStreakDay.is-late .careStreakDayDot {
+  background: #d3a23c;
+  box-shadow: none;
+}
+
+.careStreakDay.is-skipped .careStreakDayDot {
+  background: #c76a5f;
+  box-shadow: none;
+}
+
+.careStreakDay.is-planned .careStreakDayDot {
+  background: var(--theme-accent-soft, #e9efea);
+  box-shadow: inset 0 0 0 1px var(--theme-accent, #7fd1a0);
+}
+
+.careStreakDay.is-today .careStreakDayLabel {
+  color: var(--theme-text, #2d2d2d);
+}
+
+.careStreakDay.is-today .careStreakDayDot {
+  outline: 2px solid var(--theme-text, #2d2d2d);
+  outline-offset: 2px;
+}
+
+.careStreakProgress {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--theme-raised, #f5f3ef);
+}
+
+.careStreakProgressFill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #7fd1a0, #3f8b5c);
+}
+
+.careStreakBreak {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.careStreakFreeze {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: var(--theme-raised);
+}
+
+.careStreakFreezeText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.careStreakFreezeTitle {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+
+.careStreakFreezeText p:last-child {
+  margin: 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.careStreakFreezeButton {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #5c7463;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.careStreakFreezeButton:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.careStreakFreezeButton:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.careStreakNotice {
+  margin: 8px 0 0;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.careStreakRecap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--theme-accent-soft, #e9efea);
+}
+
+.careStreakRecapHeader {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+
+.careStreakRecapHeader h3 {
+  margin: 0;
+  color: inherit;
+  font-size: var(--font-size-sm, 14px);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.careStreakRecapDate {
+  color: var(--theme-muted, #686c66);
+  font-size: var(--font-size-xs, 12px);
+  font-weight: 500;
+}
+
+.careStreakRecapBody {
+  margin: 0;
+  color: var(--theme-text, #2d2d2d);
+  font-size: var(--font-size-sm, 14px);
+  line-height: 1.5;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+@media (min-width: 1024px) {
+  .homePageGrid > .careStreakCard {
+    grid-area: streak;
+  }
+}
+
+@media (max-width: 420px) {
+  .careStreakCard {
+    padding: 14px;
+  }
+
+  .careStreakCurrent {
+    font-size: var(--font-size-sm, 14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .careStreakProgressFill {
+    transition: none;
+  }
+}

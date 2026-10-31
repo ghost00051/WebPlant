@@ -17,13 +17,42 @@ import eye from '../../assets/eye.svg'
 import fingerprint from '../../assets/fingerprint.svg'
 import user from '../../assets/user.svg'
 import shieldcheck from '../../assets/shield-check.svg'
+import sparkles from '../../assets/sparkles.svg'
 import ThemedIcon from '../ThemedIcon/ThemedIcon'
 import { loginWithPasskey } from '../../utils/passkey.js'
 import { API_URL } from '../../utils/api.js'
+import { trackEvent } from '../../utils/productEvents.js'
+import {
+  clearGuestChatHistory,
+  countGuestChatAnswers,
+  readGuestChatHistory,
+  readGuestLinkResult
+} from '../../utils/guestChat.js'
+import {
+  buildOnboardingAddPlantPath,
+  savePlantCountPreset
+} from '../../utils/registrationOnboarding.js'
+import { readWantedPlants } from '../../utils/gardenHandoff.js'
+import RegistrationOnboarding from './registrationOnboarding.jsx'
+import {
+  clearShareToken,
+  readShareToken,
+  readUtmShareToken
+} from '../../utils/gardenShare.js'
 import { detectTimeZone } from '../../utils/timeZone.js'
 import personalDataDocument from '../../../document/soglasieNaObrabotkuPD.pdf'
 import privacyPolicyDocument from '../../../document/PrivacyPolicy.pdf'
 import termsDocument from '../../../document/UserAgreementTemplate.pdf'
+
+function formatAnswersCount (count) {
+  const value = Math.abs(Number(count)) || 0
+  const mod100 = value % 100
+  const mod10 = value % 10
+  if (mod100 >= 11 && mod100 <= 14) return `${value} ответов`
+  if (mod10 === 1) return `${value} ответ`
+  if (mod10 >= 2 && mod10 <= 4) return `${value} ответа`
+  return `${value} ответов`
+}
 
 async function getResponseMessage (response, fallback) {
   try {
@@ -72,6 +101,13 @@ function Registration ({ initialMode = 'login' }) {
   const [registerErrorField, setRegisterErrorField] = useState('')
   const [loginAttempted, setLoginAttempted] = useState(false)
   const [registerAttempted, setRegisterAttempted] = useState(false)
+  const [guestChatAnswers, setGuestChatAnswers] = useState(() =>
+    countGuestChatAnswers(readGuestChatHistory())
+  )
+  const [carriedChatAnswers, setCarriedChatAnswers] = useState(0)
+  const [guestChatLinked, setGuestChatLinked] = useState(null)
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [wantedPlantsCount] = useState(() => readWantedPlants().length)
   const loginEmailRef = useRef(null)
   const loginPasswordRef = useRef(null)
   const registerNameRef = useRef(null)
@@ -132,6 +168,43 @@ function Registration ({ initialMode = 'login' }) {
     checkAuth()
     return () => controller.abort()
   }, [navigate])
+
+  const applyGuestLinkResult = payload => {
+    const result = readGuestLinkResult(payload)
+    const chatTransferred =
+      result.linked && (!result.chatCountKnown || result.chatMessages > 0)
+    setGuestChatLinked(chatTransferred)
+    if (chatTransferred) {
+      clearGuestChatHistory()
+      setGuestChatAnswers(0)
+    }
+    return result
+  }
+
+  const finishOnboarding = ({ preset, openChat, transferWanted, skip } = {}) => {
+    if (preset) savePlantCountPreset(preset)
+    setShowOnboarding(false)
+
+    if (skip) {
+      navigate('/home', { replace: true })
+      return
+    }
+
+    if (openChat) {
+      navigate('/home', { replace: true, state: { activeTab: 'chat' } })
+      return
+    }
+
+    if (preset || transferWanted) {
+      const handoffQuery = transferWanted ? '?handoff=1' : ''
+      navigate(preset ? buildOnboardingAddPlantPath(preset) : `/add-plant${handoffQuery}`, {
+        replace: true
+      })
+      return
+    }
+
+    navigate('/home', { replace: true })
+  }
 
   const reattachPush = async () => {
     if (!isPushSupported()) return
@@ -246,6 +319,8 @@ function Registration ({ initialMode = 'login' }) {
     }
 
     const normalizedName = name.trim()
+    const shareToken =
+      readShareToken() || readUtmShareToken(window.location.search) || null
     setIsSubmitting(true)
     setFormError('')
     setRegisterErrorField('')
@@ -261,7 +336,8 @@ function Registration ({ initialMode = 'login' }) {
           marketingConsent,
           name: normalizedName,
           rememberMe,
-          timezone: detectTimeZone()
+          timezone: detectTimeZone(),
+          ...(shareToken ? { shareToken } : {})
         }),
         credentials: 'include'
       })
@@ -277,8 +353,16 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
+      const payload = await response.json().catch(() => ({}))
+      trackEvent('register', { method: 'password' })
+      clearShareToken()
+
+      const answersCarried = guestChatAnswers
+      applyGuestLinkResult(payload)
+
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
-      navigate('/home', { replace: true })
+      setCarriedChatAnswers(answersCarried)
+      setShowOnboarding(true)
     } catch (error) {
       console.error('Ошибка регистрации:', error)
       setFormError(
@@ -323,6 +407,8 @@ function Registration ({ initialMode = 'login' }) {
         )
       }
 
+      const payload = await response.json().catch(() => ({}))
+      applyGuestLinkResult(payload)
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
@@ -339,7 +425,8 @@ function Registration ({ initialMode = 'login' }) {
     setIsPasskeyLoginLoading(true)
     setFormError('')
     try {
-      await loginWithPasskey(emailEntr.trim(), rememberMe)
+      const payload = await loginWithPasskey(emailEntr.trim(), rememberMe)
+      applyGuestLinkResult(payload)
       await waitAtMost(reattachPush(), PUSH_REATTACH_TIMEOUT_MS)
       navigate('/home', { replace: true })
     } catch (error) {
@@ -795,28 +882,41 @@ function Registration ({ initialMode = 'login' }) {
                     </a>
                     .
                   </p>
-                  <label className='consentOption'>
-                    <input
-                      type='checkbox'
-                      checked={marketingConsent}
-                      onChange={event => setMarketingConsent(event.target.checked)}
-                    />
-                    <span>
-                      Хочу получать письма о растениях и новостях
-                    </span>
-                  </label>
-                  <p className='consentPolicyNotice'>
-                    Необязательно: согласие на маркетинговые письма отдельное.
-                    Отписаться можно в один клик в любом письме. Подробнее — в{' '}
-                    <a
-                      href={privacyPolicyDocument}
-                      target='_blank'
-                      rel='noreferrer'
-                    >
-                      Политике
-                    </a>
-                    .
-                  </p>
+                  <div className='marketingConsent'>
+                    <div className='marketingConsentHead'>
+                      <img src={sparkles} alt='' />
+                      <div>
+                        <strong>Итоги недели и советы по уходу</strong>
+                        <p className='marketingConsentBenefit'>
+                          Раз в неделю пришлём, что полито и что пропущено, и
+                          один совет по вашим растениям. Без спама — отписка в
+                          один клик.
+                        </p>
+                      </div>
+                    </div>
+                    <label className='consentOption marketingConsentOption'>
+                      <input
+                        type='checkbox'
+                        checked={marketingConsent}
+                        onChange={event =>
+                          setMarketingConsent(event.target.checked)
+                        }
+                      />
+                      <span>Да, присылайте итоги недели и советы</span>
+                    </label>
+                    <p className='consentPolicyNotice'>
+                      Необязательно: зарегистрироваться можно и без этого
+                      согласия. Отписаться можно в любом письме — подробнее в{' '}
+                      <a
+                        href={privacyPolicyDocument}
+                        target='_blank'
+                        rel='noreferrer'
+                      >
+                        Политике
+                      </a>
+                      .
+                    </p>
+                  </div>
                 </div>
                 {formError && (
                   <p id='registrationFormError' className='formError' role='alert'>
@@ -832,6 +932,20 @@ function Registration ({ initialMode = 'login' }) {
                   {isSubmitting ? 'Создаём аккаунт...' : 'Зарегистрироваться'}
                 </button>
               </form>
+
+              {guestChatAnswers > 0 && (
+                <div className='registrationCarryNotice'>
+                  <img src={sparkles} alt='' />
+                  <div>
+                    <strong>Ваши вопросы и диагноз сохранятся</strong>
+                    <p>
+                      {formatAnswersCount(guestChatAnswers)} из гостевого чата
+                      остаются на этом устройстве. После входа перенесём их в
+                      аккаунт, если сервер подтвердит перенос.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className='securityTransfer'>
                 <img src={shieldcheck} alt='' />
@@ -852,6 +966,14 @@ function Registration ({ initialMode = 'login' }) {
           </div>
         </div>
       </section>
+      {showOnboarding && (
+        <RegistrationOnboarding
+          carriedChatAnswers={carriedChatAnswers}
+          guestChatLinked={guestChatLinked === true}
+          wantedPlantsCount={wantedPlantsCount}
+          onFinish={finishOnboarding}
+        />
+      )}
     </main>
   )
 }

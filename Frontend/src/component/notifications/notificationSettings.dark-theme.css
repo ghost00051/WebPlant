@@ -1,0 +1,98 @@
+html[data-theme='dark'] .notificationsSettings {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notificationsMode {
+  background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .notificationsModeButton.is-active {
+  background: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notificationsSettingsBadge {
+  background: rgba(127, 209, 160, 0.18);
+  color: #a5c0ae;
+}
+
+html[data-theme='dark'] .notificationsSettingsStatus--warning,
+html[data-theme='dark'] .notificationsSheetStatus--warning,
+html[data-theme='dark'] .notificationsChannelMessage--warning {
+  color: #e8c98c;
+}
+
+html[data-theme='dark'] .notificationsDigestSummary {
+  background: rgba(127, 209, 160, 0.14);
+  color: #a5c0ae;
+}
+
+html[data-theme='dark'] .notificationsDigestCard {
+  background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .notificationsDigestCard.is-unread {
+  border-color: rgba(127, 209, 160, 0.35);
+}
+
+html[data-theme='dark'] .notificationsDigestItem,
+html[data-theme='dark'] .notificationsDigestExpand {
+  background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .notificationsQuickWater {
+  background: #3f7a48;
+  color: #ffffff;
+}
+
+html[data-theme='dark'] .notificationsSheet {
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+  color: var(--theme-text);
+}
+
+html[data-theme='dark'] .notificationsSheetError {
+  background: rgba(179, 38, 30, 0.16);
+  color: #ffb4ab;
+}
+
+html[data-theme='dark'] .notificationsChannel {
+  background: var(--theme-raised);
+  border-color: var(--theme-border);
+}
+
+html[data-theme='dark'] .notificationsChannelIcon {
+  background: var(--theme-surface);
+}
+
+html[data-theme='dark'] .notificationsChannelIcon img {
+  filter: brightness(0) invert(88%);
+}
+
+html[data-theme='dark'] .notificationsChannelButton--primary {
+  background: var(--theme-accent);
+  color: #10301f;
+}
+
+html[data-theme='dark'] .notificationsSwitchTrack {
+  background: #3a3d44;
+}
+
+html[data-theme='dark'] .notificationsSwitchTrack::after {
+  background: #e9ecea;
+}
+
+html[data-theme='dark'] .notificationsSwitch input:checked + .notificationsSwitchTrack {
+  background: #4c9a52;
+}
+
+html[data-theme='dark'] .notificationsQuickStatus--success,
+html[data-theme='dark'] .notificationsChannelMessage--success {
+  color: #a9d6b2;
+}
+
+html[data-theme='dark'] .notificationsQuickStatus--error,
+html[data-theme='dark'] .notificationsChannelMessage--error {
+  color: #ffb4ab;
+}

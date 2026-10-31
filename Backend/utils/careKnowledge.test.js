@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
     buildCareAdviceContext,
+    CARE_PLAN_INSTRUCTIONS,
     buildCarePlanContext,
     buildDefaultCarePlan,
     buildFallbackCareAdvice,
@@ -9,6 +10,8 @@ import {
     normalizeCarePlan,
     parseCareAdvice,
     parseCarePlan,
+    sanitizeCarePlan,
+    summarizeCarePlan,
     validateCareAdvice
 } from './careKnowledge.js'
 
@@ -42,15 +45,51 @@ function candidateCodes(result) {
     return result.candidates.map(item => item.code)
 }
 
-test('осенью предлагает сезонные действия и убирает подкормку', () => {
+function carePlanWith(actionCode, overrides = {}) {
+    return {
+        ...buildDefaultCarePlan({ plant: plant() }),
+        [actionCode]: {
+            minIntervalDays: 14,
+            maxPerMonth: 2,
+            seasons: ['winter', 'spring', 'summer', 'autumn'],
+            ...overrides
+        }
+    }
+}
+
+test('без AI-плана осенью предлагает только универсально безопасные действия', () => {
     const result = getCareCandidates({ plant: plant(), now: NOW, timeZone: TIME_ZONE })
 
     assert.equal(result.seasonInfo.season, 'autumn')
-    assert.ok(candidateCodes(result).includes('spray'))
+    assert.ok(!candidateCodes(result).includes('spray'))
+    assert.ok(!candidateCodes(result).includes('fertilize'))
     assert.ok(candidateCodes(result).includes('pest_check'))
     assert.ok(candidateCodes(result).includes('leaf_clean'))
-    assert.ok(!candidateCodes(result).includes('fertilize'))
-    assert.equal(result.candidates.find(item => item.code === 'spray')?.notificationType, 'care_tip')
+    assert.ok(candidateCodes(result).includes('rotate'))
+    assert.ok(candidateCodes(result).includes('humidity_support'))
+})
+
+test('базовый план не содержит действий, требующих знаний о виде', () => {
+    const plan = buildDefaultCarePlan({ plant: plant() })
+
+    assert.equal(plan.spray, undefined)
+    assert.equal(plan.fertilize, undefined)
+    assert.ok(plan.pest_check)
+    assert.ok(plan.leaf_clean)
+    assert.ok(plan.rotate)
+})
+
+test('явный план растения может разрешить опрыскивание', () => {
+    const result = getCareCandidates({
+        plant: plant(),
+        now: NOW,
+        timeZone: TIME_ZONE,
+        plan: carePlanWith('spray', { seasons: ['autumn', 'winter'] })
+    })
+
+    const spray = result.candidates.find(item => item.code === 'spray')
+    assert.ok(spray)
+    assert.equal(spray.notificationType, 'care_tip')
     assert.equal(result.candidates.find(item => item.code === 'pest_check')?.notificationType, 'care_reminder')
 })
 
@@ -86,7 +125,8 @@ test('после двух опрыскиваний в месяце третье 
         history: [
             advice({ createdAt: new Date('2026-10-03T10:00:00+03:00') }),
             advice({ createdAt: new Date('2026-10-01T10:00:00+03:00') })
-        ]
+        ],
+        plan: carePlanWith('spray')
     })
 
     assert.ok(!candidateCodes(result).includes('spray'))
@@ -98,7 +138,8 @@ test('не предлагает опрыскивание раньше миним
         plant: plant(),
         now: NOW,
         timeZone: TIME_ZONE,
-        history: [advice({ createdAt: new Date('2026-10-09T10:00:00+03:00') })]
+        history: [advice({ createdAt: new Date('2026-10-09T10:00:00+03:00') })],
+        plan: carePlanWith('spray')
     })
 
     assert.ok(!candidateCodes(result).includes('spray'))
@@ -109,7 +150,8 @@ test('предлагает опрыскивание после минималь�
         plant: plant(),
         now: NOW,
         timeZone: TIME_ZONE,
-        history: [advice({ createdAt: new Date('2026-10-04T10:00:00+03:00') })]
+        history: [advice({ createdAt: new Date('2026-10-04T10:00:00+03:00') })],
+        plan: carePlanWith('spray')
     })
 
     assert.ok(candidateCodes(result).includes('spray'))
@@ -135,11 +177,12 @@ test('недавно добавленному растению не предла
     assert.ok(!candidateCodes(result).includes('fertilize'))
 })
 
-test('взрослому растению летом предлагает подкормку', () => {
+test('явный план взрослого растения летом разрешает подкормку', () => {
     const result = getCareCandidates({
         plant: plant(),
         now: new Date('2026-07-15T10:00:00+03:00'),
-        timeZone: TIME_ZONE
+        timeZone: TIME_ZONE,
+        plan: carePlanWith('fertilize', { seasons: ['spring', 'summer'] })
     })
 
     assert.ok(candidateCodes(result).includes('fertilize'))
@@ -198,7 +241,12 @@ test('не путает возраст растения с дозировкой'
 })
 
 test('отклоняет совет с частотой чаще лимита', () => {
-    const candidates = getCareCandidates({ plant: plant(), now: NOW, timeZone: TIME_ZONE }).candidates
+    const candidates = getCareCandidates({
+        plant: plant(),
+        now: NOW,
+        timeZone: TIME_ZONE,
+        plan: carePlanWith('spray')
+    }).candidates
     const result = validateCareAdvice({
         decision: 'recommend',
         actionCode: 'spray',
@@ -353,6 +401,50 @@ test('базовый план не включает опрыскивание д�
 
     assert.equal(plan.spray, undefined)
     assert.equal(plan.humidity_support, undefined)
+})
+
+test('пример плана в промпте не задаёт частое опрыскивание', () => {
+    assert.ok(CARE_PLAN_INSTRUCTIONS.includes('"spray":{"minIntervalDays":14'))
+    assert.ok(!CARE_PLAN_INSTRUCTIONS.includes('"minIntervalDays":3'))
+})
+
+test('sanitizeCarePlan убирает из сохранённого плана действия, запрещённые правилами', () => {
+    const storedPlan = {
+        spray: { minIntervalDays: 14, maxPerMonth: 2, seasons: ['autumn'] },
+        rotate: { minIntervalDays: 14, maxPerMonth: 2, seasons: ['autumn'] }
+    }
+    const fuzzy = plant({ name: 'Фиалка', species: 'Saintpaulia' })
+    const fuzzyResult = getCareCandidates({ plant: fuzzy, now: NOW, timeZone: TIME_ZONE })
+    const cleaned = sanitizeCarePlan(storedPlan, { plant: fuzzy, group: fuzzyResult.group })
+
+    assert.equal(cleaned.spray, undefined)
+    assert.deepEqual(cleaned.rotate, storedPlan.rotate)
+
+    const monstera = plant()
+    const monsteraResult = getCareCandidates({ plant: monstera, now: NOW, timeZone: TIME_ZONE })
+    const kept = sanitizeCarePlan(storedPlan, { plant: monstera, group: monsteraResult.group })
+
+    assert.deepEqual(kept.spray, storedPlan.spray)
+})
+
+test('summarizeCarePlan делит действия на рекомендованные и исключённые', () => {
+    const plan = {
+        spray: { minIntervalDays: 14, maxPerMonth: 0, seasons: [] },
+        leaf_clean: { minIntervalDays: 14, maxPerMonth: 2, seasons: ['winter', 'spring', 'summer', 'autumn'] },
+        fertilize: { minIntervalDays: 14, maxPerMonth: 2, seasons: ['spring', 'summer'] }
+    }
+
+    const autumn = summarizeCarePlan(plan, { season: 'autumn' })
+
+    assert.deepEqual(autumn.avoided, ['Опрыскивание'])
+    assert.ok(autumn.recommended.includes('Протирание листьев'))
+    assert.ok(!autumn.recommended.includes('Подкормка'))
+})
+
+test('sanitizeCarePlan не ломается на некорректном плане', () => {
+    assert.deepEqual(sanitizeCarePlan(null), {})
+    assert.deepEqual(sanitizeCarePlan([]), {})
+    assert.deepEqual(sanitizeCarePlan({ unknown_action: {} }), {})
 })
 
 test('контекст плана содержит жёсткие границы действий', () => {

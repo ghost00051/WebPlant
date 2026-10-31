@@ -136,6 +136,11 @@ export const uploadChatPhoto = multer({
     }
 })
 
+export function validateOptionalChatPhoto(req, res, next) {
+    if (!req.is('multipart/form-data')) return next()
+    return validateChatPhoto(req, res, next)
+}
+
 export function validateChatPhoto(req, res, next) {
     const files = Array.isArray(req.files)
         ? req.files

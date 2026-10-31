@@ -22,8 +22,14 @@ import {
     setRememberedAuth,
     setSessionAuth
 } from '../utils/authTokens.js'
-import { linkGuestDataToUser } from '../utils/linkGuestData.js'
+import {
+    buildGuestLinkSummary,
+    describeGuestLinkSummary,
+    linkGuestDataToUser
+} from '../utils/linkGuestData.js'
 import { sendWelcomeEmailToUser } from '../services/welcomeEmailService.js'
+import { attributeShareSignup } from '../services/gardenShareService.js'
+import { parseShareToken } from '../utils/shareTokens.js'
 import {
     clearGuestTokenCookie,
     getValidGuestToken
@@ -69,7 +75,32 @@ function buildUserPayload(user) {
         role: user.role,
         privilege_level: user.privilege_level,
         timezone: resolveTimeZone(user.timezone),
-        marketing_email_opt_in: user.marketing_email_opt_in === true
+        marketing_email_opt_in: user.marketing_email_opt_in === true,
+        createdAt: user.created_at ?? null
+    }
+}
+
+export async function linkGuestDataAfterAuth(userId, guestToken, source, deps = {}) {
+    if (!guestToken) return buildGuestLinkSummary()
+
+    try {
+        const linked = await linkGuestDataToUser(userId, guestToken, source, undefined, deps)
+        console.log(
+            `🔗 Гостевые данные → аккаунт #${userId} (${source}): ${describeGuestLinkSummary(linked)}`
+        )
+        for (const error of linked.errors) {
+            console.warn(
+                `⚠️ Не удалось перенести часть гостевых данных (${error.step}):`,
+                error.message
+            )
+        }
+        return buildGuestLinkSummary(linked)
+    } catch (error) {
+        console.error(
+            '⚠️ Перенос гостевых данных не удался, но регистрация/вход продолжены:',
+            error?.message || error
+        )
+        return buildGuestLinkSummary()
     }
 }
 
@@ -196,7 +227,8 @@ class UserController {
                 termsAccepted,
                 marketingConsent,
                 rememberMe,
-                timezone
+                timezone,
+                shareToken
             } = req.body || {}
 
             const normalizedEmail = typeof email === 'string' ? normalizeEmail(email) : ''
@@ -227,6 +259,13 @@ class UserController {
             if (timezone !== undefined && timezone !== null && !isValidTimeZone(timezone)) {
                 return res.status(400).json({
                     message: "Некорректный часовой пояс"
+                })
+            }
+
+            const parsedShareToken = parseShareToken(shareToken)
+            if (!parsedShareToken.ok) {
+                return res.status(400).json({
+                    message: "Некорректная ссылка шаринга"
                 })
             }
 
@@ -310,7 +349,6 @@ class UserController {
             const guestToken = getValidGuestToken(req.cookies?.guest_token)
             const ip = req.ip || req.connection.remoteAddress
             const userAgent = req.headers['user-agent']
-
             await UserLegalConsent.create({
                 user_id: user.id,
                 consent_type: 'privacy_policy',
@@ -337,16 +375,12 @@ class UserController {
             }, { transaction })
             console.log('✅ Сохранено пользовательское соглашение')
 
-            if (guestToken) {
-                const linked = await linkGuestDataToUser(
-                    user.id,
-                    guestToken,
-                    'registration_linked',
-                    transaction
-                )
-                console.log(
-                    `Связано гостевых согласий: ${linked.consentCount}, сообщений: ${linked.chatMessageCount}`
-                )
+            if (parsedShareToken.token) {
+                try {
+                    await attributeShareSignup(user.id, parsedShareToken.token, { transaction })
+                } catch (error) {
+                    console.error('⚠️ Не удалось атрибутировать регистрацию из шаринга:', error)
+                }
             }
 
             await transaction.commit()
@@ -360,13 +394,16 @@ class UserController {
             }
             clearGuestTokenCookie(res)
 
+            const guestLink = await linkGuestDataAfterAuth(user.id, guestToken, 'registration_linked')
+
             void sendWelcomeEmailToUser(user).catch(error => {
                 console.error('❌ Не удалось отправить приветственное письмо:', error)
             })
 
             return res.status(201).json({
                 message: 'Регистрация успешна',
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (e) {
             if (transaction && !transaction.finished) {
@@ -417,19 +454,7 @@ class UserController {
             }
 
             const guestToken = getValidGuestToken(req.cookies?.guest_token)
-            if (guestToken) {
-                const linked = await sequelize.transaction(transaction =>
-                    linkGuestDataToUser(
-                        user.id,
-                        guestToken,
-                        'login_linked',
-                        transaction
-                    )
-                )
-                console.log(
-                    `Связано гостевых согласий: ${linked.consentCount}, сообщений: ${linked.chatMessageCount} (вход)`
-                )
-            }
+            const guestLink = await linkGuestDataAfterAuth(user.id, guestToken, 'login_linked')
 
             await revokeAuthTokens(req.cookies)
             if (rememberMe === true) {
@@ -441,7 +466,8 @@ class UserController {
 
             return res.json({
                 message: 'Вход выполнен успешно',
-                user: buildUserPayload(user)
+                user: buildUserPayload(user),
+                guestLink
             })
         } catch (e) {
             console.error("❌ Ошибка входа:", e)
@@ -594,9 +620,6 @@ class UserController {
                             : 7
                         let next = zonedDayHourAfter(plant.next_watering_at, 0, hour, nextTimeZone)
                         if (!next || !Number.isFinite(next.getTime())) continue
-
-
-
 
                         if (next.getTime() <= Date.now()) {
                             next = advanceZonedWatering(next, interval, hour, nextTimeZone, new Date())

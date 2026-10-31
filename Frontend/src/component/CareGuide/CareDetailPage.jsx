@@ -2,6 +2,8 @@ import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
+import WateringCalculator from './WateringCalculator.jsx'
+import PhotoDiagnosisCta from './PhotoDiagnosisCta.jsx'
 import { getArticleBySlug } from '../../data/careArticles.js'
 import {
     CARE_PATH,
@@ -15,6 +17,9 @@ const MONTHS_GENITIVE = [
     'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ]
+
+const CALCULATOR_SLUG = 'kak-chasto-polivat'
+const PHOTO_DIAGNOSIS_SLUG = 'pochemu-zhelteyut-listya'
 
 function formatUpdated(iso) {
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso ?? '')
@@ -77,6 +82,10 @@ function CareDetailPage({ slug }) {
                     )}
                 </section>
             ))}
+
+            {article.slug === CALCULATOR_SLUG && <WateringCalculator />}
+
+            {article.slug === PHOTO_DIAGNOSIS_SLUG && <PhotoDiagnosisCta />}
 
             {faq.length > 0 && (
                 <section className='contentSection' aria-labelledby='articleFaqTitle'>

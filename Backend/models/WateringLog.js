@@ -57,7 +57,8 @@ const WateringLog = sequelize.define("watering_log", {
     updatedAt: false,
     indexes: [
         { name: 'idx_watering_log_plant', fields: ['plant_id', 'action_at'] },
-        { name: 'idx_watering_log_user', fields: ['user_id', 'action_at'] }
+        { name: 'idx_watering_log_user', fields: ['user_id', 'action_at'] },
+        { name: 'idx_watering_log_user_action', fields: ['user_id', 'action', 'action_at'] }
     ]
 })
 

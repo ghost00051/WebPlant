@@ -1,11 +1,16 @@
 .headerOfHOmePagw {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   box-sizing: border-box;
-  gap: 16px;
+  gap: 10px;
   padding: 0;
   margin-bottom: 20px;
+}
+
+.nameHeaderOfHomePage {
+  flex: 1;
+  min-width: 0;
 }
 
 .desktopDashboardHeader {
@@ -77,38 +82,154 @@
   line-height: 1.2;
 }
 
-.headerNotificiotinsOfHomePAge {
-  display: flex;
-  justify-content: space-between;
+.homePageWatering {
+  min-width: 0;
+}
+
+.wateringTabs {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  margin: 2px 0 14px;
+  border-radius: 15px;
+  background: #f0f3ee;
+  isolation: isolate;
+}
+
+.wateringTabsIndicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  z-index: 0;
+  width: calc((100% - 16px) / 3);
+  border-radius: 11px;
+  background: #ffffff;
+  box-shadow: 0 2px 8px rgba(45, 61, 50, 0.1), 0 1px 2px rgba(45, 61, 50, 0.06);
+  transform: translateX(0);
+  transition: transform 0.34s cubic-bezier(0.34, 1.12, 0.64, 1);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.wateringTabsIndicator.is-care {
+  transform: translateX(calc(100% + 4px));
+}
+
+.wateringTabsIndicator.is-missed {
+  transform: translateX(calc(200% + 8px));
+}
+
+.wateringTab {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 0;
-}
-
-.headerNotificiotinsOfHomePAge p {
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 4px;
+  border: 0;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--theme-muted);
   font-family: 'Inter', sans-serif;
-  font-size: var(--font-size-base);
+  font-size: clamp(11.5px, 3.1vw, 13px);
   font-weight: 600;
-  font-style: normal;
-  color: #2d2d2d;
-  margin: 2% 0;
-}
-
-.headerNotificiotinsOfHomePAge button {
-  font-family: 'Inter', sans-serif;
-  font-size: var(--font-size-md);
-  font-weight: 500;
-  font-style: normal;
-  color: var(--color-white-team);
-  margin: 2% 0;
-  background: none;
-  border: none;
+  line-height: 1.15;
   cursor: pointer;
-  transition: opacity 0.15s ease;
+  transition: color 0.2s ease;
 }
 
-.headerNotificiotinsOfHomePAge button:hover {
-  opacity: 0.7;
+.wateringTab:hover {
+  color: var(--theme-accent-text);
+}
+
+.wateringTab--missed:hover {
+  color: var(--theme-danger);
+}
+
+.wateringTab[aria-selected='true'],
+.wateringTab[aria-selected='true']:hover {
+  color: var(--theme-accent-text);
+}
+
+.wateringTab--missed[aria-selected='true'],
+.wateringTab--missed[aria-selected='true']:hover {
+  color: var(--theme-danger);
+}
+
+.wateringTab:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.wateringTabLabel {
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: break-word;
+}
+
+.wateringTabBadge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.wateringTabBadge--care {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+.wateringTabBadge--empty {
+  background: #e5eae3;
+  color: var(--theme-muted);
+}
+
+.wateringPanel {
+  min-width: 0;
+}
+
+.wateringPanelContent {
+  animation: wateringPanelIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes wateringPanelIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wateringTabsIndicator,
+  .wateringTabBadge {
+    transition-duration: 0.01ms !important;
+  }
+
+  .wateringPanelContent {
+    animation: none;
+  }
 }
 
 
@@ -202,6 +323,17 @@
   height: 12px;
 }
 
+.watering-badge--overdue {
+  background-color: var(--theme-danger-soft);
+  color: var(--theme-danger);
+}
+
+
+.wateringMissedList {
+  display: flex;
+  flex-direction: column;
+}
+
 
 .plant-empty {
   font-family: 'Inter', sans-serif;
@@ -219,8 +351,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   background-color: #7FD1A0;
   border: none;
@@ -983,5 +1115,128 @@ html[data-theme='dark'] .offScheduleWaterButton.is-pouring {
   .offScheduleWaterButton.is-pouring::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+
+.plantOpenLink {
+  color: inherit;
+  text-decoration: none;
+  border-radius: 12px;
+}
+
+.plantOpenLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.homePageAllPlantsLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: var(--font-size-sm);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.homePageAllPlantsLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.desktopAllPlantsLink {
+  display: none;
+}
+
+.homePageNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.homePageNotice>span:first-child {
+  min-width: 0;
+}
+
+.homePageNoticeDismiss {
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.homePageNoticeDismiss:hover {
+  background: rgba(45, 61, 50, 0.08);
+}
+
+.homePageNoticeDismiss:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.plantRender--first {
+  border-color: var(--theme-accent-text);
+  box-shadow: 0 6px 18px rgba(45, 61, 50, 0.08);
+}
+
+.watering-badge--first {
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+.check-button--first {
+  width: auto;
+  height: 34px;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 12px;
+}
+
+.check-button--first img {
+  width: 16px;
+  height: 16px;
+}
+
+.check-button--first span {
+  display: inline;
+  color: var(--theme-on-accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.check-button--first:disabled {
+  opacity: 0.75;
+}
+
+@media (max-width: 359px) {
+  .check-button--first span {
+    display: none;
   }
 }

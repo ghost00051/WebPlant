@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import NotificationPrompt from '../NotificationPrompt/NotificationPrompt.jsx'
 import {
@@ -9,12 +9,12 @@ import {
     shouldOfferPushPrompt,
     syncPushSubscription
 } from '../../utils/pushNotifications.js'
+import { derivePushPromptDelay } from '../../utils/onboarding.js'
 import Tools from '../tools/tools.jsx'
 import MobileNav from '../tools/MobileNav.jsx'
 import HomePage from '../homePage/homePage.jsx'
 import Chat from '../chat/chat.jsx'
 import { useChatSessions } from '../chat/useChatSessions.js'
-import AiTicker from '../aiTicker/aiTicker.jsx'
 import HistoryChat from '../historyChat/historyChat.jsx'
 import Profile from '../profile/profile.jsx'
 import PwaInstallHint from '../PwaInstallHint/PwaInstallHint.jsx'
@@ -65,6 +65,11 @@ function Home() {
     const [authError, setAuthError] = useState('')
     const [authAttempt, setAuthAttempt] = useState(0)
     const [showPrompt, setShowPrompt] = useState(false)
+    const [pushPromptReady, setPushPromptReady] = useState(false)
+    const [collection, setCollection] = useState({
+        plantCount: 0,
+        hasWateringHistory: false
+    })
     const requestedTab = location.state?.activeTab
     const [activeTab, setActiveTab] = useState(
         requestedTab === 'profile' || requestedTab === 'chat' ? requestedTab : 'home'
@@ -73,7 +78,6 @@ function Home() {
 
     useEffect(() => {
         let cancelled = false
-        let promptTimer = null
 
         const checkAuth = async () => {
             let userData
@@ -144,11 +148,7 @@ function Home() {
                     return
                 }
 
-                promptTimer = setTimeout(() => {
-                    if (cancelled) return
-                    markPushPromptShown()
-                    setShowPrompt(true)
-                }, 2000)
+                setPushPromptReady(true)
                 setLoading(false)
             } catch (error) {
                 console.error('❌ Ошибка настройки уведомлений:', error)
@@ -160,13 +160,54 @@ function Home() {
 
         return () => {
             cancelled = true
-            if (promptTimer) clearTimeout(promptTimer)
         }
     }, [navigate, authAttempt])
+
+    const handleCollectionSummary = useCallback(summary => {
+        const plantCount = Number(summary?.plantCount) || 0
+        const hasWateringHistory = Boolean(summary?.hasWatering)
+
+        setCollection(current =>
+            current.plantCount === plantCount &&
+            current.hasWateringHistory === hasWateringHistory
+                ? current
+                : { plantCount, hasWateringHistory }
+        )
+    }, [])
+
+    const requestPushPrompt = useCallback(() => {
+        if (!shouldOfferPushPrompt()) return false
+        setShowPrompt(true)
+        return true
+    }, [])
+
+    useEffect(() => {
+        if (!user || !pushPromptReady) return undefined
+
+        const delay = derivePushPromptDelay({
+            plantCount: collection.plantCount,
+            hasWateringHistory: collection.hasWateringHistory
+        })
+        if (delay === null) return undefined
+
+        const timer = window.setTimeout(() => {
+            if (!shouldOfferPushPrompt()) return
+            markPushPromptShown()
+            setShowPrompt(true)
+        }, delay)
+
+        return () => window.clearTimeout(timer)
+    }, [
+        user,
+        pushPromptReady,
+        collection.plantCount,
+        collection.hasWateringHistory
+    ])
 
     const retryAuth = () => {
         setAuthError('')
         setShowPrompt(false)
+        setPushPromptReady(false)
         setLoading(true)
         setAuthAttempt(value => value + 1)
     }
@@ -209,14 +250,23 @@ function Home() {
     }
     if (!user) return null
 
+    const renderHomePage = () => (
+        <HomePage
+            user={user}
+            onTabChange={setActiveTab}
+            onCollectionSummary={handleCollectionSummary}
+            onRequestPushPrompt={requestPushPrompt}
+        />
+    )
+
     const renderScreen = () => {
         switch (activeTab) {
             case 'home':
-                return <HomePage user={user} onTabChange={setActiveTab} />
+                return renderHomePage()
             case 'profile':
                 return <Profile />
             default:
-                return <HomePage user={user} onTabChange={setActiveTab} />
+                return renderHomePage()
         }
     }
 
@@ -272,7 +322,6 @@ function Home() {
         <div className="gofOfMain">
             <AppHeader user={user} onProfileClick={() => setActiveTab('profile')} />
             <MobileNav onTabChange={handleTabChange} activeTab={activeTab} />
-            {activeTab === 'home' && <AiTicker />}
             <main key={activeTab} className="screenTransition">
                 {activeTab === 'home' && <PwaInstallHint />}
                 {renderScreen()}

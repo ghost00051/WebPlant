@@ -1,0 +1,1257 @@
+.homePageSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
+.homePageSeasonBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 5px 10px;
+  border-radius: 12px;
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.homePageSeasonBadgeIcon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.homePageSeasonBadge span {
+  min-width: 0;
+}
+
+.insightButton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.insightButton img {
+  width: 16px;
+  height: 16px;
+}
+
+.insightButton:hover {
+  background: var(--theme-raised);
+}
+
+.insightButton:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.insightButton.is-open {
+  border-color: var(--theme-accent-text);
+  background: var(--theme-accent-soft);
+}
+
+.insightButton--mobile {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  align-self: flex-start;
+}
+
+.insightButton--mobile .insightButtonLabel {
+  display: none;
+}
+
+.insightBadge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--theme-contrast, #2d2d2d);
+  box-shadow: 0 0 0 2px var(--theme-surface);
+}
+
+.insightButton--mobile .insightBadge {
+  top: 9px;
+  right: 9px;
+}
+
+.homeInsightPanel {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 18px;
+  background: var(--theme-surface);
+  animation: homeInsightIn 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes homeInsightIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.homeInsightHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.homeInsightEyebrow {
+  margin: 0 0 2px;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.homeInsightHeader h2 {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.homeInsightHeaderSide {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.homeInsightDate {
+  color: var(--theme-muted);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.homeInsightClose {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.homeInsightClose:hover {
+  background: var(--theme-raised);
+}
+
+.homeInsightClose:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.homeInsightList {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.homeInsightItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--theme-raised);
+}
+
+.homeInsightItemTitle {
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.homeInsightItemText {
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.daySummary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 18px;
+  background: var(--theme-accent-soft);
+  box-sizing: border-box;
+}
+
+.daySummaryIcon {
+  display: none;
+  flex: 0 0 auto;
+}
+
+.daySummaryIcon img {
+  width: 22px;
+  height: 22px;
+}
+
+.daySummaryText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.daySummaryText h2 {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.daySummaryText p {
+  margin: 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.daySummaryHint {
+  display: none;
+}
+
+.daySummaryButton {
+  flex: 0 0 auto;
+  min-width: 84px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 13px;
+  background: #5c7463;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.15s ease, opacity 0.2s ease;
+}
+
+.daySummaryButton:hover:not(:disabled) {
+  background: #6f8376;
+}
+
+.daySummaryButton:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.daySummaryButton:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.daySummaryButton:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.plantCardActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+}
+
+.plantCareButton {
+  min-height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.plantCareButton:hover {
+  background: var(--theme-raised);
+}
+
+.plantCareButton:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.firstDayCard {
+  margin: 0 0 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 20px;
+  background: var(--theme-surface);
+  box-shadow: 0 4px 14px rgba(45, 61, 50, 0.05);
+}
+
+.firstDayHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.firstDayEyebrow {
+  margin: 0 0 2px;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.firstDayHeader h2 {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.firstDayDismiss {
+  display: grid;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--theme-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.firstDayDismiss:hover {
+  background: var(--theme-raised);
+}
+
+.firstDayDismiss:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.firstDayBody {
+  display: flex;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.firstDayBody > img,
+.firstDayPhotoFallback {
+  flex: 0 0 auto;
+  width: 60px;
+  height: 60px;
+  border-radius: 16px;
+  object-fit: cover;
+}
+
+.firstDayPhotoFallback {
+  background: var(--theme-accent-soft);
+}
+
+.firstDayFacts {
+  display: grid;
+  flex: 1;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.firstDayFact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.firstDayFactTitle {
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.firstDayFactText {
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12.5px;
+  font-weight: 450;
+  line-height: 1.45;
+}
+
+.firstDayLink {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.firstDayLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.missedCard {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-danger-soft);
+  border-radius: 20px;
+  background: var(--theme-surface);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+}
+
+.missedCardLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  border-radius: 12px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.missedCardLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.missedCardLink > img,
+.missedCardPhotoFallback {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.missedCardPhotoFallback {
+  background: var(--theme-danger-soft);
+}
+
+.missedCardText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.missedCardName {
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.missedCardQuestion {
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.missedCardBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: fit-content;
+  margin-top: 2px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  background: var(--theme-danger-soft);
+  color: var(--theme-danger);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 650;
+}
+
+.missedCardBadge img {
+  width: 11px;
+  height: 11px;
+}
+
+.missedCardActions {
+  flex: 0 0 auto;
+}
+
+.missedCardWaterLater {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 13px;
+  background: #5c7463;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+
+.missedCardWaterLater:hover:not(:disabled) {
+  background: #6f8376;
+}
+
+.missedCardWaterLater:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.missedCardWaterLater:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.careTodayList {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.careTaskCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 16px;
+  background: var(--theme-surface);
+}
+
+.careTaskMain {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.careTaskTitle {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.careTaskMeta {
+  margin: 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.careTaskActions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.careTaskSheetButton {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.careTaskSheetButton:hover {
+  background: var(--theme-raised);
+}
+
+.careTaskSheetButton:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.careTaskMark {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  background: #5c7463;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.careTaskMark:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.careTaskMark:focus-visible,
+.careTaskCancel:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.careTaskForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.careTaskField {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.careTaskField input {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+}
+
+.careTaskChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.careTaskChips button {
+  min-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--theme-border);
+  border-radius: 999px;
+  background: var(--theme-surface);
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 550;
+  cursor: pointer;
+}
+
+.careTaskChips button.is-active {
+  border-color: var(--theme-accent-text);
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+}
+
+.careTaskFormActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.careTaskCancel {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.weekSummaryCard {
+  padding: 14px 16px;
+  border: 1px solid var(--theme-border);
+  border-radius: 20px;
+  background: var(--theme-surface);
+  box-sizing: border-box;
+}
+
+.weekSummaryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.weekSummaryHeader h2 {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.weekSummaryDates {
+  margin: 2px 0 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.weekSummaryIcon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.weekSummaryStats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.weekSummaryStat {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: var(--theme-raised);
+  text-align: left;
+}
+
+.weekSummaryStat strong {
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.weekSummaryStat span {
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 550;
+}
+
+.weekSummaryExtra {
+  margin: 8px 0 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.weekSummaryStatus {
+  margin: 10px 0 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.plantDaySheetOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 220;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0;
+  background: rgba(20, 30, 22, 0.45);
+}
+
+.plantDaySheet {
+  width: 100%;
+  max-height: 88vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 18px 16px calc(18px + env(safe-area-inset-bottom, 0px));
+  border-radius: 24px 24px 0 0;
+  background: var(--theme-surface);
+  box-shadow: 0 -10px 34px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+  animation: plantDaySheetIn 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes plantDaySheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.plantDaySheetHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.plantDaySheetHeading {
+  display: flex;
+  gap: 12px;
+  min-width: 0;
+}
+
+.plantDaySheetHeading > img,
+.plantDaySheetPhotoFallback {
+  flex: 0 0 auto;
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  object-fit: cover;
+}
+
+.plantDaySheetPhotoFallback {
+  background: var(--theme-accent-soft);
+}
+
+.plantDaySheetEyebrow {
+  margin: 0 0 2px;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.plantDaySheetHeader h2 {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.plantDaySheetSubtitle {
+  margin: 3px 0 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.plantDaySheetClose {
+  display: grid;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--theme-raised);
+  color: var(--theme-text);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.plantDaySheetClose:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 1px;
+}
+
+.plantDaySheetTasks {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plantDayTask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--theme-raised);
+}
+
+.plantDayTaskText {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.plantDayTaskTitle {
+  margin: 0;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.plantDayTaskDescription {
+  margin: 0;
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.plantDayTaskAction {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: #5c7463;
+  color: #ffffff;
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.plantDayTaskAction:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.plantDayTaskAction:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+.plantDaySheetEmpty {
+  margin: 14px 0 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--theme-raised);
+  color: var(--theme-muted);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.plantDaySheetNotice {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--theme-accent-soft);
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.plantDaySheetFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.plantDaySheetMore {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--theme-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--theme-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.plantDaySheetLink {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--theme-accent-text);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.plantDaySheetMore:focus-visible,
+.plantDaySheetLink:focus-visible {
+  outline: 2px solid var(--theme-focus-ring);
+  outline-offset: 2px;
+}
+
+@media (min-width: 420px) {
+  .daySummaryIcon {
+    display: inline-flex;
+  }
+
+  .daySummaryHint {
+    display: block;
+  }
+}
+
+@media (min-width: 1024px) {
+  .homePageSidebar {
+    gap: 16px;
+  }
+
+  .homePageGrid {
+    grid-template-columns: minmax(350px, 0.92fr) minmax(0, 1.08fr);
+    grid-template-areas:
+      "sidebar watering"
+      "sidebar streak"
+      "sidebar off-schedule"
+      "sidebar assistant";
+  }
+
+  .mini-calendar {
+    grid-area: auto;
+  }
+
+  .homePageSidebar {
+    grid-area: sidebar;
+  }
+
+  .homePageSeasonBadge {
+    display: none;
+  }
+
+  .desktopSeasonBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: var(--theme-accent-soft);
+    color: var(--theme-accent-text);
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .desktopSeasonBadgeIcon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .insightButton--mobile {
+    display: none;
+  }
+
+  .insightButton {
+    min-height: 38px;
+  }
+
+  .daySummary {
+    gap: 14px;
+    margin-bottom: 12px;
+    padding: 12px 16px;
+  }
+
+  .daySummaryText h2 {
+    font-size: 14px;
+  }
+
+  .daySummaryButton {
+    min-width: 96px;
+    min-height: 40px;
+  }
+
+  .plantCardActions {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .plantCareButton {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 11.5px;
+  }
+
+  .firstDayCard {
+    padding: 16px 18px;
+  }
+
+  .weekSummaryCard {
+    padding: 16px 18px;
+  }
+
+  .careTaskCard {
+    padding: 12px 16px;
+  }
+
+  .missedCard {
+    padding: 12px 16px;
+  }
+
+  .plantDaySheetOverlay {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .plantDaySheet {
+    width: min(520px, calc(100vw - 48px));
+    max-height: 82vh;
+    border-radius: 22px;
+    padding: 20px 22px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
+    animation-name: plantDaySheetInDesktop;
+  }
+
+  @keyframes plantDaySheetInDesktop {
+    from {
+      opacity: 0;
+      transform: translateY(10px) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .homeInsightPanel {
+    padding: 16px 18px;
+  }
+}
+
+@media (max-width: 1023px) {
+  .desktopSeasonBadge {
+    display: none;
+  }
+}
+
+@media (max-width: 374px) {
+  .daySummary {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .daySummaryButton {
+    width: 100%;
+  }
+
+  .missedCard {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .missedCardWaterLater {
+    width: 100%;
+  }
+
+  .careTaskCard {
+    flex-direction: column;
+  }
+
+  .careTaskActions {
+    justify-content: flex-end;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .homeInsightPanel,
+  .plantDaySheet {
+    animation: none;
+  }
+
+  .daySummaryButton,
+  .missedCardWaterLater,
+  .insightButton {
+    transition-duration: 0.01ms !important;
+  }
+}

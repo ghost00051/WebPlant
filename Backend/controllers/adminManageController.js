@@ -148,7 +148,8 @@ function mapUserRow(row) {
         photos: toInteger(row.photos),
         chatMessages: toInteger(row.chat_messages),
         pushSubscriptions: toInteger(row.push_subscriptions),
-        lastActivityAt: row.last_activity_at
+        lastActivityAt: row.last_activity_at,
+        lastVisitAt: row.last_visit_at || null
     }
 }
 
@@ -229,6 +230,7 @@ class AdminManageController {
         this.db = deps.db || sequelize
         this.select = deps.select || select
         this.hasSiteVisitDays = deps.hasSiteVisitDays || hasSiteVisitDays
+        this.hasUsersCreatedAt = deps.hasUsersCreatedAt || hasUsersCreatedAt
         this.removePlantPhotoFiles = deps.removePlantPhotoFiles || removePlantPhotoFiles
         this.removeChatPhotoFiles = deps.removeChatPhotoFiles || removeChatPhotoFiles
         this.collectChatPhotoUrls = deps.collectChatPhotoUrls || collectChatPhotoUrls
@@ -252,9 +254,23 @@ class AdminManageController {
         const order = parseOrder(req.query.order, 'desc')
 
         try {
-            const hasCreatedAt = await hasUsersCreatedAt()
+            const hasCreatedAt = await this.hasUsersCreatedAt()
             const createdExpr = userCreatedAtSql(hasCreatedAt)
             const sortColumn = sortKey === 'created' ? createdExpr : USER_SORT_COLUMNS[sortKey]
+            const visitsTracked = await this.hasSiteVisitDays()
+
+            // Заход на сайт — тоже активность: учитываем последний визит из
+            // site_visit_days, если таблица есть. Без неё SQL остаётся прежним.
+            const visitJoin = visitsTracked
+                ? `LEFT JOIN (
+                    SELECT user_id, max(updated_at) AS last_at
+                    FROM site_visit_days WHERE user_id IS NOT NULL GROUP BY user_id
+                ) sv ON sv.user_id = u.id`
+                : ''
+            const visitColumn = visitsTracked ? ', sv.last_at AS last_visit_at' : ''
+            const activityExpr = visitsTracked
+                ? 'GREATEST(pl.last_at, wl.last_at, ch.last_at, sv.last_at)'
+                : 'GREATEST(pl.last_at, wl.last_at, ch.last_at)'
 
             const params = []
             let where = ''
@@ -268,7 +284,7 @@ class AdminManageController {
             const limitIndex = params.length + 1
             const offsetIndex = params.length + 2
 
-            const rows = await select(`
+            const rows = await this.select(`
                 SELECT u.id, u.email, u.name, u.username, u.phone, u.role, u.privilege_level,
                        ${createdExpr} AS created_at,
                        COALESCE(pl.plants, 0)::int AS plants,
@@ -277,7 +293,7 @@ class AdminManageController {
                        COALESCE(ph.photos, 0)::int AS photos,
                        COALESCE(ch.chat_messages, 0)::int AS chat_messages,
                        COALESCE(ps.push_subscriptions, 0)::int AS push_subscriptions,
-                       GREATEST(pl.last_at, wl.last_at, ch.last_at) AS last_activity_at
+                       ${activityExpr} AS last_activity_at${visitColumn}
                 FROM users u
                 LEFT JOIN (
                     SELECT user_id, count(*)::int AS plants,
@@ -302,12 +318,13 @@ class AdminManageController {
                     SELECT user_id, count(*)::int AS push_subscriptions
                     FROM push_subscriptions WHERE user_id IS NOT NULL GROUP BY user_id
                 ) ps ON ps.user_id = u.id
+                ${visitJoin}
                 ${where}
                 ORDER BY ${sortColumn} ${order.toUpperCase()} NULLS LAST, u.id DESC
                 LIMIT $${limitIndex} OFFSET $${offsetIndex}
             `, [...params, pagination.limit, pagination.offset])
 
-            const totalRow = await select(
+            const totalRow = await this.select(
                 `SELECT count(*)::int AS total FROM users u ${where}`,
                 params
             )
@@ -327,10 +344,14 @@ class AdminManageController {
         if (!id) return jsonError(res, 400, 'Некорректный идентификатор пользователя')
 
         try {
-            const hasCreatedAt = await hasUsersCreatedAt()
+            const hasCreatedAt = await this.hasUsersCreatedAt()
             const createdExpr = userCreatedAtSql(hasCreatedAt)
+            const visitsTracked = await this.hasSiteVisitDays()
+            const visitMaxExpr = visitsTracked
+                ? '(SELECT max(updated_at) FROM site_visit_days WHERE user_id = $1)'
+                : 'NULL::timestamptz'
 
-            const userRow = await select(`
+            const userRow = await this.select(`
                 SELECT u.id, u.email, u.name, u.username, u.phone, u.bio, u.role,
                        u.privilege_level, ${createdExpr} AS created_at
                 FROM users u
@@ -350,7 +371,7 @@ class AdminManageController {
                 legalConsents,
                 cookieConsents
             ] = await Promise.all([
-                select(`
+                this.select(`
                     SELECT
                         (SELECT count(*)::int FROM plants WHERE user_id = $1) AS plants,
                         (SELECT count(*)::int FROM plants WHERE user_id = $1 AND is_active) AS active_plants,
@@ -365,10 +386,17 @@ class AdminManageController {
                         (SELECT count(*)::int FROM auth_sessions WHERE user_id = $1
                             AND revoked_at IS NULL AND expires_at > now()) AS active_sessions,
                         (SELECT max(action_at) FROM watering_logs WHERE user_id = $1) AS last_watering_at,
-                        (SELECT max(created_at) FROM chat_logs WHERE user_id = $1) AS last_chat_at
+                        (SELECT max(created_at) FROM chat_logs WHERE user_id = $1) AS last_chat_at,
+                        ${visitMaxExpr} AS last_visit_at,
+                        GREATEST(
+                            (SELECT max(created_at) FROM plants WHERE user_id = $1),
+                            (SELECT max(action_at) FROM watering_logs WHERE user_id = $1),
+                            (SELECT max(created_at) FROM chat_logs WHERE user_id = $1),
+                            ${visitMaxExpr}
+                        ) AS last_activity_at
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT p.id, p.name, p.species, p.location, p.is_active, p.watering_interval_days,
                            p.created_at, p.last_watered_at, p.next_watering_at,
                            p.user_id, u.email AS user_email, u.username AS user_username,
@@ -391,7 +419,7 @@ class AdminManageController {
                     LIMIT 50
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT w.id, w.plant_id, p.name AS plant_name, w.user_id,
                            u.email AS user_email, u.username AS user_username,
                            w.action, w.action_at, w.scheduled_for, w.hours_late, w.note, w.created_at
@@ -403,7 +431,7 @@ class AdminManageController {
                     LIMIT 25
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT c.id, c.user_id, u.email AS user_email, u.username AS user_username,
                            c.session_id, c.role, c.text, c.input_tokens, c.output_tokens, c.error,
                            c.created_at
@@ -414,7 +442,7 @@ class AdminManageController {
                     LIMIT 25
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT id, token_type, created_at, expires_at, revoked_at
                     FROM auth_sessions
                     WHERE user_id = $1
@@ -422,14 +450,14 @@ class AdminManageController {
                     LIMIT 10
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT id, device_name, created_at, last_used_at
                     FROM passkeys
                     WHERE user_id = $1
                     ORDER BY id DESC
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT id, user_agent, created_at
                     FROM push_subscriptions
                     WHERE user_id = $1
@@ -437,7 +465,7 @@ class AdminManageController {
                     LIMIT 10
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT id, consent_type, is_accepted, document_version, accepted_at, source
                     FROM user_legal_consents
                     WHERE user_id = $1
@@ -445,7 +473,7 @@ class AdminManageController {
                     LIMIT 10
                 `, [id]),
 
-                select(`
+                this.select(`
                     SELECT id, consent_type, is_accepted, is_revoked, accepted_at, source, created_at
                     FROM user_cookie_consents
                     WHERE user_id = $1
@@ -482,7 +510,9 @@ class AdminManageController {
                     passkeys: toInteger(stats.passkeys),
                     activeSessions: toInteger(stats.active_sessions),
                     lastWateringAt: stats.last_watering_at || null,
-                    lastChatAt: stats.last_chat_at || null
+                    lastChatAt: stats.last_chat_at || null,
+                    lastVisitAt: stats.last_visit_at || null,
+                    lastActivityAt: stats.last_activity_at || null
                 },
                 plants: plants.map(mapPlantRow),
                 waterings: waterings.map(mapWateringRow),
@@ -749,7 +779,7 @@ class AdminManageController {
             const limitIndex = params.length + 1
             const offsetIndex = params.length + 2
 
-            const rows = await select(`
+            const rows = await this.select(`
                 SELECT p.id, p.name, p.species, p.location, p.is_active, p.watering_interval_days,
                        p.created_at, p.last_watered_at, p.next_watering_at,
                        u.id AS user_id, u.email AS user_email, u.username AS user_username,
@@ -772,7 +802,7 @@ class AdminManageController {
                 LIMIT $${limitIndex} OFFSET $${offsetIndex}
             `, [...params, pagination.limit, pagination.offset])
 
-            const totalRows = await select(`
+            const totalRows = await this.select(`
                 SELECT count(*)::int AS total
                 FROM plants p
                 JOIN users u ON u.id = p.user_id
@@ -885,7 +915,7 @@ class AdminManageController {
             const limitIndex = params.length + 1
             const offsetIndex = params.length + 2
 
-            const rows = await select(`
+            const rows = await this.select(`
                 SELECT w.id, w.plant_id, p.name AS plant_name, w.user_id,
                        u.email AS user_email, u.username AS user_username,
                        w.action, w.action_at, w.scheduled_for, w.hours_late, w.note, w.created_at
@@ -897,7 +927,7 @@ class AdminManageController {
                 LIMIT $${limitIndex} OFFSET $${offsetIndex}
             `, [...params, pagination.limit, pagination.offset])
 
-            const totalRows = await select(`
+            const totalRows = await this.select(`
                 SELECT count(*)::int AS total,
                        count(*) FILTER (WHERE w.action = 'watered')::int AS watered,
                        count(*) FILTER (WHERE w.action = 'skipped')::int AS skipped
@@ -1050,7 +1080,7 @@ class AdminManageController {
             const limitIndex = params.length + 1
             const offsetIndex = params.length + 2
 
-            const rows = await select(`
+            const rows = await this.select(`
                 SELECT ph.id, ph.plant_id, p.name AS plant_name, p.user_id,
                        u.email AS user_email, u.username AS user_username,
                        ph.url, ph.is_main, ph.sort_order, ph.created_at
@@ -1062,7 +1092,7 @@ class AdminManageController {
                 LIMIT $${limitIndex} OFFSET $${offsetIndex}
             `, [...params, pagination.limit, pagination.offset])
 
-            const totalRows = await select(`
+            const totalRows = await this.select(`
                 SELECT count(*)::int AS total
                 FROM plant_photos ph
                 JOIN plants p ON p.id = ph.plant_id
@@ -1167,7 +1197,7 @@ class AdminManageController {
             const limitIndex = params.length + 1
             const offsetIndex = params.length + 2
 
-            const rows = await select(`
+            const rows = await this.select(`
                 SELECT c.id, c.user_id, u.email AS user_email, u.username AS user_username,
                        c.session_id, c.role, c.text, c.input_tokens, c.output_tokens, c.error,
                        c.created_at
@@ -1178,7 +1208,7 @@ class AdminManageController {
                 LIMIT $${limitIndex} OFFSET $${offsetIndex}
             `, [...params, pagination.limit, pagination.offset])
 
-            const totalRows = await select(`
+            const totalRows = await this.select(`
                 SELECT count(*)::int AS total
                 FROM chat_logs c
                 LEFT JOIN users u ON u.id = c.user_id

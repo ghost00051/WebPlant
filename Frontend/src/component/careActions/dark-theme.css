@@ -1,0 +1,58 @@
+html[data-theme='dark'] .careSheet {
+    background: var(--theme-surface);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careSheetHeading p {
+    color: var(--theme-muted);
+}
+
+html[data-theme='dark'] .careSheetField input,
+html[data-theme='dark'] .careSheetField select,
+html[data-theme='dark'] .careSheetField textarea,
+html[data-theme='dark'] .careSheetChips button {
+    background: var(--theme-raised);
+    border-color: var(--theme-border);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careSheetChips button.is-active {
+    background: var(--theme-accent-soft);
+    border-color: var(--theme-accent);
+    color: var(--theme-accent-text);
+}
+
+html[data-theme='dark'] .careSheetTabs {
+    background: var(--theme-raised);
+}
+
+html[data-theme='dark'] .careSheetTabs button.is-active {
+    background: var(--theme-surface);
+    color: var(--theme-text);
+    box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+}
+
+html[data-theme='dark'] .careSheetActions button {
+    background: var(--theme-raised);
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careSheetActions .careSheetSubmit {
+    background: #3f7a55;
+    color: #f4f5f4;
+}
+
+html[data-theme='dark'] .careSheetStatus button,
+html[data-theme='dark'] .careSheetEmpty a {
+    background: #3f7a55;
+    color: #f4f5f4;
+}
+
+html[data-theme='dark'] .careSheetClose {
+    color: var(--theme-text);
+}
+
+html[data-theme='dark'] .careSheetError {
+    color: var(--theme-danger);
+}

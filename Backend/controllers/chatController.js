@@ -8,6 +8,9 @@ import { appTimeZone } from '../utils/localDay.js'
 import { resolveTimeZone } from '../utils/timeZone.js'
 import { MAX_CHAT_PHOTOS, chatPhotoFilenameFromUrl, chatPhotoUrl, readChatPhoto, saveChatPhoto } from '../utils/chatPhoto.js'
 import { buildChatTitle } from '../utils/chatSession.js'
+import carePlanService from '../services/carePlanService.js'
+import { summarizeCarePlan } from '../utils/careKnowledge.js'
+import { detectPlantGroup, getSeasonInfo } from '../utils/wateringKnowledge.js'
 
 function getUserId(req) {
     return req.user?.id ?? null
@@ -238,14 +241,31 @@ class ChatController {
 
             const { plants, plantsCount } = await loadPlantsContext(userId)
 
-            const plantContext = plants.map(p => ({
-                name: p.name,
-                species: p.species,
-                location: p.location,
-                lastWatered: p.last_watered_at,
-                nextWatering: p.next_watering_at,
-                intervalDays: p.watering_interval_days
-            }))
+            const plans = plants.length
+                ? await carePlanService.loadPlans(plants.map(plant => plant.id))
+                : new Map()
+            const seasonInfo = getSeasonInfo(now, timeZone)
+
+            const plantContext = plants.map(p => {
+                const group = detectPlantGroup({ name: p.name, species: p.species })
+                const plan = carePlanService.resolvePlan({
+                    plant: p,
+                    group,
+                    row: plans.get(p.id),
+                    season: seasonInfo.season,
+                    now
+                })
+
+                return {
+                    name: p.name,
+                    species: p.species,
+                    location: p.location,
+                    lastWatered: p.last_watered_at,
+                    nextWatering: p.next_watering_at,
+                    intervalDays: p.watering_interval_days,
+                    carePlan: summarizeCarePlan(plan, { season: seasonInfo.season })
+                }
+            })
 
 
             const localAnswer = resolveLocalChatAnswer({

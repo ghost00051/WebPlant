@@ -131,7 +131,10 @@ test('миграции применяются идемпотентно (двук
         'password_reset_tokens',
         'ai_advice_logs',
         'plant_care_plans',
-        'site_visit_days'
+        'site_visit_days',
+        'product_events',
+        'garden_shares',
+        'garden_share_signups'
     ]
     for (const table of expectedTables) {
         assert.ok(tables.has(table), `после миграций нет таблицы ${table}`)
@@ -154,6 +157,103 @@ test('миграции применяются идемпотентно (двук
     for (const column of ['last_success_at', 'last_error', 'failed_attempts', 'invalidated_at', 'invalid_reason']) {
         assert.ok(pushColumnNames.has(column), `миграция не добавила push_subscriptions.${column}`)
     }
+
+    const [f03Columns] = await sequelize.query(
+        `select table_name, column_name from information_schema.columns
+         where table_schema = 'public'
+           and (
+               (table_name = 'users' and column_name = 'created_at')
+               or (table_name = 'site_visit_days' and column_name in ('utm_source', 'utm_medium', 'utm_campaign'))
+               or (table_name = 'notifications' and column_name in ('clicked_at', 'click_count'))
+               or (table_name = 'product_events')
+           )`
+    )
+    const f03ColumnKeys = new Set(f03Columns.map(row => `${row.table_name}.${row.column_name}`))
+    for (const column of [
+        'users.created_at',
+        'site_visit_days.utm_source',
+        'site_visit_days.utm_medium',
+        'site_visit_days.utm_campaign',
+        'notifications.clicked_at',
+        'notifications.click_count',
+        'product_events.id',
+        'product_events.user_id',
+        'product_events.visitor_id',
+        'product_events.event',
+        'product_events.properties',
+        'product_events.path',
+        'product_events.referrer_host',
+        'product_events.created_at'
+    ]) {
+        assert.ok(f03ColumnKeys.has(column), `миграции F01–F03 не создали колонку ${column}`)
+    }
+
+    const [productEventIndexes] = await sequelize.query(
+        `select indexname from pg_indexes
+         where schemaname = 'public' and tablename = 'product_events'`
+    )
+    const productEventIndexNames = new Set(productEventIndexes.map(row => row.indexname))
+    for (const index of [
+        'idx_product_events_created_at',
+        'idx_product_events_user_created',
+        'idx_product_events_event_created',
+        'idx_product_events_visitor_created'
+    ]) {
+        assert.ok(productEventIndexNames.has(index), `миграция product_events не создала индекс ${index}`)
+    }
+
+    const [gardenColumns] = await sequelize.query(
+        `select table_name, column_name from information_schema.columns
+         where table_schema = 'public'
+           and (
+               (table_name = 'garden_shares' and column_name in
+                   ('id', 'user_id', 'token', 'created_at', 'revoked_at', 'view_count', 'last_viewed_at'))
+               or (table_name = 'garden_share_signups' and column_name in
+                   ('id', 'share_id', 'user_id', 'created_at'))
+           )`
+    )
+    const gardenColumnKeys = new Set(gardenColumns.map(row => `${row.table_name}.${row.column_name}`))
+    for (const column of [
+        'garden_shares.id',
+        'garden_shares.user_id',
+        'garden_shares.token',
+        'garden_shares.created_at',
+        'garden_shares.revoked_at',
+        'garden_shares.view_count',
+        'garden_shares.last_viewed_at',
+        'garden_share_signups.id',
+        'garden_share_signups.share_id',
+        'garden_share_signups.user_id',
+        'garden_share_signups.created_at'
+    ]) {
+        assert.ok(gardenColumnKeys.has(column), `миграция F13 не создала колонку ${column}`)
+    }
+
+    const [gardenIndexes] = await sequelize.query(
+        `select tablename, indexname, indexdef from pg_indexes
+         where schemaname = 'public'
+           and tablename in ('garden_shares', 'garden_share_signups')`
+    )
+    const gardenIndexNames = new Set(gardenIndexes.map(row => row.indexname))
+    for (const index of [
+        'idx_garden_shares_token',
+        'idx_garden_shares_active_user',
+        'idx_garden_share_signups_share',
+        'idx_garden_share_signups_created'
+    ]) {
+        assert.ok(gardenIndexNames.has(index), `миграция F13 не создала индекс ${index}`)
+    }
+    const activeSharesIndex = gardenIndexes.find(row => row.indexname === 'idx_garden_shares_active_user')
+    assert.ok(activeSharesIndex, 'нет частичного индекса активных ссылок')
+    assert.match(activeSharesIndex.indexdef, /^CREATE UNIQUE INDEX/, 'индекс активных ссылок должен быть UNIQUE')
+    assert.match(activeSharesIndex.indexdef, /WHERE \(revoked_at IS NULL\)/)
+
+    const uniqueSignupIndexes = gardenIndexes.filter(row =>
+        row.tablename === 'garden_share_signups' &&
+        /^CREATE UNIQUE INDEX/.test(row.indexdef) &&
+        /\(user_id\)/.test(row.indexdef)
+    )
+    assert.equal(uniqueSignupIndexes.length, 1, 'garden_share_signups.user_id должен быть UNIQUE')
 })
 
 test('unique index notifications(user_id, dedupe_key) не даёт создать дубликат', { skip }, async () => {

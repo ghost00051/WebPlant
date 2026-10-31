@@ -192,38 +192,6 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  backup:
-    image: postgres:16-alpine
-    container_name: ctp_backup
-    restart: always
-    depends_on:
-      postgres:
-        condition: service_healthy
-      backend:
-        condition: service_started
-    environment:
-      PGHOST: postgres
-      PGPORT: 5432
-      PGDATABASE: ${DB_NAME}
-      PGUSER: ${DB_USER}
-      PGPASSWORD: ${DB_PASSWORD}
-      BACKUP_RETENTION_DAYS: 14
-      BACKUP_ENCRYPTION_PASSPHRASE: ${BACKUP_ENCRYPTION_PASSPHRASE:-}
-      BACKUP_OFFSITE_TARGET: ${BACKUP_OFFSITE_TARGET:-}
-    volumes:
-      - ./backups:/backups
-      - ./uploads:/uploads:ro
-      - ./backup.sh:/usr/local/bin/backup.sh:ro
-    networks:
-      - ctp_network
-    entrypoint: ["/bin/sh", "-c"]
-    command: ["while :; do /bin/sh /usr/local/bin/backup.sh || echo 'Backup failed; will retry in 24 hours'; sleep 86400; done"]
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
-
   nginx:
     build:
       context: ./nginx
@@ -252,6 +220,7 @@ services:
   certbot:
     image: certbot/certbot
     container_name: ctp_certbot
+    restart: unless-stopped
     volumes:
       - certbot_conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot

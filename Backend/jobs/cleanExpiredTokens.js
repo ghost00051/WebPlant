@@ -8,6 +8,8 @@ import AiAdviceLog from '../models/AiAdviceLog.js'
 import SiteVisit from '../models/SiteVisit.js'
 import Notification from '../models/Notification.js'
 import PushSubscription from '../models/PushSubscription.js'
+import BotLinkCode from '../models/BotLinkCode.js'
+import BotMessage from '../models/BotMessage.js'
 import { Op } from "sequelize"
 import sequelize from '../db.js'
 import { cleanOrphanedPlantPhotoFiles } from '../utils/plantPhotoCleanup.js'
@@ -18,6 +20,8 @@ const GUEST_PUSH_RETENTION_DAYS = 30
 const INVALIDATED_PUSH_RETENTION_DAYS = 30
 const VISIT_RETENTION_DAYS = 400
 const NOTIFICATION_RETENTION_DAYS = 180
+const BOT_MESSAGE_RETENTION_DAYS = 90
+const BOT_LINK_CODE_RETENTION_DAYS = 7
 const CLEANUP_LOCK = 'job:cleanup-expired'
 const CLEANUP_LOCK_TTL_MS = 30 * 60 * 1000
 
@@ -50,6 +54,12 @@ export async function cleanExpiredAuthData() {
     )
     const invalidatedPushCutoff = retentionCutoff(
         readRetentionDays(process.env.INVALIDATED_PUSH_RETENTION_DAYS, INVALIDATED_PUSH_RETENTION_DAYS)
+    )
+    const botMessageCutoff = retentionCutoff(
+        readRetentionDays(process.env.BOT_MESSAGE_RETENTION_DAYS, BOT_MESSAGE_RETENTION_DAYS)
+    )
+    const botLinkCodeCutoff = retentionCutoff(
+        readRetentionDays(process.env.BOT_LINK_CODE_RETENTION_DAYS, BOT_LINK_CODE_RETENTION_DAYS)
     )
 
     const [
@@ -142,6 +152,13 @@ export async function cleanExpiredAuthData() {
         })
         : 0
 
+    const deletedBotMessages = botMessageCutoff
+        ? await BotMessage.destroy({ where: { created_at: { [Op.lt]: botMessageCutoff } } })
+        : 0
+    const deletedBotLinkCodes = botLinkCodeCutoff
+        ? await BotLinkCode.destroy({ where: { created_at: { [Op.lt]: botLinkCodeCutoff } } })
+        : 0
+
     let deletedAdminAuditLogs = 0
     try {
         const [rows] = await sequelize.query('SELECT purge_admin_audit_logs() AS deleted')
@@ -165,6 +182,9 @@ export async function cleanExpiredAuthData() {
     console.log(
         `🧹 Уведомления: удалено ${deletedNotifications}, гостевых push-подписок: ${deletedGuestSubscriptions}, ` +
         `карантинных push-подписок: ${deletedInvalidatedSubscriptions}`
+    )
+    console.log(
+        `🧹 Боты: удалено сообщений ${deletedBotMessages}, кодов привязки ${deletedBotLinkCodes}`
     )
     console.log(
         `🧹 Аудит администраторов: удалено записей старше 365 дней: ${deletedAdminAuditLogs}`

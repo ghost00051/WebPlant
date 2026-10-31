@@ -214,7 +214,282 @@ const breakdownPayload = {
         { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString() },
         { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null }
     ],
-    averages: { plantsPerUser: 2.83, wateringsPerUser: 17.5, messagesPerUser: 26.67, photosPerPlant: 1.18 }
+    averages: { plantsPerUser: 2.83, wateringsPerUser: 17.5, messagesPerUser: 26.67, photosPerPlant: 1.18 },
+    utmSources: [
+        { source: 'yandex', medium: 'cpc', campaign: 'plants-autumn', visitors: 120 },
+        { source: 'telegram', medium: 'social', campaign: 'care-guide', visitors: 60 },
+        { source: 'vk', medium: 'social', campaign: null, visitors: 25 }
+    ]
+}
+
+const productMetricsItems = [
+    {
+        id: 'ttfv', label: 'TTFV — время до первой ценности', priority: 'P0',
+        horizon: '1 месяц', target: '≤ 60 с', status: 'measured', value: 48, unit: 'seconds',
+        display: '48 с', detail: 'Медиана от регистрации до первой ценности',
+        source: 'события', targetMet: true
+    },
+    {
+        id: 'activation', label: 'Активация', priority: 'P0',
+        horizon: '1 месяц', target: '≥ 60%', status: 'measured', value: 62.5, unit: 'percent',
+        display: '62,5%', detail: 'Регистрация с растением в первый день',
+        source: 'события', targetMet: true
+    },
+    {
+        id: 'plants2', label: 'Второе растение', priority: 'P0',
+        horizon: '3 месяца', target: '≥ 40%', status: 'measured', value: 34.2, unit: 'percent',
+        display: '34,2%', detail: 'Пользователи со вторым растением за 7 дней',
+        source: 'события', targetMet: false
+    },
+    {
+        id: 'd1', label: 'D1 retention', priority: 'P1',
+        horizon: '1 месяц', target: '≥ 35%', status: 'measured', value: 41, unit: 'percent',
+        display: '41%', detail: 'Возврат на следующий день после регистрации',
+        source: 'когорты', targetMet: true
+    },
+    {
+        id: 'd7', label: 'D7 retention', priority: 'P1',
+        horizon: '3 месяца', target: '≥ 20%', status: 'measured', value: 18, unit: 'percent',
+        display: '18%', detail: 'Возврат на 7-й день после регистрации',
+        source: 'когорты', targetMet: false
+    },
+    {
+        id: 'd30', label: 'D30 retention', priority: 'P1',
+        horizon: '6 месяцев', target: '≥ 12%', status: 'partial', value: 9.4, unit: 'percent',
+        display: '9,4%', detail: 'Когорты с полным окном 30 дней',
+        source: 'когорты', targetMet: null
+    },
+    {
+        id: 'push_ctr', label: 'Push CTR', priority: 'P1',
+        horizon: '1 месяц', target: '≥ 10%', status: 'partial', value: 8.1, unit: 'percent',
+        display: '8,1%', detail: 'Переходы из push-уведомлений',
+        source: 'события', targetMet: null
+    },
+    {
+        id: 'returns_no_push', label: 'Возвраты без push', priority: 'P2',
+        horizon: '3 месяца', target: '≥ 25%', status: 'unavailable', value: null, unit: 'percent',
+        display: '—', detail: 'Возвраты пользователей без push-подписки',
+        source: 'события', targetMet: null
+    },
+    {
+        id: 'ai_usage', label: 'Использование AI-чата', priority: 'P1',
+        horizon: '3 месяца', target: '≥ 30%', status: 'measured', value: 27, unit: 'percent',
+        display: '27%', detail: 'Доля активных пользователей AI-чата',
+        source: 'события', targetMet: false
+    },
+    {
+        id: 'ai_cost', label: 'Стоимость AI', priority: 'P1',
+        horizon: '6 месяцев', target: '≤ 15 ₽', status: 'measured', value: 12.4, unit: 'rub',
+        display: '12,4 ₽', detail: 'Средняя стоимость AI на активного пользователя',
+        source: 'биллинг', targetMet: true
+    },
+    {
+        id: 'premium', label: 'Конверсия в Premium', priority: 'P0',
+        horizon: '6 месяцев', target: '≥ 5%', status: 'measured', value: 3.2, unit: 'percent',
+        display: '3,2%', detail: 'Доля пользователей с Premium',
+        source: 'users', targetMet: false
+    },
+    {
+        id: 'share_organic', label: 'Доля органического трафика', priority: 'P2',
+        horizon: '6 месяцев', target: '≥ 50%', status: 'partial', value: 46, unit: 'percent',
+        display: '46%', detail: 'Визиты без платного трафика',
+        source: 'визиты', targetMet: null
+    }
+]
+
+const emptyMetricStatuses = [
+    'unavailable', 'unavailable', 'unavailable', 'partial', 'unavailable',
+    'unavailable', 'unavailable', 'unavailable', 'measured', 'unavailable',
+    'measured', 'partial'
+]
+
+function emptyProductMetrics() {
+    return {
+        items: productMetricsItems.map((item, index) => ({
+            ...item,
+            status: emptyMetricStatuses[index],
+            value: null,
+            display: '—',
+            targetMet: null
+        })),
+        summary: {
+            total: productMetricsItems.length,
+            measured: emptyMetricStatuses.filter(status => status === 'measured').length,
+            partial: emptyMetricStatuses.filter(status => status === 'partial').length,
+            unavailable: emptyMetricStatuses.filter(status => status === 'unavailable').length
+        }
+    }
+}
+
+const productPayload = {
+    generatedAt: new Date().toISOString(),
+    timezone: 'Europe/Moscow',
+    days: 30,
+    eventsTracked: true,
+    usersCreatedAtTracked: true,
+    activity: {
+        dau: 12,
+        wau: 45,
+        mau: 120,
+        activeUsers: 90,
+        newUsers: 22,
+        eventsToday: 140,
+        eventsInRange: 3200
+    },
+    funnel: {
+        registered: 200,
+        plantCreated: 150,
+        wateringMarked: 110,
+        pushSubscribed: 40,
+        rates: { plantCreated: 75, wateringMarked: 55, pushSubscribed: 20 }
+    },
+    retention: [
+        { cohort: day(35), cohortLabel: '01.09', size: 40, d1: 20, d7: 12, d30: 6, d1Rate: 50, d7Rate: 30, d30Rate: 15 },
+        { cohort: day(28), cohortLabel: '08.09', size: 30, d1: 15, d7: 9, d30: 3, d1Rate: 50, d7Rate: 30, d30Rate: 10 },
+        { cohort: day(21), cohortLabel: '15.09', size: 25, d1: 10, d7: 5, d30: 2, d1Rate: 40, d7Rate: 20, d30Rate: 8 }
+    ],
+    events: [
+        { event: 'landing_view', count: 1200, users: 300 },
+        { event: 'register', count: 200, users: 200 },
+        { event: 'plant_created', count: 180, users: 150 },
+        { event: 'watering_marked', count: 900, users: 110 },
+        { event: 'chat_message', count: 500, users: 60 },
+        { event: 'push_subscribed', count: 40, users: 40 }
+    ],
+    push: { notifications: 120, clicks: 30, ctr: 25, clickedToday: 4 },
+    metrics: {
+        items: productMetricsItems,
+        summary: { total: 12, measured: 8, partial: 3, unavailable: 1 }
+    }
+}
+
+function botsSeries(days = 30) {
+    const points = []
+    for (let index = days - 1; index >= 0; index--) {
+        points.push({
+            day: day(index),
+            telegramSent: (index % 5) + 3,
+            telegramFailed: index % 3,
+            maxSent: (index % 4) + 1,
+            maxFailed: index % 2
+        })
+    }
+    return points
+}
+
+const botsPayload = {
+    generatedAt: new Date().toISOString(),
+    days: 30,
+    timezone: 'Europe/Moscow',
+    tablesReady: true,
+    channels: {
+        telegram: {
+            configured: true,
+            botUsername: 'lejka_bot',
+            linkedActive: 34,
+            linkedTotal: 40,
+            linkedInRange: 9,
+            unlinkedInRange: 3,
+            notificationsDisabled: 2,
+            codesCreated: 20,
+            codesUsed: 12,
+            codeConversion: 60,
+            messagesSent: 180,
+            messagesFailed: 7,
+            messagesSkipped: 2,
+            deliveryRate: 96.3,
+            remindersSent: 120,
+            lastSentAt: new Date(now - 3600000).toISOString(),
+            lastError: 'chat not found'
+        },
+        max: {
+            configured: true,
+            botUsername: 'se14772813_bot',
+            linkedActive: 11,
+            linkedTotal: 14,
+            linkedInRange: 3,
+            unlinkedInRange: 1,
+            notificationsDisabled: 0,
+            codesCreated: 10,
+            codesUsed: 6,
+            codeConversion: 60,
+            messagesSent: 60,
+            messagesFailed: 4,
+            messagesSkipped: 0,
+            deliveryRate: 93.8,
+            remindersSent: 40,
+            lastSentAt: new Date(now - 7200000).toISOString(),
+            lastError: null
+        }
+    },
+    totals: {
+        linkedActive: 45,
+        linkedNew: 12,
+        messagesSent: 240,
+        messagesFailed: 11,
+        deliveryRate: 95.6,
+        reminderShare: 38.4
+    },
+    series: botsSeries(30),
+    linkFunnel: { codesCreated: 30, codesUsed: 18, conversion: 60 },
+    recentErrors: [
+        {
+            channel: 'telegram',
+            kind: 'reminder',
+            error: 'chat not found',
+            createdAt: new Date(now - 1800000).toISOString()
+        },
+        {
+            channel: 'max',
+            kind: 'weekly_recap',
+            error: '429 Too Many Requests',
+            createdAt: new Date(now - 5400000).toISOString()
+        }
+    ],
+    commands: [
+        { channel: 'telegram', command: '/start', count: 22 },
+        { channel: 'telegram', command: '/status', count: 8 },
+        { channel: 'max', command: '/start', count: 5 }
+    ],
+    recap: { notificationsCreated: 40, delivered: 34, failed: 2, users: 38, telegram: 21, max: 13 },
+    streak: { usersWithStreak: 27, avgCurrentStreak: 3.4, bestCurrentStreak: 21 }
+}
+
+function emptyBotsPayload(tablesReady = true) {
+    const channel = {
+        configured: false,
+        botUsername: null,
+        linkedActive: 0,
+        linkedTotal: 0,
+        linkedInRange: 0,
+        unlinkedInRange: 0,
+        notificationsDisabled: 0,
+        codesCreated: 0,
+        codesUsed: 0,
+        codeConversion: 0,
+        messagesSent: 0,
+        messagesFailed: 0,
+        messagesSkipped: 0,
+        deliveryRate: 0,
+        remindersSent: 0,
+        lastSentAt: null,
+        lastError: null
+    }
+
+    return {
+        generatedAt: new Date().toISOString(),
+        days: 30,
+        timezone: 'Europe/Moscow',
+        tablesReady,
+        channels: { telegram: { ...channel }, max: { ...channel } },
+        totals: { linkedActive: 0, linkedNew: 0, messagesSent: 0, messagesFailed: 0, deliveryRate: 0, reminderShare: 0 },
+        series: [],
+        linkFunnel: { codesCreated: 0, codesUsed: 0, conversion: 0 },
+        recentErrors: [],
+        commands: [],
+        recap: { notificationsCreated: 0, delivered: 0, failed: 0, users: 0, telegram: 0, max: 0 },
+        streak: { usersWithStreak: 0, avgCurrentStreak: 0, bestCurrentStreak: 0 }
+    }
 }
 
 const visitsPayload = {
@@ -233,8 +508,8 @@ const visitsPayload = {
 
 const usersPayload = {
     items: [
-        { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), plants: 9, activePlants: 8, waterings: 40, photos: 12, chatMessages: 22, pushSubscriptions: 1, lastActivityAt: new Date().toISOString() },
-        { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null, plants: 0, activePlants: 0, waterings: 0, photos: 0, chatMessages: 0, pushSubscriptions: 0, lastActivityAt: null }
+        { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), plants: 9, activePlants: 8, waterings: 40, photos: 12, chatMessages: 22, pushSubscriptions: 1, lastActivityAt: new Date().toISOString(), lastVisitAt: new Date().toISOString() },
+        { id: 3, email: 'c@example.com', name: null, username: null, role: 'ADMIN', privilegeLevel: 'premium', createdAt: null, plants: 0, activePlants: 0, waterings: 0, photos: 0, chatMessages: 0, pushSubscriptions: 0, lastActivityAt: null, lastVisitAt: null }
     ],
     total: 2,
     page: 1,
@@ -244,7 +519,7 @@ const usersPayload = {
 
 const userDetailPayload = {
     user: { id: 2, email: 'b@example.com', name: 'Иван', username: 'ivan', phone: '+79000000000', bio: null, role: 'USER', privilegeLevel: 'free', createdAt: new Date().toISOString(), userCreatedAtTracked: true },
-    stats: { plants: 9, activePlants: 8, waterings: 40, skippedWaterings: 3, photos: 12, chatMessages: 22, chatSessions: 5, pushSubscriptions: 1, passkeys: 1, activeSessions: 2, lastWateringAt: new Date().toISOString(), lastChatAt: null },
+    stats: { plants: 9, activePlants: 8, waterings: 40, skippedWaterings: 3, photos: 12, chatMessages: 22, chatSessions: 5, pushSubscriptions: 1, passkeys: 1, activeSessions: 2, lastWateringAt: new Date().toISOString(), lastChatAt: null, lastVisitAt: new Date().toISOString(), lastActivityAt: new Date().toISOString() },
     plants: [{ id: 5, name: 'Монстера', species: 'Monstera', location: null, isActive: true, wateringIntervalDays: 7, createdAt: new Date().toISOString(), lastWateredAt: new Date().toISOString(), nextWateringAt: new Date().toISOString(), waterings: 4, photos: 2, mainPhotoUrl: null, user: { id: 2, email: 'b@example.com', username: 'ivan', name: 'Иван' } }],
     waterings: [{ id: 9, plantId: 5, plantName: 'Монстера', userId: 2, userEmail: 'b@example.com', userUsername: 'ivan', action: 'watered', actionAt: new Date().toISOString(), scheduledFor: null, hoursLate: 0, note: null, createdAt: new Date().toISOString() }],
     chat: [{ id: 3, userId: 2, userEmail: 'b@example.com', userUsername: 'ivan', sessionId: '11111111-1111-4111-8111-111111111111', role: 'user', text: 'Привет', inputTokens: 5, outputTokens: 0, error: null, createdAt: new Date().toISOString() }],
@@ -332,13 +607,240 @@ const healthPayload = {
     aiCache: { hits: 1, misses: 2 }
 }
 
+const backupPayload = {
+    available: true,
+    source: 'backup_runs',
+    timeZone: 'Europe/Moscow',
+    times: ['02:00', '14:00'],
+    intervalHours: 12,
+    next: {
+        at: new Date(Date.now() + 3 * 3600 * 1000).toISOString(),
+        inSeconds: 3 * 3600
+    },
+    lastSuccess: {
+        id: 2,
+        source: 'host',
+        status: 'ok',
+        startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+        finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+        durationSeconds: 30,
+        databaseBytes: 143334,
+                uploadsBytes: 59171519,
+        files: ['/backups/webplant_1.dump'],
+        error: null,
+        hoursAgo: 9,
+        intervalPercent: 75
+    },
+    bySource: {
+        host: {
+            label: 'хост (ctp_backup)',
+            last: {
+                id: 2,
+                source: 'host',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+                durationSeconds: 30,
+                databaseBytes: 143334,
+                uploadsBytes: 59171519,
+                error: null
+            },
+            lastSuccess: {
+                id: 2,
+                source: 'host',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+                durationSeconds: 30,
+                databaseBytes: 143334,
+                uploadsBytes: 59171519,
+                error: null
+            }
+        },
+        cluster: {
+            label: 'кластер (CronJob db-backup)',
+            last: {
+                id: 1,
+                source: 'cluster',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+                durationSeconds: 20,
+                databaseBytes: 142000,
+                error: null
+            },
+            lastSuccess: {
+                id: 1,
+                source: 'cluster',
+                status: 'ok',
+                startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+                finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+                durationSeconds: 20,
+                databaseBytes: 142000,
+                error: null
+            }
+        }
+    },
+    health: { status: 'ok', message: 'Последний успешный бэкап 9 ч назад' },
+    history: [
+        {
+            id: 2,
+            source: 'host',
+            status: 'ok',
+            startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+            finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 30000).toISOString(),
+            durationSeconds: 30,
+            databaseBytes: 143334,
+                uploadsBytes: 59171519,
+            error: null
+        },
+        {
+            id: 1,
+            source: 'cluster',
+            status: 'ok',
+            startedAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString(),
+            finishedAt: new Date(Date.now() - 9 * 3600 * 1000 + 20000).toISOString(),
+            durationSeconds: 20,
+            databaseBytes: 142000,
+            error: null
+        }
+    ]
+}
+
 const dockerPayload = {
     timestamp: new Date().toISOString(),
+    summary: {
+        available: true,
+        ok: false,
+        total: 4,
+        running: 2,
+        stopped: 1,
+        unhealthy: 0,
+        restarting: 1,
+        healthy: 2,
+        problems: 2
+    },
     containers: [{
-        id: 'abc', name: 'ctp_backend', state: 'running', status: 'Up', image: 'backend:latest',
+        id: 'a'.repeat(64), name: 'ctp_backend', state: 'running', status: 'Up 2 days (healthy)',
+        image: 'backend:latest', service: 'backend', healthStatus: 'healthy', restartCount: 0,
+        startedAt: new Date(now - 2 * 86400000).toISOString(), uptimeSeconds: 172800,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
         statsAvailable: true, cpu: 1.2, memory: { usage: 104857600, limit: 536870912, percent: 19.5 },
         network: { rx: 1048576, tx: 524288 }, block: { read: 0, write: 0 }, pids: 12
+    }, {
+        id: 'b'.repeat(64), name: 'ctp_worker', state: 'restarting', status: 'Restarting (1) 3 seconds ago',
+        image: 'backend:latest', service: 'worker', healthStatus: 'none', restartCount: 3,
+        startedAt: null, uptimeSeconds: null, exitCode: null, oomKilled: false, error: null,
+        problem: 'Перезапускается (3 перезапусков)', problemLevel: 'warn',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'c'.repeat(64), name: 'ctp_redis', state: 'exited', status: 'Exited (1) 5 minutes ago',
+        image: 'redis:7', service: 'redis', healthStatus: 'none', restartCount: 5,
+        startedAt: null, uptimeSeconds: null, exitCode: 1, oomKilled: false, error: null,
+        problem: 'Остановлен: код выхода 1', problemLevel: 'error',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'd'.repeat(64), name: 'ctp_proxy', state: 'running', status: 'Up 2 days (healthy)',
+        image: 'docker-socket-proxy:latest', service: 'docker-socket-proxy', healthStatus: 'healthy',
+        restartCount: 0, startedAt: new Date(now - 2 * 86400000).toISOString(), uptimeSeconds: 172800,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+        statsAvailable: true, cpu: 0.3, memory: { usage: 20971520, limit: 536870912, percent: 3.9 },
+        network: { rx: 1048576, tx: 1048576 }, block: { read: 0, write: 0 }, pids: 6
     }]
+}
+
+const dockerLogsPayload = {
+    id: 'a'.repeat(64),
+    name: 'ctp_backend',
+    tail: 100,
+    logs: 'server started\nGET /health 200\nGET /api/plants 200'
+}
+
+const podLogsPayload = {
+    id: 'pod:backend-d7c54cb55-7b79t',
+    name: 'backend-d7c54cb55-7b79t',
+    tail: 100,
+    logs: 'Server started on port 5000\nGET /health 200'
+}
+
+const kubernetesPayload = {
+    timestamp: new Date().toISOString(),
+    source: 'kubernetes',
+    summary: {
+        available: true,
+        ok: false,
+        total: 3,
+        running: 2,
+        stopped: 0,
+        completed: 1,
+        unhealthy: 0,
+        restarting: 0,
+        healthy: 2,
+        problems: 1
+    },
+    containers: [{
+        id: 'pod:backend-d7c54cb55-7b79t', name: 'backend-d7c54cb55-7b79t',
+        service: 'deployment/backend', state: 'running', status: 'Running 1/1',
+        image: 'webplant-backend:1.2.6', node: 'desktop-worker2',
+        healthStatus: 'healthy', restartCount: 0,
+        startedAt: new Date(now - 3600000).toISOString(), uptimeSeconds: 3600,
+        exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'pod:backup-29877060-cc56l', name: 'backup-29877060-cc56l',
+        service: 'job/backup-29877060', state: 'completed', status: 'Succeeded 0/1',
+        image: 'postgres:16-alpine', node: 'desktop-worker4',
+        healthStatus: 'none', restartCount: 0,
+        startedAt: null, uptimeSeconds: null, exitCode: 0, oomKilled: false, error: null,
+        problem: null, problemLevel: 'ok',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }, {
+        id: 'pod:redis-6d9f8b7c4d-zzz', name: 'redis-6d9f8b7c4d-zzz',
+        service: 'deployment/redis', state: 'pending', status: 'Pending 0/1',
+        image: 'redis:7-alpine', node: null,
+        healthStatus: 'starting', restartCount: 4,
+        startedAt: null, uptimeSeconds: null, exitCode: null, oomKilled: false,
+        error: 'Container image is not present with pull policy of Never',
+        problem: 'ErrImageNeverPull (redis): Container image is not present with pull policy of Never',
+        problemLevel: 'error',
+        statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+        network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+    }],
+    docker: {
+        available: true,
+        timestamp: new Date().toISOString(),
+        summary: {
+            available: true,
+            ok: true,
+            total: 2,
+            running: 1,
+            stopped: 1,
+            completed: 0,
+            unhealthy: 0,
+            restarting: 0,
+            healthy: 1,
+            problems: 0
+        },
+        containers: [{
+            id: 'f'.repeat(64), name: 'ctp_nginx', state: 'running', status: 'Up 28 hours',
+            image: 'ctp_nginx:local', service: 'nginx', healthStatus: 'healthy', restartCount: 0,
+            startedAt: new Date(now - 86400000).toISOString(), uptimeSeconds: 86400,
+            exitCode: null, oomKilled: false, error: null, problem: null, problemLevel: 'ok',
+            statsAvailable: true, cpu: 0.1, memory: { usage: 20971520, limit: 536870912, percent: 3.9 },
+            network: { rx: 1024, tx: 2048 }, block: { read: 0, write: 0 }, pids: 9
+        }, {
+            id: 'e'.repeat(64), name: 'ctp_backend', state: 'exited', status: 'Exited (137) 3 days ago',
+            image: 'backend-backend', service: 'backend', healthStatus: 'none', restartCount: 0,
+            startedAt: null, uptimeSeconds: null, exitCode: 137, oomKilled: false, error: null,
+            problem: 'Остановлен намеренно (см. DOCKER_EXPECTED_STOPPED)', problemLevel: 'ok',
+            statsAvailable: false, cpu: null, memory: { usage: null, limit: null, percent: null },
+            network: { rx: null, tx: null }, block: { read: null, write: null }, pids: null
+        }]
+    }
 }
 
 
@@ -369,12 +871,44 @@ function emptyList(limit = 25) {
     return { items: [], total: 0, page: 1, limit, pages: 1 }
 }
 
+function emptyProductPayload() {
+    return {
+        generatedAt: new Date().toISOString(),
+        timezone: 'Europe/Moscow',
+        days: 30,
+        eventsTracked: false,
+        usersCreatedAtTracked: false,
+        activity: { dau: 0, wau: 0, mau: 0, activeUsers: 0, newUsers: 0, eventsToday: 0, eventsInRange: 0 },
+        funnel: {
+            registered: 0,
+            plantCreated: 0,
+            wateringMarked: 0,
+            pushSubscribed: 0,
+            rates: { plantCreated: 0, wateringMarked: 0, pushSubscribed: 0 }
+        },
+        retention: [],
+        events: [],
+        push: { notifications: 0, clicks: 0, ctr: 0, clickedToday: 0 },
+        metrics: emptyProductMetrics()
+    }
+}
+
+function noMetricsProductPayload() {
+    const payload = emptyProductPayload()
+    delete payload.metrics
+    return payload
+}
+
 function route(url) {
     const path = new URL(url).pathname
     const empty = mode === 'empty'
 
     if (path.endsWith('/users/me')) return { status: 200, data: { id: 1, email: 'admin@example.com', name: 'Админ', role: 'ADMIN' } }
     if (path.includes('/admin/analytics/overview')) return { status: 200, data: empty ? zeroOverview() : overviewPayload }
+    if (path.includes('/admin/product/analytics')) {
+        if (mode === 'nometrics') return { status: 200, data: noMetricsProductPayload() }
+        return { status: 200, data: empty ? emptyProductPayload() : productPayload }
+    }
     if (path.includes('/admin/analytics/timeseries')) {
         return {
             status: 200,
@@ -436,8 +970,71 @@ function route(url) {
                 : mailPayload
         }
     }
+    if (path.includes('/admin/bots/analytics')) {
+        if (mode === 'bots-error') return { status: 500, data: { message: 'Внутренняя ошибка сервера' } }
+        if (mode === 'bots-404') return { status: 404, data: { message: 'Маршрут не найден' } }
+        if (mode === 'bots-missing-tables') return { status: 200, data: emptyBotsPayload(false) }
+        return { status: 200, data: empty ? emptyBotsPayload() : botsPayload }
+    }
+    if (path.includes('/system/backup')) {
+        if (empty) {
+            return {
+                status: 200,
+                data: {
+                    ...backupPayload,
+                    available: false,
+                    reason: 'not_migrated',
+                    message: 'Таблица backup_runs не создана — примените миграции'
+                }
+            }
+        }
+        if (mode === 'backup-stale') {
+            return {
+                status: 200,
+                data: {
+                    ...backupPayload,
+                    health: { status: 'stale', message: 'Бэкапа не было 33 ч — при расписании раз в 12 ч это пропуск' }
+                }
+            }
+        }
+        return { status: 200, data: backupPayload }
+    }
+    if (path.includes('/system/docker-stats/') && path.endsWith('/logs')) {
+        if (empty) {
+            return {
+                status: 503,
+                data: {
+                    available: false,
+                    reason: 'disabled',
+                    message: 'Docker stats выключены: DOCKER_STATS_ENABLED=false (обычно так в Kubernetes)'
+                }
+            }
+        }
+        if (mode === 'kubernetes') return { status: 200, data: podLogsPayload }
+        return { status: 200, data: dockerLogsPayload }
+    }
     if (path.includes('/system/docker-stats')) {
-        if (empty) return { status: 503, data: { error: 'Docker недоступен' } }
+        if (empty) {
+            return {
+                status: 503,
+                data: {
+                    available: false,
+                    reason: 'disabled',
+                    message: 'Docker stats выключены: DOCKER_STATS_ENABLED=false (обычно так в Kubernetes)'
+                }
+            }
+        }
+        if (mode === 'kubernetes') return { status: 200, data: kubernetesPayload }
+        if (mode === 'kubernetes-error') {
+            return {
+                status: 200,
+                data: {
+                    ...dockerPayload,
+                    source: 'docker',
+                    kubernetes: { reason: 'forbidden', message: 'pods is forbidden: User cannot list resource "pods"' }
+                }
+            }
+        }
         return { status: 200, data: dockerPayload }
     }
     if (path.endsWith('/health')) {
@@ -493,14 +1090,18 @@ check('donutChart с нулями не падает', donutChart({ items: [{ lab
 
 console.log('\n== Разделы панели')
 const views = await import(new URL('../admin/js/views/overview.js', import.meta.url).href)
+const product = await import(new URL('../admin/js/views/product.js', import.meta.url).href)
 const visitors = await import(new URL('../admin/js/views/visitors.js', import.meta.url).href)
 const users = await import(new URL('../admin/js/views/users.js', import.meta.url).href)
 const resources = await import(new URL('../admin/js/views/resources.js', import.meta.url).href)
 const ai = await import(new URL('../admin/js/views/ai.js', import.meta.url).href)
+const bots = await import(new URL('../admin/js/views/bots.js', import.meta.url).href)
 const system = await import(new URL('../admin/js/views/system.js', import.meta.url).href)
 
 const allViews = [
     views.overviewView,
+    product.productView,
+    bots.botsView,
     visitors.visitorsView,
     users.usersView,
     resources.plantsView,
@@ -511,7 +1112,7 @@ const allViews = [
     system.systemView
 ]
 
-check('девять разделов объявлены', allViews.length === 9)
+check('одиннадцать разделов объявлены', allViews.length === 11)
 check('у всех разделов есть id, заголовок и render', allViews.every(view =>
     typeof view.id === 'string' && typeof view.title === 'string' && typeof view.render === 'function'))
 check('идентификаторы уникальны', new Set(allViews.map(view => view.id)).size === allViews.length)
@@ -584,7 +1185,118 @@ function findNode(root, predicate) {
     return found
 }
 
+function collectText(node, parts = []) {
+    if (!node) return parts
+    if (node.nodeType === 3) {
+        parts.push(String(node.text ?? ''))
+        return parts
+    }
+    if (node.textContent) parts.push(String(node.textContent))
+    for (const child of node.children || []) collectText(child, parts)
+    return parts
+}
+
+function hasText(root, needle) {
+    return collectText(root).join('\n').includes(needle)
+}
+
 const tick = () => new Promise(resolve => setTimeout(resolve, 30))
+
+console.log('\n== Продукт: DAU/WAU/MAU, воронка и retention')
+mode = 'full'
+const productRoot = makeEl('div')
+try {
+    await product.productView.render(productRoot, makeCtx())
+    check('продукт: запрос /admin/product/analytics ушёл',
+        requests.some(entry => entry.includes('/admin/product/analytics?days=30')))
+    check('продукт: карточки DAU/WAU/MAU',
+        ['DAU', 'WAU', 'MAU'].every(label =>
+            Boolean(findNode(productRoot, node => node.textContent === label))))
+    check('продукт: воронка активации со всеми этапами',
+        hasText(productRoot, 'Зарегистрировались') &&
+        hasText(productRoot, 'Добавили растение') &&
+        hasText(productRoot, 'Отметили полив') &&
+        hasText(productRoot, 'Подписались на push'))
+    check('продукт: retention-таблица с когортами',
+        hasText(productRoot, 'Удержание по когортам') &&
+        hasText(productRoot, '01.09') &&
+        hasText(productRoot, '08.09'))
+    check('продукт: топ событий с названиями',
+        hasText(productRoot, 'landing_view') &&
+        hasText(productRoot, 'watering_marked'))
+    check('продукт: push CTR отрисован', Boolean(findNode(productRoot, node => node.textContent === 'Push CTR')))
+    const metricsTable = findNode(productRoot, node =>
+        node.getAttribute?.('aria-label') === 'Метрики продукта')
+    const metricsBody = metricsTable ? findNode(metricsTable, node => node.tagName === 'TBODY') : null
+    check('продукт: карточка «Метрики продукта» с таблицей',
+        hasText(productRoot, 'Метрики продукта') && Boolean(metricsTable))
+    check('продукт: 12 строк метрик',
+        Boolean(metricsBody) && metricsBody.children.length === 12,
+        metricsBody ? `строк: ${metricsBody.children.length}` : 'таблица не найдена')
+    check('продукт: ключевые метрики TTFV, Push CTR, Конверсия в Premium',
+        Boolean(metricsTable) &&
+        hasText(metricsTable, 'TTFV — время до первой ценности') &&
+        hasText(metricsTable, 'Push CTR') &&
+        hasText(metricsTable, 'Конверсия в Premium'))
+    check('продукт: статусы «в цели» и «ниже цели»',
+        Boolean(metricsTable) &&
+        hasText(metricsTable, 'в цели') &&
+        hasText(metricsTable, 'ниже цели'))
+    check('продукт: подпись «измеряется 8 из 12»',
+        hasText(productRoot, 'измеряется 8 из 12'))
+} catch (error) {
+    check('продукт: раздел отрисован', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'empty'
+const emptyProductRoot = makeEl('div')
+try {
+    await product.productView.render(emptyProductRoot, makeCtx())
+    check('продукт: пустые данные не ломают рендер', emptyProductRoot.children.length >= 1)
+    check('продукт: предупреждение о сборе событий',
+        Boolean(findNode(emptyProductRoot, node =>
+            node.textContent?.includes('События начнут собираться после обновления сайта'))))
+    check('продукт: карточка метрик в пустом режиме',
+        hasText(emptyProductRoot, 'Метрики продукта') &&
+        hasText(emptyProductRoot, 'нет данных'))
+} catch (error) {
+    check('продукт: пустые данные не ломают рендер', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'nometrics'
+const noMetricsRoot = makeEl('div')
+try {
+    await product.productView.render(noMetricsRoot, makeCtx())
+    check('продукт: без поля metrics карточка показывает пустое состояние',
+        hasText(noMetricsRoot, 'Метрики продукта') &&
+        hasText(noMetricsRoot, 'Метрики появятся после накопления событий'))
+} catch (error) {
+    check('продукт: без поля metrics карточка показывает пустое состояние', false,
+        `${error?.name}: ${error?.message}`)
+}
+mode = 'full'
+
+console.log('\n== Посетители: UTM-источники')
+const utmRoot = makeEl('div')
+try {
+    await visitors.visitorsView.render(utmRoot, makeCtx())
+    check('посетители: карточка UTM-источников из breakdown',
+        hasText(utmRoot, 'UTM-источники') &&
+        hasText(utmRoot, 'plants-autumn') &&
+        hasText(utmRoot, 'yandex'))
+} catch (error) {
+    check('посетители: карточка UTM-источников из breakdown', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'empty'
+const emptyUtmRoot = makeEl('div')
+try {
+    await visitors.visitorsView.render(emptyUtmRoot, makeCtx())
+    check('посетители: без UTM карточка не показывается',
+        !findNode(emptyUtmRoot, node => node.textContent === 'UTM-источники'))
+} catch (error) {
+    check('посетители: без UTM карточка не показывается', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'full'
 
 console.log('\n== Интерактив: карточка пользователя')
 mode = 'full'
@@ -654,6 +1366,187 @@ if (deleteButton) {
     check('диалог подтверждения требует слово УДАЛИТЬ', false, 'кнопка не найдена')
     check('кнопка подтверждения отрисована', false, 'кнопка не найдена')
 }
+
+console.log('\n== Интерактив: контейнеры и логи')
+mode = 'full'
+const systemRoot = makeEl('div')
+await system.systemView.render(systemRoot, makeCtx())
+check('раздел сервера показывает карточки контейнеров',
+    Boolean(findNode(systemRoot, node => node.textContent === 'Всего контейнеров')) &&
+    Boolean(findNode(systemRoot, node => node.textContent === 'Проблемы')))
+check('notice перечисляет проблемные контейнеры с причиной',
+    Boolean(findNode(systemRoot, node => node.textContent?.includes('ctp_redis — Остановлен: код выхода 1'))))
+
+const countdownNode = findNode(systemRoot, node => node.className === 'backup-countdown')
+check('карточка бэкапов: блок «До следующего бэкапа»',
+    Boolean(findNode(systemRoot, node => node.textContent === 'До следующего бэкапа')))
+check('обратный отсчёт до бэкапа отрисован', Boolean(countdownNode))
+check('отсчёт показывает часы и минуты',
+    Boolean(countdownNode && /\d+ ч \d{2} мин/.test(countdownNode.textContent)))
+check('журнал бэкапов называет кластерный источник', hasText(systemRoot, 'кластер'))
+check('карточка бэкапов показывает размер дампа', hasText(systemRoot, '140.0 КБ'))
+check('в журнале бэкапов есть колонка и размер фото', hasText(systemRoot, 'Фото') && hasText(systemRoot, '56.43 МБ'))
+
+mode = 'backup-stale'
+const backupStaleRoot = makeEl('div')
+await system.systemView.render(backupStaleRoot, makeCtx())
+check('пропущенный бэкап выделен предупреждением',
+    Boolean(findNode(backupStaleRoot, node => node.textContent?.includes('Бэкапа не было 33 ч'))))
+mode = 'full'
+
+const logsButton = findButton(systemRoot, 'Логи')
+check('кнопка «Логи» отрисована', Boolean(logsButton))
+if (logsButton) {
+    const before = requests.length
+    logsButton.click()
+    await tick()
+    await tick()
+    check('кнопка «Логи» запросила /system/docker-stats/:id/logs',
+        requests.slice(before).some(entry => entry.includes('/system/docker-stats/') && entry.includes('/logs')))
+    check('диалог показал содержимое логов',
+        Boolean(findNode(document.body, node => node.textContent?.includes('server started'))))
+    const closeButton = findButton(document.body, 'Закрыть')
+    check('в диалоге логов есть кнопка «Закрыть»', Boolean(closeButton))
+    if (closeButton) closeButton.click()
+} else {
+    check('кнопка «Логи» запросила /system/docker-stats/:id/logs', false, 'кнопка не найдена')
+    check('диалог показал содержимое логов', false, 'кнопка не найдена')
+    check('в диалоге логов есть кнопка «Закрыть»', false, 'кнопка не найдена')
+}
+
+mode = 'kubernetes'
+const k8sRoot = makeEl('div')
+await system.systemView.render(k8sRoot, makeCtx())
+check('в Kubernetes карточка считает поды',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Всего подов')))
+check('таблица подов названа отдельно',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Поды Kubernetes')))
+check('у подов есть колонка «Узел»',
+    Boolean(findNode(k8sRoot, node => node.dataset?.label === 'Узел')))
+check('notice объясняет, почему под не стартует',
+    Boolean(findNode(k8sRoot, node => node.textContent?.includes('ErrImageNeverPull (redis)'))))
+check('контейнеры compose показаны отдельным блоком',
+    Boolean(findNode(k8sRoot, node => node.textContent === 'Контейнеры compose (Docker)')))
+check('завершённый Job не считается проблемой',
+    Boolean(findNode(k8sRoot, node => node.textContent?.includes('завершён'))))
+
+const podLogsButton = findButton(k8sRoot, 'Логи')
+check('у подов есть кнопка «Логи»', Boolean(podLogsButton))
+if (podLogsButton) {
+    const before = requests.length
+    podLogsButton.click()
+    await tick()
+    await tick()
+    check('логи пода запрошены с префиксом pod:',
+        requests.slice(before).some(entry => entry.includes('/system/docker-stats/pod') && entry.includes('/logs')))
+} else {
+    check('логи пода запрошены с префиксом pod:', false, 'кнопка не найдена')
+}
+mode = 'full'
+
+mode = 'kubernetes-error'
+const k8sErrorRoot = makeEl('div')
+await system.systemView.render(k8sErrorRoot, makeCtx())
+check('при ошибке API кластера панель предупреждает о подах',
+    Boolean(findNode(k8sErrorRoot, node => node.textContent?.includes('Поды Kubernetes недоступны'))))
+check('предупреждение подсказывает проверить RBAC',
+    Boolean(findNode(k8sErrorRoot, node => node.textContent?.includes('system:serviceaccount:webplant:webplant-backend'))))
+mode = 'full'
+
+mode = 'empty'
+const emptySystemRoot = makeEl('div')
+await system.systemView.render(emptySystemRoot, makeCtx())
+check('при недоступном Docker показывается объяснение причины',
+    Boolean(findNode(emptySystemRoot, node => node.textContent?.includes('DOCKER_STATS_ENABLED=false'))))
+mode = 'full'
+
+console.log('\n== Боты: Telegram/MAX, recap и серия')
+mode = 'full'
+const botsRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsRoot, makeCtx())
+    check('боты: запрос /admin/bots/analytics ушёл',
+        requests.some(entry => entry.includes('/admin/bots/analytics?days=30')))
+    check('боты: KPI подключений, доставки и доли напоминаний',
+        hasText(botsRoot, 'Подключено аккаунтов') &&
+        hasText(botsRoot, 'Доставлено сообщений') &&
+        hasText(botsRoot, 'Доля напоминаний в мессенджерах') &&
+        hasText(botsRoot, '38,4%'))
+    check('боты: recap-доставки и серия ухода (F10)',
+        hasText(botsRoot, 'Recap-доставки') &&
+        hasText(botsRoot, 'Weekly recap') &&
+        hasText(botsRoot, 'Серия ухода') &&
+        hasText(botsRoot, 'Пользователей с серией'))
+    check('боты: графики доставки и ошибок по каналам',
+        hasText(botsRoot, 'Доставлено сообщений по каналам') &&
+        hasText(botsRoot, 'Ошибки доставки по каналам') &&
+        hasText(botsRoot, 'MAX'))
+    check('боты: таблица каналов с именами ботов',
+        hasText(botsRoot, 'lejka_bot') &&
+        hasText(botsRoot, 'se14772813_bot') &&
+        hasText(botsRoot, 'всего 40'))
+    check('боты: воронка link-кодов',
+        hasText(botsRoot, 'Воронка link-кодов') &&
+        hasText(botsRoot, 'Кодов создано') &&
+        hasText(botsRoot, 'Кодов использовано') &&
+        hasText(botsRoot, '60%'))
+    check('боты: таблица последних ошибок',
+        hasText(botsRoot, 'Последние ошибки') &&
+        hasText(botsRoot, 'chat not found') &&
+        hasText(botsRoot, '429 Too Many Requests'))
+    check('боты: таблица команд',
+        hasText(botsRoot, 'Команды ботов') &&
+        hasText(botsRoot, '/start') &&
+        hasText(botsRoot, '/status'))
+} catch (error) {
+    check('боты: раздел отрисован', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'empty'
+const emptyBotsRoot = makeEl('div')
+try {
+    await bots.botsView.render(emptyBotsRoot, makeCtx())
+    check('боты: пустые данные показывают нули без падения',
+        emptyBotsRoot.children.length >= 1 &&
+        hasText(emptyBotsRoot, 'Подключено аккаунтов') &&
+        hasText(emptyBotsRoot, 'Ошибок доставки не было'))
+} catch (error) {
+    check('боты: пустые данные показывают нули без падения', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-missing-tables'
+const noTablesRoot = makeEl('div')
+try {
+    await bots.botsView.render(noTablesRoot, makeCtx())
+    check('боты: без таблиц объяснение про миграции и нули',
+        hasText(noTablesRoot, 'миграции ботов не применены') &&
+        hasText(noTablesRoot, 'Подключено аккаунтов'))
+} catch (error) {
+    check('боты: без таблиц объяснение про миграции и нули', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-error'
+const botsErrorRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsErrorRoot, makeCtx())
+    check('боты: ошибка API показана с кнопкой повтора',
+        hasText(botsErrorRoot, 'Внутренняя ошибка сервера') &&
+        Boolean(findButton(botsErrorRoot, 'Повторить')))
+} catch (error) {
+    check('боты: ошибка API показана с кнопкой повтора', false, `${error?.name}: ${error?.message}`)
+}
+
+mode = 'bots-404'
+const botsMissingRoot = makeEl('div')
+try {
+    await bots.botsView.render(botsMissingRoot, makeCtx())
+    check('боты: 404 объясняет неподключённый endpoint',
+        hasText(botsMissingRoot, 'endpoint /api/admin/bots/analytics не найден') &&
+        Boolean(findButton(botsMissingRoot, 'Повторить')))
+} catch (error) {
+    check('боты: 404 объясняет неподключённый endpoint', false, `${error?.name}: ${error?.message}`)
+}
+mode = 'full'
 
 console.log('\n== Оболочка приложения')
 const appRoot = document.getElementById('app')

@@ -160,7 +160,11 @@ export function buildAccountExport({
     }
     const carePlanByPlant = new Map()
     for (const plan of carePlans) {
-        carePlanByPlant.set(Number(plan.plant_id), plan.plan ?? null)
+        const rawPlan = plan.plan ?? null
+        const cleanedPlan = rawPlan && typeof rawPlan === 'object' && !Array.isArray(rawPlan)
+            ? Object.fromEntries(Object.entries(rawPlan).filter(([key]) => key !== '_version'))
+            : rawPlan
+        carePlanByPlant.set(Number(plan.plant_id), cleanedPlan)
     }
 
     return {
@@ -184,16 +188,22 @@ export function buildAccountExport({
             carePlan: carePlanByPlant.get(Number(plant.id)) ?? null,
             photos: photosByPlant.get(Number(plant.id)) ?? []
         })),
-        wateringLogs: wateringLogs.map(log => ({
-            id: log.id,
-            plantId: log.plant_id ?? null,
-            action: log.action ?? null,
-            wateredAt: log.watered_at ?? null,
-            scheduledFor: log.scheduled_for ?? null,
-            daysLate: log.days_late ?? null,
-            comment: log.comment ?? null,
-            metadata: log.metadata ?? {}
-        })),
+        wateringLogs: wateringLogs.map(log => {
+            const hoursLate = Number.isFinite(Number(log.hours_late))
+                ? Number(log.hours_late)
+                : null
+            return {
+                id: log.id,
+                plantId: log.plant_id ?? null,
+                action: log.action ?? null,
+                wateredAt: log.action_at ?? null,
+                scheduledFor: log.scheduled_for ?? null,
+                hoursLate,
+                daysLate: hoursLate === null ? null : Math.floor(hoursLate / 24),
+                comment: log.note ?? null,
+                metadata: log.metadata ?? {}
+            }
+        }),
         chatMessages: chatMessages.map(sanitizeChatMessage),
         aiAdvice: aiAdvice.map(log => ({
             id: log.id,
@@ -254,6 +264,7 @@ export class AccountController {
         this.removePlantPhotoFiles = deps.removePlantPhotoFiles || removePlantPhotoFiles
         this.removeChatPhotoFiles = deps.removeChatPhotoFiles || removeChatPhotoFiles
         this.clearAuthCookies = deps.clearAuthCookies || clearAuthCookies
+        this.exportData = this.exportData.bind(this)
     }
 
     async exportData(req, res) {
