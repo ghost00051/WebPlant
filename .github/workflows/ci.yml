@@ -125,7 +125,7 @@ jobs:
           fi
           psql --version
 
-      - name: Базовая схема для миграций (users, plants, push_subscriptions, chat_logs)
+      - name: Базовая схема для миграций (legacy-таблицы для свежей БД)
         run: node scripts/init-integration-db.mjs
 
       - name: Миграции (psql, ON_ERROR_STOP=1)
