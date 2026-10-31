@@ -148,7 +148,7 @@ test('careDateValue: локальная дата YYYY-MM-DD', () => {
 })
 
 test('buildPerformedAt: полдень локальной зоны и проверка даты', () => {
-  const iso = buildPerformedAt('2026-10-24')
+  const iso = buildPerformedAt('2026-10-24', new Date(2026, 9, 31, 8, 0, 0))
   const date = new Date(iso)
 
   assert.equal(date.getFullYear(), 2026)
@@ -159,6 +159,21 @@ test('buildPerformedAt: полдень локальной зоны и прове
   assert.equal(buildPerformedAt('2026-02-30'), null)
   assert.equal(buildPerformedAt('24.10.2026'), null)
   assert.equal(buildPerformedAt(null), null)
+})
+
+test('buildPerformedAt: «сегодня» не уезжает в будущее до полудня (регресс 31.10)', () => {
+  const beforeNoon = new Date(2026, 9, 31, 8, 51, 0)
+  assert.equal(buildPerformedAt('2026-10-31', beforeNoon), beforeNoon.toISOString())
+
+  const afterNoon = new Date(2026, 9, 31, 18, 5, 0)
+  assert.equal(buildPerformedAt('2026-10-31', afterNoon), afterNoon.toISOString())
+
+  const payload = buildCareActionPayload(
+    { actionCode: 'spray', plantId: 1, performedAt: '2026-10-31' },
+    { now: beforeNoon }
+  )
+  assert.equal(payload.ok, true)
+  assert.equal(payload.value.performed_at, beforeNoon.toISOString())
 })
 
 test('formatCareSummary и formatCareDate', () => {

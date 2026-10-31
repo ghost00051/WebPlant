@@ -81,7 +81,7 @@ export function careDateValue(date) {
   return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}`
 }
 
-export function buildPerformedAt(dateValue) {
+export function buildPerformedAt(dateValue, now = new Date()) {
   if (dateValue instanceof Date) {
     return Number.isFinite(dateValue.getTime()) ? dateValue.toISOString() : null
   }
@@ -101,6 +101,14 @@ export function buildPerformedAt(dateValue) {
   ) {
     return null
   }
+
+  const current = now instanceof Date && Number.isFinite(now.getTime()) ? now : new Date()
+  const isToday =
+    date.getFullYear() === current.getFullYear() &&
+    date.getMonth() === current.getMonth() &&
+    date.getDate() === current.getDate()
+  if (isToday) return current.toISOString()
+
   return date.toISOString()
 }
 
@@ -139,9 +147,9 @@ export function recentProductsFromLatest(items) {
   return products
 }
 
-function resolvePerformedAt(value) {
+function resolvePerformedAt(value, now = new Date()) {
   if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
-    const iso = buildPerformedAt(value)
+    const iso = buildPerformedAt(value, now)
     return iso ? new Date(iso) : null
   }
   return parseDate(value)
@@ -191,9 +199,10 @@ export function buildCareActionPayload(input = {}, options = {}) {
   }
 
   const performedAtSource = input.performedAt ?? input.performed_at
+  const fallbackNow = parseDate(options.now) ?? new Date()
   const performedAt = performedAtSource
-    ? resolvePerformedAt(performedAtSource)
-    : parseDate(options.now) ?? new Date()
+    ? resolvePerformedAt(performedAtSource, fallbackNow)
+    : fallbackNow
   if (!performedAt) {
     return { ok: false, error: 'Укажите корректную дату ухода.' }
   }
