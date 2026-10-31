@@ -18,7 +18,7 @@ const BASE_ENV = {
 
 const wateringEvent = iso => ({ action: 'watered', action_at: iso, hours_late: 0 })
 
-function createHarness({
+function createTestContext({
     preferences = [{ user_id: 1 }],
     users = [{
         id: 1,
@@ -231,7 +231,7 @@ test('buildWeeklyRecapEmail: письмо со ссылкой на профил�
 })
 
 test('tick: создаёт recap, push, обновляет дату и не дублирует за неделю', async () => {
-    const { service, calls, preferences } = createHarness()
+    const { service, calls, preferences } = createTestContext()
 
     const first = await service.runWeeklyRecapTick(SUNDAY_EVENING)
     assert.equal(first.skipped, false)
@@ -273,7 +273,7 @@ test('tick: создаёт recap, push, обновляет дату и не ду
 })
 
 test('tick: пропускает пользователя без активности за неделю', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         eventsByUser: {},
         photos: 0,
         careActions: 0
@@ -287,7 +287,7 @@ test('tick: пропускает пользователя без активно�
 })
 
 test('tick: активность только в прошлых неделях не считается активностью за неделю', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         eventsByUser: {
             1: [wateringEvent('2026-10-19T06:00:00Z')]
         },
@@ -302,7 +302,7 @@ test('tick: активность только в прошлых неделях �
 })
 
 test('tick: вне локального дня/часа ничего не отправляет', async () => {
-    const { service, calls } = createHarness()
+    const { service, calls } = createTestContext()
 
     const result = await service.runWeeklyRecapTick(new Date('2026-11-01T15:00:00Z'))
     assert.equal(result.recapsCreated, 0)
@@ -311,7 +311,7 @@ test('tick: вне локального дня/часа ничего не отп
 })
 
 test('tick: при выключенном WEEKLY_RECAP_ENABLED не берёт лок и не трогает БД', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         env: { ...BASE_ENV, WEEKLY_RECAP_ENABLED: 'false' }
     })
 
@@ -322,7 +322,7 @@ test('tick: при выключенном WEEKLY_RECAP_ENABLED не берёт �
 })
 
 test('tick: письмо уходит только при WEEKLY_RECAP_EMAIL_ENABLED и согласии', async () => {
-    const withEmail = createHarness({
+    const withEmail = createTestContext({
         env: { ...BASE_ENV, WEEKLY_RECAP_EMAIL_ENABLED: 'true' }
     })
     const result = await withEmail.service.runWeeklyRecapTick(SUNDAY_EVENING)
@@ -332,7 +332,7 @@ test('tick: письмо уходит только при WEEKLY_RECAP_EMAIL_ENA
     assert.match(withEmail.calls.mail[0].html, /https:\/\/example\.test\/profile/)
     assert.match(withEmail.calls.mail[0].subject, /Итоги недели/)
 
-    const withoutConsent = createHarness({
+    const withoutConsent = createTestContext({
         env: { ...BASE_ENV, WEEKLY_RECAP_EMAIL_ENABLED: 'true' },
         users: [{
             id: 1,
@@ -347,7 +347,7 @@ test('tick: письмо уходит только при WEEKLY_RECAP_EMAIL_ENA
 })
 
 test('tick: ошибка одного пользователя не валит остальных', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         preferences: [{ user_id: 1 }, { user_id: 2 }],
         users: [
             { id: 1, timezone: MSK, email: 'one@example.test', marketing_email_opt_in: false },
@@ -364,7 +364,7 @@ test('tick: ошибка одного пользователя не валит �
 })
 
 test('tick: created=false (dedupe) не считается отправкой', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         storeResult: { notification: { id: 11 }, created: false }
     })
 
@@ -390,7 +390,7 @@ test('BE-10: серия в recap считается в часовом поясе
     assert.equal(mskStreak.current, 1, 'без timeZone (Europe/Moscow) серия = 1')
     assert.equal(localStreak.current, 0, 'в поясе пользователя пропуски ломают серию')
 
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         users: [{
             id: 1,
             timezone: VLADIVOSTOK,

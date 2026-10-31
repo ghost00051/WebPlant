@@ -22,7 +22,6 @@
     "indexnow:dry": "node scripts/indexnow.mjs --dry-run",
     "lint": "eslint .",
     "test": "node --test \"src/**/*.test.js\"",
-    "test:e2e": "node scripts/run-e2e.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

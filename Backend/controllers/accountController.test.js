@@ -64,7 +64,7 @@ function createModel(name, calls, overrides = {}) {
     }
 }
 
-function createHarness({
+function createTestContext({
     user,
     modelOverrides = {},
     queryRows = [],
@@ -224,7 +224,7 @@ test('buildAccountExport не содержит секретов и собира�
 })
 
 test('deleteMe: без слова подтверждения — 400 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({ user: () => ({ id: 1, role: 'USER' }) })
+    const { controller, calls } = createTestContext({ user: () => ({ id: 1, role: 'USER' }) })
     const res = createResponse()
 
     await controller.deleteMe(
@@ -238,7 +238,7 @@ test('deleteMe: без слова подтверждения — 400 и ника
 })
 
 test('deleteMe: без пароля — 400 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({ user: () => ({ id: 1, role: 'USER' }) })
+    const { controller, calls } = createTestContext({ user: () => ({ id: 1, role: 'USER' }) })
     const res = createResponse()
 
     await controller.deleteMe(
@@ -252,7 +252,7 @@ test('deleteMe: без пароля — 400 и никаких удалений',
 })
 
 test('deleteMe: неверный пароль — 403 и никаких удалений', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 1, role: 'USER', password: 'hash' })
     })
     const res = createResponse()
@@ -267,7 +267,7 @@ test('deleteMe: неверный пароль — 403 и никаких удал
 })
 
 test('deleteMe: администратор удаляется только через админ-панель', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 1, role: 'ADMIN', password: 'hash' })
     })
     const res = createResponse()
@@ -282,7 +282,7 @@ test('deleteMe: администратор удаляется только че�
 })
 
 test('deleteMe: успешное удаление каскадом + файлы + cookie', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         queryRows: [{ url: PHOTO_URL }],
         filesRemoved: 1,
@@ -336,7 +336,7 @@ test('deleteMe: успешное удаление каскадом + файлы 
 test('deleteMe: фото чата собираются из metadata и удаляются после коммита', async () => {
     const firstChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'1'.repeat(32)}.jpg`
     const secondChatPhoto = `https://server.checktheplants.ru/uploads/chat/${'2'.repeat(32)}.jpg`
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         chatPhotoFilesRemoved: 2,
         modelOverrides: {
@@ -367,7 +367,7 @@ test('deleteMe: фото чата собираются из metadata и удал
 
 test('deleteMe: удаление фото чата продолжается, если файлов уже нет', async t => {
     t.mock.method(console, 'warn', () => {})
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         user: () => ({ id: 42, role: 'USER', password: 'hash' }),
         modelOverrides: {
             ChatLog: {
@@ -394,7 +394,7 @@ test('deleteMe: удаление фото чата продолжается, е�
 })
 
 test('exportData: без авторизации — 401', async () => {
-    const { controller } = createHarness()
+    const { controller } = createTestContext()
     const res = createResponse()
     await controller.exportData({ user: null }, res)
     assert.equal(res.statusCode, 401)
@@ -409,7 +409,7 @@ test('exportData: отдаёт JSON-файл со всеми данными и �
         timezone: 'Europe/Moscow',
         role: 'USER'
     }
-    const { controller } = createHarness({
+    const { controller } = createTestContext({
         user: id => (id === 1 ? user : null),
         modelOverrides: {
             Plant: {
@@ -460,7 +460,7 @@ test('exportData: сохраняет this, когда роут передаёт 
         password: 'HASH',
         role: 'USER'
     }
-    const { controller } = createHarness({
+    const { controller } = createTestContext({
         user: id => (id === 1 ? user : null)
     })
     const res = createResponse()

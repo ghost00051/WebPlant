@@ -200,7 +200,7 @@ test('resolveGardenViewDelivery: ошибка чтения настроек — 
     assert.deepEqual(delivery, { push: true, messengers: false, reason: 'error' })
 })
 
-function createNotifyHarness({ storeError = null, created = true } = {}) {
+function createNotifyContext({ storeError = null, created = true } = {}) {
     const log = []
     const stores = []
     const deps = {
@@ -255,7 +255,7 @@ const TRIGGERING_SHARE = {
 }
 
 test('notifyGardenShareViews: views_notified_* обновляются только после успешного storeNotification', async () => {
-    const { deps, log, stores } = createNotifyHarness()
+    const { deps, log, stores } = createNotifyContext()
 
     const result = await notifyGardenShareViews(TRIGGERING_SHARE, {
         now: new Date('2026-11-01T12:00:00Z'),
@@ -271,7 +271,7 @@ test('notifyGardenShareViews: views_notified_* обновляются тольк
 })
 
 test('notifyGardenShareViews: сбой storeNotification не двигает состояние троттлинга', async () => {
-    const { deps, log } = createNotifyHarness({ storeError: new Error('notifications.type check failed') })
+    const { deps, log } = createNotifyContext({ storeError: new Error('notifications.type check failed') })
 
     const result = await notifyGardenShareViews(TRIGGERING_SHARE, {
         now: new Date('2026-11-01T12:00:00Z'),
@@ -283,7 +283,7 @@ test('notifyGardenShareViews: сбой storeNotification не двигает с�
 })
 
 test('notifyGardenShareViews: свежие счётчики в БД перекрывают устаревший snapshot', async () => {
-    const { deps, log } = createNotifyHarness()
+    const { deps, log } = createNotifyContext()
     deps.sequelize.query = async sql => {
         const normalized = String(sql).replace(/\s+/g, ' ')
         if (normalized.includes('SELECT id, user_id, view_count')) {
@@ -309,7 +309,7 @@ test('notifyGardenShareViews: свежие счётчики в БД перекр
 })
 
 test('notifyGardenShareViews: лок занят другим инстансом — без уведомления и БД', async () => {
-    const { deps, log } = createNotifyHarness()
+    const { deps, log } = createNotifyContext()
     deps.acquireLock = async () => {
         log.push('lock')
         return { acquired: false }
@@ -336,7 +336,7 @@ const SHARE_ROW = {
     views_notified_count: 0
 }
 
-function createGardenHarness({
+function createGardenContext({
     viewerUserId = null,
     claim = { counted: true, deduped: false, degraded: false }
 } = {}) {
@@ -385,7 +385,7 @@ function createGardenHarness({
 }
 
 test('getPublicGarden: просмотр владельцем не увеличивает view_count и не уведомляет', async () => {
-    const { deps, queries, notifications } = createGardenHarness({ viewerUserId: 7 })
+    const { deps, queries, notifications } = createGardenContext({ viewerUserId: 7 })
 
     const garden = await getPublicGarden(SHARE_TOKEN, {
         viewerUserId: 7,
@@ -401,7 +401,7 @@ test('getPublicGarden: просмотр владельцем не увеличи
 })
 
 test('getPublicGarden: новый посетитель увеличивает view_count и уведомляет владельца', async () => {
-    const { deps, queries, notifications } = createGardenHarness()
+    const { deps, queries, notifications } = createGardenContext()
 
     const garden = await getPublicGarden(SHARE_TOKEN, {
         ip: '10.0.0.1',
@@ -417,7 +417,7 @@ test('getPublicGarden: новый посетитель увеличивает vi
 })
 
 test('getPublicGarden: повторный визит в окне дедупликации не увеличивает view_count', async () => {
-    const { deps, queries, notifications } = createGardenHarness({
+    const { deps, queries, notifications } = createGardenContext({
         claim: { counted: false, deduped: true, degraded: false }
     })
 

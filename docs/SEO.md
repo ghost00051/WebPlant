@@ -1,6 +1,6 @@
 # SEO: эксплуатация, панели и деплой
 
-Документ описывает, как устроено SEO «Лейки», как проверять изменения и что делать в Яндекс.Вебмастере и Google Search Console. Программа вывода в топ и контент-план — `state/roadmap/seo-plan.md`; текущее состояние с фактами — `state/roadmap/seo-audit.md`.
+Документ описывает, как устроено SEO «Лейки», как проверять изменения и что делать в Яндекс.Вебмастере и Google Search Console.
 
 ## 1. Где что лежит
 
@@ -26,7 +26,7 @@ cd Frontend
 npm run build
 npm run verify
 node scripts/seo-check.mjs
-node scripts/seo-audit.mjs --json=../state/tmp/seo-audit-live.json
+node scripts/seo-audit.mjs --json=seo-audit-live.json
 ```
 
 `seo-check.mjs` падает, если: дубли title/description, title > 90 или description > 200 символов, canonical не совпадает с URL, h1 не один, на странице нет нужного типа JSON-LD, `<img>` без `alt`, в sitemap есть не-200 URL или lastmod из будущего, robots.txt без `Clean-param`, `.htaccess` без `DirectorySlash Off`/`ErrorDocument`.

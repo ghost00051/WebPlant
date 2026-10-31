@@ -45,7 +45,7 @@ function candidate(overrides = {}) {
     }
 }
 
-function createHarness({
+function createTestContext({
     rows = [candidate()],
     env = BASE_ENV,
     mailReady = true,
@@ -335,7 +335,7 @@ test('renderInactivityEmail: subject, текст, HTML, отписка и экр
 })
 
 test('tick: отправляет письмо кандидату, claim до отправки, List-Unsubscribe и отписка', async () => {
-    const { service, calls } = createHarness()
+    const { service, calls } = createTestContext()
 
     const result = await service.runInactivityEmailTick(NOW_MSK_NOON)
 
@@ -376,7 +376,7 @@ test('tick: отправляет письмо кандидату, claim до о�
 })
 
 test('tick: без зафиксированного захода (нет строк site_visit_days) ничего не делает', async () => {
-    const { service, calls } = createHarness({ rows: [] })
+    const { service, calls } = createTestContext({ rows: [] })
 
     const result = await service.runInactivityEmailTick(NOW_MSK_NOON)
 
@@ -390,7 +390,7 @@ test('tick: без зафиксированного захода (нет стр�
 })
 
 test('tick: пропускает кандидата вне локального окна', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         rows: [candidate({ timezone: 'America/New_York' })]
     })
 
@@ -403,7 +403,7 @@ test('tick: пропускает кандидата вне локального 
 })
 
 test('tick: дедуп — claim не обновил строку, письмо повторно не уходит', async () => {
-    const { service, calls } = createHarness({ claimRows: [] })
+    const { service, calls } = createTestContext({ claimRows: [] })
 
     const result = await service.runInactivityEmailTick(NOW_MSK_NOON)
 
@@ -415,7 +415,7 @@ test('tick: дедуп — claim не обновил строку, письмо 
 
 test('tick: ошибка SMTP → errors и откат inactivity_email_sent_at к прежнему значению', async () => {
     const previous = '2026-09-01T10:00:00.000Z'
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         rows: [candidate({ inactivity_email_sent_at: previous })],
         mailError: true
     })
@@ -434,7 +434,7 @@ test('tick: ошибка SMTP → errors и откат inactivity_email_sent_at 
 })
 
 test('tick: dry-run работает и без SMTP — planned без писем и без claim', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         env: { ...BASE_ENV, INACTIVITY_EMAIL_DRY_RUN: 'true' },
         mailReady: false
     })
@@ -452,7 +452,7 @@ test('tick: dry-run работает и без SMTP — planned без писе�
 })
 
 test('tick: выключенная фича не берёт лок и не ходит в БД', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         env: { ...BASE_ENV, INACTIVITY_EMAIL_ENABLED: 'false' }
     })
 
@@ -465,7 +465,7 @@ test('tick: выключенная фича не берёт лок и не хо�
 })
 
 test('tick: SMTP не настроен и не dry-run → ранний выход без сканирования БД', async () => {
-    const { service, calls } = createHarness({ mailReady: false })
+    const { service, calls } = createTestContext({ mailReady: false })
 
     const result = await service.runInactivityEmailTick(NOW_MSK_NOON)
 
@@ -485,7 +485,7 @@ test('tick: SMTP не настроен и не dry-run → ранний выхо
 
 test('tick: батчи идут keyset по u.id, ограничение maxPerTick останавливает тик', async () => {
     const rows = [1, 2, 3, 4, 5].map(id => candidate({ id, email: `u${id}@example.test` }))
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         rows,
         env: {
             ...BASE_ENV,
@@ -508,7 +508,7 @@ test('tick: батчи идут keyset по u.id, ограничение maxPerT
 })
 
 test('tick: repeatDays прокидывается в SQL выборки и claim', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         rows: [],
         env: { ...BASE_ENV, INACTIVITY_EMAIL_REPEAT_DAYS: '30' }
     })
@@ -521,7 +521,7 @@ test('tick: repeatDays прокидывается в SQL выборки и claim
 })
 
 test('tick: порог INACTIVITY_EMAIL_DAYS уходит в текст письма', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         env: { ...BASE_ENV, INACTIVITY_EMAIL_DAYS: '14' }
     })
 
@@ -534,7 +534,7 @@ test('tick: порог INACTIVITY_EMAIL_DAYS уходит в текст пись
 })
 
 test('tick: INACTIVITY_EMAIL_REQUIRE_MARKETING_CONSENT=false убирает фильтр согласия', async () => {
-    const { service, calls } = createHarness({
+    const { service, calls } = createTestContext({
         env: { ...BASE_ENV, INACTIVITY_EMAIL_REQUIRE_MARKETING_CONSENT: 'false' }
     })
 
@@ -549,7 +549,7 @@ test('tick: INACTIVITY_EMAIL_REQUIRE_MARKETING_CONSENT=false убирает фи
 })
 
 test('tick: без SECRET_KEY письмо всё равно уходит, отписка — фолбэк без List-Unsubscribe', async () => {
-    const { service, calls } = createHarness({ env: { ...BASE_ENV, SECRET_KEY: '' } })
+    const { service, calls } = createTestContext({ env: { ...BASE_ENV, SECRET_KEY: '' } })
 
     const result = await service.runInactivityEmailTick(NOW_MSK_NOON)
 

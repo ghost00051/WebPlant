@@ -124,10 +124,10 @@ WebPlant/
 │   ├── src/                     React-приложение (component/, utils/, data/, styles/)
 │   ├── admin/                   статическая админ-панель (свой README)
 │   ├── public/                  статика, шрифты Inter, иконки, sitemap
-│   ├── scripts/                 сборка, prerender, verify, e2e, admin-smoke, indexnow
+│   ├── scripts/                 сборка, prerender, verify, admin-smoke, indexnow
 │   ├── document/                PDF/DOCX юридических документов
 │   └── vite.config.js           dev-proxy /api, chunking, версия приложения
-├── .github/workflows/ci.yml     CI: frontend, backend (lint/unit/миграции/интеграция), security, a11y/E2E
+├── .github/workflows/ci.yml     CI: frontend, backend (lint/unit/миграции/интеграция), security
 ├── .github/dependabot.yml       автоматические PR обновлений зависимостей
 ├── .githooks/                   pre-push: автотег v<version> из Frontend/package.json
 ├── docs/                        эксплуатационная документация и OpenAPI
@@ -338,7 +338,6 @@ npm run verify:admin
 | `cd Frontend; npm run build` | сборка + prerender + `dist/build-info.json` |
 | `cd Frontend; npm run verify` | сборка, роутинг, security-заголовки/CSP, манифест |
 | `cd Frontend; npm run verify:admin` | headless-прогон админ-панели (11 разделов) |
-| `cd Frontend; npm run test:e2e` | E2E через `scripts/run-e2e.mjs` (нужен Chrome; в CI `WEBPLANT_E2E_REQUIRED=1`) |
 | `powershell -File Backend/scripts/verify-notifications.ps1` | проверка уведомлений/идемпотентности на одноразовой БД |
 | `node Backend/scripts/admin-api-integration.mjs seed|verify` | 94 проверки админ-API на отдельной тестовой БД |
 | `cd Backend; node scripts/watering-prediction-audit.mjs --days=365` | read-only аудит адаптивного интервала полива |
@@ -356,9 +355,7 @@ CI (`.github/workflows/ci.yml`) на каждый push/PR:
   PostgreSQL и Redis (`RUN_INTEGRATION=1`);
 * `security` — `npm audit --audit-level=high` (backend и frontend), `gitleaks`
   (скан секретов), CodeQL (`javascript-typescript`, `security-and-quality`);
-* `notify-failure` — создаёт/обновляет issue с меткой `ci-failure`;
-* `a11y-smoke` — опционально: axe-smoke, E2E, admin-smoke (если в чекауте есть
-  `state/frontend-audit/tools/audit.mjs`).
+* `notify-failure` — создаёт/обновляет issue с меткой `ci-failure`.
 
 Обновления зависимостей приходят PR-ами от `.github/dependabot.yml`. Прикладные секреты в
 CI не используются (только `GITHUB_TOKEN` и, при необходимости, `GITLEAKS_LICENSE`).

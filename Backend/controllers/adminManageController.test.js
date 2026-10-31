@@ -41,7 +41,7 @@ function createChatLogModel(calls, { metadataRows = [], deleted = 1 } = {}) {
     }
 }
 
-function createHarness({
+function createTestContext({
     user = { id: 42, email: 'leaf@example.com', role: 'USER' },
     chatMetadataRows = [],
     filesRemoved = 1,
@@ -149,7 +149,7 @@ function createHarness({
 }
 
 test('deleteUser: фото чата собираются до транзакции и удаляются после коммита', async () => {
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         chatMetadataRows: [
             { metadata: { photoUrl: CHAT_PHOTO_A, photoUrls: [CHAT_PHOTO_A, CHAT_PHOTO_B] } },
             { metadata: { photoUrl: CHAT_PHOTO_A } },
@@ -176,7 +176,7 @@ test('deleteUser: фото чата собираются до транзакци
 
 test('deleteUser: ошибка удаления фото чата не ломает ответ', async t => {
     t.mock.method(console, 'warn', () => {})
-    const { controller, calls } = createHarness({
+    const { controller, calls } = createTestContext({
         chatMetadataRows: [{ metadata: { photoUrl: CHAT_PHOTO_A } }],
         removeChatPhotoFiles: async () => {
             throw new Error('EACCES')
@@ -322,7 +322,7 @@ function createStatsRow(overrides = {}) {
     }
 }
 
-function createQueryHarness({
+function createQueryContext({
     visitsTracked = true,
     userRows = [createUserRow()],
     baseUserRow = userRows[0],
@@ -361,7 +361,7 @@ function createQueryHarness({
 }
 
 test('listUsers: активность учитывает последний заход из site_visit_days', async () => {
-    const { controller, queries } = createQueryHarness({ visitsTracked: true })
+    const { controller, queries } = createQueryContext({ visitsTracked: true })
     const res = createResponse()
 
     await controller.listUsers({ query: { sort: 'activity', order: 'desc' } }, res)
@@ -384,7 +384,7 @@ test('listUsers: активность учитывает последний за
 })
 
 test('listUsers: без таблицы site_visit_days SQL её не упоминает, lastVisitAt = null', async () => {
-    const { controller, queries } = createQueryHarness({
+    const { controller, queries } = createQueryContext({
         visitsTracked: false,
         userRows: [createUserRow({ last_activity_at: CHAT_AT, last_visit_at: undefined })]
     })
@@ -409,7 +409,7 @@ test('listUsers: без таблицы site_visit_days SQL её не упоми�
 })
 
 test('getUser: статистика содержит последний заход и согласованную активность', async () => {
-    const { controller, queries } = createQueryHarness({ visitsTracked: true })
+    const { controller, queries } = createQueryContext({ visitsTracked: true })
     const res = createResponse()
 
     await controller.getUser({ params: { id: '3' } }, res)
@@ -428,7 +428,7 @@ test('getUser: статистика содержит последний захо
 })
 
 test('getUser: без таблицы site_visit_days отдаёт lastVisitAt = null и не падает', async () => {
-    const { controller, queries } = createQueryHarness({
+    const { controller, queries } = createQueryContext({
         visitsTracked: false,
         statsRow: createStatsRow({ last_visit_at: undefined, last_activity_at: CHAT_AT })
     })
