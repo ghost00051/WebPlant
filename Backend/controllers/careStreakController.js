@@ -96,13 +96,13 @@ export class CareStreakController {
         const timeZone = resolveTimeZone(user?.timezone)
         const window = weekWindow(now, timeZone)
 
-        const { events, photos, careActions } = await this.loadActivity(userId, now, window)
+        const { events, photos, careActions, careLogs } = await this.loadActivity(userId, now, window)
         const streak = computeCareStreak(events, {
             now,
             timeZone,
             freezesPerWeek: resolveFreezesPerWeek()
         })
-        const week = summarizeWeek(events, { now, timeZone, photos, careActions })
+        const week = summarizeWeek(events, { now, timeZone, photos, careActions, careLogs })
         const latestRecap = await this.loadLatestRecap(userId)
 
         return {
@@ -135,17 +135,22 @@ export class CareStreakController {
         })
 
         const photos = await this.countWeekPhotos(userId, window, now)
-        const careActions = await this.models.PlantCareLog.count({
+        const careLogs = await this.models.PlantCareLog.findAll({
             where: {
                 user_id: userId,
                 performed_at: { [Op.gte]: window.start, [Op.lte]: now }
-            }
+            },
+            attributes: ['performed_at', 'action_code'],
+            order: [['performed_at', 'ASC']],
+            raw: true
         })
+        const careActions = Array.isArray(careLogs) ? careLogs.length : 0
 
         return {
             events: Array.isArray(events) ? events : [],
             photos: Number(photos) || 0,
-            careActions: Number(careActions) || 0
+            careActions,
+            careLogs: Array.isArray(careLogs) ? careLogs : []
         }
     }
 

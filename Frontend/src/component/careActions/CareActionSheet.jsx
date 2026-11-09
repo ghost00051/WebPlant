@@ -4,10 +4,12 @@ import { API_URL } from '../../utils/api.js'
 import { fetchWithTimeout } from '../../utils/fetchWithTimeout.js'
 import { CARE_ACTION_CODES } from '../../utils/careEvents.js'
 import {
+  ALL_PLANTS_VALUE,
   OTHER_CARE_ACTIONS,
   PRODUCT_SUGGESTIONS,
   buildCareActionPayload,
   buildPerformedAt,
+  careActionTargetPlantIds,
   careActionTabs,
   careDateValue,
   recentProductsFromLatest
@@ -61,6 +63,7 @@ function CareActionSheet({
   const onCloseRef = useRef(onClose)
   const isSavingRef = useRef(false)
   const wasOpenRef = useRef(false)
+  const [completedPlantIds, setCompletedPlantIds] = useState(() => new Set())
 
   const effectivePlants = Array.isArray(plants) ? plants : loadedPlants
 
@@ -91,6 +94,7 @@ function CareActionSheet({
     setError('')
     setIsSaving(false)
     setRecentProducts([])
+    setCompletedPlantIds(new Set())
     setSelectedPlantId(plantId !== null && plantId !== undefined ? String(plantId) : '')
   }, [open, initialAction, plantId])
 
@@ -168,8 +172,11 @@ function CareActionSheet({
     [effectivePlants]
   )
 
-  const activePlantId = useMemo(() => {
+  const activePlantSelection = useMemo(() => {
     const hasPlant = id => availablePlants.some(item => String(item?.id) === id)
+    if (selectedPlantId === ALL_PLANTS_VALUE && availablePlants.length > 1) {
+      return ALL_PLANTS_VALUE
+    }
     if (selectedPlantId && hasPlant(selectedPlantId)) return selectedPlantId
     const requestedId = plantId !== null && plantId !== undefined ? String(plantId) : ''
     if (requestedId && hasPlant(requestedId)) return requestedId
@@ -234,51 +241,115 @@ function CareActionSheet({
     if (isSaving) return
 
     const actionCode = tab === 'other' ? otherCode : tab
-    const result = buildCareActionPayload({
-      actionCode,
-      plantId: activePlantId,
-      product,
-      dose,
-      note,
-      method: methodBottle ? 'spray_bottle' : null,
-      performedAt: buildPerformedAt(dateValue),
-      notificationId
-    })
+    const selectedTargets = careActionTargetPlantIds(activePlantSelection, availablePlants)
+    const targets = selectedTargets.filter(id => !completedPlantIds.has(id))
 
-    if (!result.ok) {
-      setError(result.error)
+    if (!targets.length) {
+      setError('Все выбранные растения уже отмечены')
       return
+    }
+
+    const performedAt = buildPerformedAt(dateValue)
+    const payloads = []
+    for (const targetId of targets) {
+      const result = buildCareActionPayload({
+        actionCode,
+        plantId: targetId,
+        product,
+        dose,
+        note,
+        method: methodBottle ? 'spray_bottle' : null,
+        performedAt,
+        notificationId
+      })
+
+      if (!result.ok) {
+        setError(result.error)
+        return
+      }
+      payloads.push(result.value)
     }
 
     setError('')
     setIsSaving(true)
     try {
-      const response = await fetchWithTimeout(
-        `${API_URL}/plants/${result.value.plant_id}/care-actions`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify(result.value)
-        }
-      )
+      const results = await Promise.allSettled(payloads.map(async payload => {
+        const response = await fetchWithTimeout(
+          `${API_URL}/plants/${payload.plant_id}/care-actions`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify(payload)
+          }
+        )
 
-      if (response.status === 401) {
+        if (response.status === 401) {
+          const unauthorized = new Error('unauthorized')
+          unauthorized.status = 401
+          throw unauthorized
+        }
+
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) {
+          if (response.status === 404 || response.status === 501) {
+            throw new Error('Отметка ухода пока недоступна. Попробуйте позже.')
+          }
+          throw new Error(data.message || `Не удалось сохранить уход: HTTP ${response.status}`)
+        }
+
+        return data?.item ?? data?.value ?? null
+      }))
+
+      if (results.some(result =>
+        result.status === 'rejected' && result.reason?.status === 401
+      )) {
         navigate('/login', { replace: true })
         return
       }
 
-      const data = await response.json().catch(() => ({}))
-      if (!response.ok) {
-        if (response.status === 404 || response.status === 501) {
-          throw new Error('Отметка ухода пока недоступна. Попробуйте позже.')
+      const saved = []
+      const savedPlantIds = []
+      const failed = []
+      results.forEach((result, index) => {
+        const plantId = payloads[index].plant_id
+        const plant = availablePlants.find(item => Number(item?.id) === plantId)
+        if (result.status === 'fulfilled') {
+          saved.push(result.value)
+          savedPlantIds.push(plantId)
+          return
         }
-        throw new Error(data.message || `Не удалось сохранить уход: HTTP ${response.status}`)
+        failed.push({
+          name: plant?.name || `Растение #${plantId}`,
+          message: result.reason?.message || 'Не удалось сохранить уход'
+        })
+      })
+
+      if (savedPlantIds.length) {
+        setCompletedPlantIds(previous => {
+          const next = new Set(previous)
+          for (const plantId of savedPlantIds) next.add(plantId)
+          return next
+        })
       }
 
-      const savedItem = data?.item ?? data?.value ?? null
-      onSaved?.(savedItem)
-      onCloseRef.current?.()
+      if (saved.length) {
+        onSaved?.(saved.length === 1 ? saved[0] : saved)
+      }
+
+      if (!failed.length) {
+        onCloseRef.current?.()
+        return
+      }
+
+      if (payloads.length === 1) {
+        setError(failed[0].message)
+        return
+      }
+
+      const names = failed.map(item => item.name).join(', ')
+      const prefix = saved.length ? `Отмечено: ${saved.length}. ` : ''
+      setError(`${prefix}Не удалось отметить: ${names}.`)
     } catch (saveError) {
       console.error('Ошибка отметки ухода:', saveError)
       setError(saveError.message || 'Не удалось сохранить уход. Проверьте подключение.')
@@ -286,6 +357,14 @@ function CareActionSheet({
       setIsSaving(false)
     }
   }
+
+  const pendingTargetCount = careActionTargetPlantIds(
+    activePlantSelection,
+    availablePlants
+  ).filter(id => !completedPlantIds.has(id)).length
+  const submitLabel = pendingTargetCount > 1
+    ? `Отметить все (${pendingTargetCount})`
+    : 'Отметить'
 
   if (!open) return null
 
@@ -351,11 +430,16 @@ function CareActionSheet({
               Растение
               <select
                 ref={plantSelectRef}
-                value={activePlantId}
+                value={activePlantSelection}
                 onChange={event => setSelectedPlantId(event.target.value)}
                 disabled={isSaving}
                 required
               >
+                {availablePlants.length > 1 && !notificationId && (
+                  <option value={ALL_PLANTS_VALUE}>
+                    Все растения ({availablePlants.length})
+                  </option>
+                )}
                 {availablePlants.map(item => (
                   <option key={item?.id} value={item?.id}>
                     {item?.name || `Растение #${item?.id}`}
@@ -479,7 +563,7 @@ function CareActionSheet({
                 Отмена
               </button>
               <button type='submit' className='careSheetSubmit' disabled={isSaving}>
-                {isSaving ? 'Сохраняем…' : 'Отметить'}
+                {isSaving ? 'Сохраняем…' : submitLabel}
               </button>
             </div>
           </form>

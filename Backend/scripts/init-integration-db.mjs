@@ -6,12 +6,14 @@ import User from '../models/userModels.js'
 import Plant from '../models/Plant.js'
 import PushSubscription from '../models/PushSubscription.js'
 import ChatLog from '../models/ChatLog.js'
+import WateringLog from '../models/WateringLog.js'
 
 const BASE_MODELS = [
     { name: 'users', model: User },
     { name: 'plants', model: Plant },
     { name: 'push_subscriptions', model: PushSubscription },
-    { name: 'chat_logs', model: ChatLog }
+    { name: 'chat_logs', model: ChatLog },
+    { name: 'watering_logs', model: WateringLog }
 ]
 
 export async function ensureBaseSchema({ log = () => {} } = {}) {

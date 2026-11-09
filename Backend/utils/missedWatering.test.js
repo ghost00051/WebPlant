@@ -274,7 +274,11 @@ test('planMissedWateringHandling: нет пропусков — noop в обеи
 test('buildMissedWateringNotification: свежий пропуск и очень длинное имя', () => {
     const fresh = buildMissedWateringNotification(
         { name: 'Кактус' },
-        { missedSince: '2026-10-31T20:00:00Z', timeZone: MSK }
+        {
+            missedSince: '2026-10-31T20:00:00Z',
+            timeZone: MSK,
+            now: new Date('2026-10-31T21:00:00Z')
+        }
     )
     assert.doesNotMatch(fresh.body, /Пропуск уже/)
 
