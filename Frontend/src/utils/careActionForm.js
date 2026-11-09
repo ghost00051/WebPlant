@@ -18,11 +18,33 @@ export const OTHER_CARE_ACTIONS = Object.freeze([
   { code: 'humidity_support', label: careTitleFor('humidity_support') }
 ])
 
+export const ALL_PLANTS_VALUE = 'all'
+
 export const careActionTabs = Object.freeze([
   { id: 'fertilize', label: careTitleFor('fertilize') },
   { id: 'spray', label: careTitleFor('spray') },
   { id: 'other', label: 'Другой уход' }
 ])
+
+export function careActionTargetPlantIds(selection, plants) {
+  const result = []
+  const seen = new Set()
+  const push = value => {
+    const id = toPositiveInt(value)
+    if (id && !seen.has(id)) {
+      seen.add(id)
+      result.push(id)
+    }
+  }
+
+  if (selection === ALL_PLANTS_VALUE) {
+    for (const plant of Array.isArray(plants) ? plants : []) push(plant?.id)
+    return result
+  }
+
+  push(selection)
+  return result
+}
 
 const PRODUCT_MAX_LENGTH = 160
 const DOSE_MAX_LENGTH = 120

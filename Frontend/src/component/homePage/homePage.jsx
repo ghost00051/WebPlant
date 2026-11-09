@@ -2130,8 +2130,13 @@ function HomePage ({
         plants={allPlants}
         initialAction={careSheet?.initialAction ?? 'fertilize'}
         onClose={closeCareSheet}
-        onSaved={() => {
-          showWateringNotice('Уход записан в историю растения')
+        onSaved={saved => {
+          const savedCount = Array.isArray(saved) ? saved.length : 1
+          showWateringNotice(
+            savedCount > 1
+              ? `Уход записан: ${savedCount} растений`
+              : 'Уход записан в историю растения'
+          )
           void loadHomeData()
         }}
       />

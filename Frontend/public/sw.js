@@ -1,4 +1,4 @@
-const CACHE_VERSION = 'v14'
+const CACHE_VERSION = 'v15'
 const CACHE_NAME = `ctp-${CACHE_VERSION}`
 const DEFAULT_API_BASE = '/api'
 const VALID_API_PROTOCOLS = ['http:', 'https:']
