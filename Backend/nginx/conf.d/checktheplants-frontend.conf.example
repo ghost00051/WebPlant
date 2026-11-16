@@ -40,6 +40,7 @@ server {
     charset utf-8;
     server_tokens off;
     absolute_redirect off;
+    merge_slashes on;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
@@ -93,6 +94,19 @@ server {
         return 404;
     }
 
+    # Единый вид URL — без слэша на конце (canonical всегда без слэша)
+    location ~ ^/(plants|care|login|register|home|my-plants|notifications|add-plant|edit-profile|reset-password)/$ {
+        return 301 https://checktheplants.ru/$1;
+    }
+
+    location ~ ^/(plants|care)/([a-z0-9-]+)/$ {
+        return 301 https://checktheplants.ru/$1/$2;
+    }
+
+    location ~ ^/garden/([A-Za-z0-9_-]{16,64})/$ {
+        return 301 https://checktheplants.ru/garden/$1;
+    }
+
     location = /plants {
         try_files /plants.html =404;
     }
@@ -128,6 +142,8 @@ server {
     }
 
     location = /manifest.json {
+        types { application/manifest+json json; }
+        default_type application/manifest+json;
         add_header Cache-Control "no-cache, must-revalidate" always;
     }
 

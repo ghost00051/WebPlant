@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
+import ContentTable from '../ContentPage/ContentTable.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
 import PlantFollowCta from './PlantFollowCta.jsx'
 import { getPlantBySlug } from '../../data/plants.js'
@@ -118,6 +119,15 @@ function PlantsDetailPage({ slug }) {
                 <h2 id='plantWaterTitle'>Полив</h2>
                 <p>{plant.watering}</p>
             </section>
+
+            {plant.wateringTable && (
+                <section className='contentSection' aria-labelledby='plantWaterTableTitle'>
+                    <h2 id='plantWaterTableTitle'>
+                        {plant.wateringTable.caption || 'Таблица полива по сезонам'}
+                    </h2>
+                    <ContentTable table={plant.wateringTable} withCaption={false} />
+                </section>
+            )}
 
             <PlantFieldSection id='plantSoilTitle' title='Грунт' value={plant.soil} />
 

@@ -1,5 +1,6 @@
 import { readFile, readdir, stat } from 'node:fs/promises'
 import { resolve, join } from 'node:path'
+import { SECTION_META } from '../src/data/siteMap.js'
 
 const root = resolve(import.meta.dirname, '..')
 const dist = resolve(root, 'dist')
@@ -116,14 +117,20 @@ ok(
 )
 ok('sitemap: нет дублей адресов', new Set(sitemapLocs).size === sitemapLocs.length)
 {
-  const lastmods = [...sitemap.matchAll(/<lastmod>([^<]+)<\/lastmod>/g)].map(m => m[1])
+  const entries = [
+    ...sitemap.matchAll(
+      /<url>[\s\S]*?<loc>([^<]+)<\/loc>[\s\S]*?<lastmod>([^<]+)<\/lastmod>[\s\S]*?<\/url>/g
+    )
+  ].map(match => ({ loc: match[1], lastmod: match[2] }))
+  const lastmods = entries.map(entry => entry.lastmod)
+  ok('sitemap: у каждого URL есть lastmod', entries.length === sitemapLocs.length)
   ok(
     'sitemap: нет дат в будущем',
     lastmods.every(lastmod => lastmod <= today)
   )
   ok(
-    'sitemap: lastmod автоматический (есть дата текущей сборки)',
-    lastmods.includes(today)
+    'sitemap: lastmod главной = дате обновления контента',
+    entries.find(entry => entry.loc === `${siteUrl}/`)?.lastmod === SECTION_META.home.updated
   )
 }
 ok(

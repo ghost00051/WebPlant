@@ -88,6 +88,9 @@ Options -Indexes
     AddType application/manifest+json .webmanifest
     AddType application/xml .xml
     AddType image/x-icon .ico
+    <Files "manifest.json">
+        ForceType application/manifest+json
+    </Files>
 </IfModule>
 
 <IfModule mod_rewrite.c>
@@ -100,6 +103,16 @@ Options -Indexes
     RewriteCond %{HTTPS} !=on
     RewriteCond %{HTTP:X-Forwarded-Proto} !https
     RewriteRule ^ https://checktheplants.ru%{REQUEST_URI} [R=301,L,NE]
+
+    # Единый вид URL — без слэша на конце (canonical всегда без слэша)
+    RewriteCond %{REQUEST_URI} ^/(plants|care|login|register|home|add-plant|edit-profile|my-plants|reset-password|notifications)/$ [NC]
+    RewriteRule ^(plants|care|login|register|home|add-plant|edit-profile|my-plants|reset-password|notifications)/$ /$1 [R=301,L,NE]
+
+    RewriteCond %{REQUEST_URI} ^/(plants|care)/([a-z0-9-]+)/$ [NC]
+    RewriteRule ^(plants|care)/([a-z0-9-]+)/$ /$1/$2 [R=301,L,NE]
+
+    RewriteCond %{REQUEST_URI} ^/garden/([A-Za-z0-9_-]{16,64})/$ [NC]
+    RewriteRule ^garden/([A-Za-z0-9_-]{16,64})/$ /garden/$1 [R=301,L,NE]
 
     RewriteCond %{THE_REQUEST} ^\S+\s+/index\.html[\s?] [NC]
     RewriteRule ^ / [R=301,L,NE]

@@ -100,7 +100,7 @@ for (const path of sitemapPaths) {
   if (!title) fail(`${path}: нет title`)
   else {
     if (title.length < 20) fail(`${path}: короткий title (${title.length})`)
-    if (title.length > 90) fail(`${path}: длинный title (${title.length})`)
+    if (title.length > 60) fail(`${path}: длинный title (${title.length})`)
     if (titles.has(title)) fail(`${path}: title совпадает с ${titles.get(title)}`)
     else titles.set(title, path)
   }
@@ -133,10 +133,17 @@ for (const path of sitemapPaths) {
 
   const ogTitle = metaContent(html, 'property', 'og:title')
   const ogImage = metaContent(html, 'property', 'og:image')
+  const ogType = metaContent(html, 'property', 'og:type')
   const twitterCard = metaContent(html, 'name', 'twitter:card')
   if (!ogTitle) fail(`${path}: нет og:title`)
   if (ogImage !== `${siteUrl}/og-image.png`) fail(`${path}: og:image не обложка`)
   if (twitterCard !== 'summary_large_image') fail(`${path}: нет twitter:card`)
+  if (path.startsWith('/plants/') || path.startsWith('/care/')) {
+    if (ogType !== 'article') fail(`${path}: og:type=${ogType}, ожидается article`)
+    if (!metaContent(html, 'property', 'article:published_time')) {
+      fail(`${path}: нет article:published_time`)
+    }
+  }
 
   const types = jsonLdTypes(html)
   if (!types.length) fail(`${path}: нет JSON-LD`)

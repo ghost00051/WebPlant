@@ -88,7 +88,7 @@ function LandingPage() {
                 <section className='landingHero' aria-labelledby='landingTitle'>
                     <div className='landingHeroContent'>
                         <p className='landingEyebrow'>Спокойный уход за растениями</p>
-                        <h1 id='landingTitle'>Помните о поливе.<br />Наслаждайтесь ростом.</h1>
+                        <h1 id='landingTitle'>Полив комнатных растений —<br />без забытых дней.</h1>
                         <p className='landingSubtitle'>
                             Календарь полива и уход за комнатными растениями в одном приложении:
                             своё расписание для каждого растения, напоминания и подсказки ИИ.
