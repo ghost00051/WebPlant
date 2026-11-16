@@ -90,6 +90,23 @@ test('buildWeekDays: подписывает дни недели и статус�
   assert.match(result[0].title, /Понедельник.*полив вовремя/)
 })
 
+test('buildWeekDays: показывает уход по дням недели', () => {
+  const days = [
+    { date: '2026-11-02', status: 'none', care: [] },
+    { date: '2026-11-03', status: 'watered', care: ['fertilize'] },
+    { date: '2026-11-04', status: 'none', care: ['spray', 'leaf_clean'] }
+  ]
+  const result = buildWeekDays(days, new Date(2026, 10, 3, 12))
+
+  assert.deepEqual(result[1].care.map(item => item.group), ['feed'])
+  assert.equal(result[1].care[0].title, 'Подкормка')
+  assert.deepEqual(result[1].care.map(item => item.label), ['подкормка'])
+  assert.deepEqual(result[2].care.map(item => item.group), ['spray', 'other'])
+  assert.match(result[1].title, /подкормка/)
+  assert.doesNotMatch(result[0].title, /подкормка/)
+  assert.deepEqual(result[0].care, [])
+})
+
 test('buildWeekDays: ограничивает неделю семью днями', () => {
   const days = Array.from({ length: 10 }, (_, index) => ({
     date: `2026-10-${String(19 + index).padStart(2, '0')}`,

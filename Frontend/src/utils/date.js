@@ -242,6 +242,31 @@ export function buildDayView({ date, now = new Date(), plannedPlants = [], event
   }
 }
 
+export function buildMissedDayEvents(missedEntries, { excludePlantIds = [] } = {}) {
+  const excluded = new Set(
+    (Array.isArray(excludePlantIds) ? excludePlantIds : [])
+      .map(id => Number(id))
+      .filter(id => Number.isInteger(id))
+  )
+  const events = []
+
+  for (const entry of Array.isArray(missedEntries) ? missedEntries : []) {
+    const plant = entry?.plant
+    const id = Number(plant?.id)
+    if (!Number.isInteger(id) || excluded.has(id)) continue
+    excluded.add(id)
+    events.push({
+      kind: 'overdue',
+      plant,
+      scheduled_for: plant.next_watering_at ?? entry.dueDay ?? null,
+      hours_late: null,
+      days_late: Number.isFinite(entry.daysLate) ? entry.daysLate : null
+    })
+  }
+
+  return events
+}
+
 export function partitionScheduleDates(schedule, now = new Date()) {
   const planned = new Set()
   const missed = new Set()

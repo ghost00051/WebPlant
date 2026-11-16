@@ -1,4 +1,6 @@
 
+import { PLANT_CONTENT_EXTRA } from './plantContentExtra.js'
+
 export const WINTER_MONTHS = ['декабрь', 'январь', 'февраль']
 
 export const PLANTS = [
@@ -643,6 +645,15 @@ export const PLANTS = [
     ]
   }
 ]
+
+for (const plant of PLANTS) {
+  const extra = PLANT_CONTENT_EXTRA[plant.slug]
+  if (!extra) continue
+  if (extra.wateringTable) plant.wateringTable = extra.wateringTable
+  if (extra.extraFaq) plant.faq = [...(plant.faq ?? []), ...extra.extraFaq]
+  if (extra.extraProblems) plant.problems = [...(plant.problems ?? []), ...extra.extraProblems]
+  if (extra.updated) plant.updated = extra.updated
+}
 
 export function getPlantBySlug(slug) {
   return PLANTS.find(plant => plant.slug === slug) ?? null

@@ -73,6 +73,10 @@ function escapeHtml(value) {
     .replaceAll('>', '&gt;')
 }
 
+function isoDateTime(date) {
+  return date ? `${date}T00:00:00+03:00` : undefined
+}
+
 function replaceMeta(html, attribute, name, content) {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const matcher = new RegExp(
@@ -101,7 +105,7 @@ function buildWebApplication(html) {
   return JSON.parse(block[1])
 }
 
-function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false, ogImage, ogImageAlt, omitCanonical = false, omitOgUrl = false }) {
+function setPageMetadata(html, { title, description, canonical, indexable, structuredData, keepTemplateStructuredData = false, ogImage, ogImageAlt, ogType = 'website', articlePublishedTime, articleModifiedTime, articleSection, omitCanonical = false, omitOgUrl = false }) {
   let page = html.replace(/<title>[\s\S]*?<\/title>/i, `<title>${escapeHtml(title)}</title>`)
   page = replaceMeta(page, 'name', 'description', description)
   page = replaceMeta(
@@ -112,8 +116,18 @@ function setPageMetadata(html, { title, description, canonical, indexable, struc
       ? 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1'
       : 'noindex, follow'
   )
+  page = replaceMeta(page, 'property', 'og:type', ogType)
   page = replaceMeta(page, 'property', 'og:title', title)
   page = replaceMeta(page, 'property', 'og:description', description)
+  if (articlePublishedTime) {
+    page = replaceMeta(page, 'property', 'article:published_time', articlePublishedTime)
+  }
+  if (articleModifiedTime) {
+    page = replaceMeta(page, 'property', 'article:modified_time', articleModifiedTime)
+  }
+  if (articleSection) {
+    page = replaceMeta(page, 'property', 'article:section', articleSection)
+  }
   if (omitOgUrl) {
     page = page.replace(/\s*<meta\s+property="og:url"[^>]*>/i, '')
   } else {
@@ -382,7 +396,12 @@ try {
       ]
     })
     await writeFile(resolve(outputDirectory, 'index.html'), page)
-    sitemapEntries.push({ path: '/', lastmod: buildDate, changefreq: 'weekly', priority: '1.0' })
+    sitemapEntries.push({
+      path: '/',
+      lastmod: SECTION_META.home.updated || buildDate,
+      changefreq: 'weekly',
+      priority: '1.0'
+    })
   }
 
   {
@@ -437,7 +456,10 @@ try {
         datePublished: plant.updated || buildDate,
         dateModified: plant.updated || buildDate,
         articleSection: 'Справочник растений',
-        image: [plant.image ? `${siteUrl}${plant.image}` : `${siteUrl}/og-image.png`],
+        image: [
+          `${siteUrl}/og-image.png`,
+          ...(plant.image ? [`${siteUrl}${plant.image}`] : [])
+        ],
         mainEntityOfPage: `${siteUrl}${path}`,
         author: {
           '@type': 'Person',
@@ -462,6 +484,10 @@ try {
         description: meta.description,
         canonical: `${siteUrl}${path}`,
         indexable: true,
+        ogType: 'article',
+        articlePublishedTime: isoDateTime(plant.updated || buildDate),
+        articleModifiedTime: isoDateTime(plant.updated || buildDate),
+        articleSection: 'Справочник растений',
         structuredData
       }
     )
@@ -553,6 +579,10 @@ try {
         description: meta.description,
         canonical: `${siteUrl}${path}`,
         indexable: true,
+        ogType: 'article',
+        articlePublishedTime: isoDateTime(lastmod),
+        articleModifiedTime: isoDateTime(lastmod),
+        articleSection: 'Уход',
         structuredData
       }
     )

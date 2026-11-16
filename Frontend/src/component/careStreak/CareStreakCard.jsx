@@ -222,6 +222,17 @@ function CareStreakCard ({ refreshSignal = 0 }) {
                   title={day.title}
                 >
                   <span className='careStreakDayDot' aria-hidden='true' />
+                  {day.care?.length > 0 && (
+                    <span className='careStreakDayCare' aria-hidden='true'>
+                      {day.care.map(item => (
+                        <span
+                          key={item.group}
+                          className={`careStreakCareDot careStreakCareDot--${item.group}`}
+                          title={item.title}
+                        />
+                      ))}
+                    </span>
+                  )}
                   <span className='careStreakDayLabel' aria-hidden='true'>
                     {day.label}
                   </span>

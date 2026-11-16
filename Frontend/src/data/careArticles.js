@@ -1,3 +1,5 @@
+import { ARTICLE_CONTENT_EXTRA } from './careArticlesExtra.js'
+
 export const ARTICLES = [
   {
     slug: 'kak-ponyat-pora-polivat',
@@ -1014,6 +1016,15 @@ export const ARTICLES = [
     ]
   }
 ]
+
+for (const article of ARTICLES) {
+  const extra = ARTICLE_CONTENT_EXTRA[article.slug]
+  if (!extra) continue
+  if (extra.sections) article.sections = [...(article.sections ?? []), ...extra.sections]
+  if (extra.extraFaq) article.faq = [...(article.faq ?? []), ...extra.extraFaq]
+  if (extra.plantLinks) article.plantLinks = extra.plantLinks
+  if (extra.updated) article.updated = extra.updated
+}
 
 export function getArticleBySlug(slug) {
   return ARTICLES.find(article => article.slug === slug) ?? null

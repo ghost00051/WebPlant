@@ -125,7 +125,7 @@ jobs:
           fi
           psql --version
 
-      - name: Базовая схема для миграций (users, plants, push_subscriptions, chat_logs)
+      - name: Базовая схема для миграций (legacy-таблицы для свежей БД)
         run: node scripts/init-integration-db.mjs
 
       - name: Миграции (psql, ON_ERROR_STOP=1)
@@ -161,6 +161,11 @@ jobs:
       - name: Интеграционные тесты (Postgres + Redis)
         env:
           RUN_INTEGRATION: '1'
+          SECRET_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+          AI_PRICE_INPUT_PER_1K: '0.3'
+          AI_PRICE_OUTPUT_PER_1K: '0.5'
+          AI_PRICE_CACHED_PER_1K: '0.075'
+          AI_PRICE_CURRENCY: 'RUB'
         run: npm run test:integration
 
       - name: Smoke-тест старта приложения (/livez и /health)

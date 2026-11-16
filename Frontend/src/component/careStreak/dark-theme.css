@@ -39,6 +39,18 @@ html[data-theme='dark'] .careStreakDay.is-today .careStreakDayDot {
   outline-color: var(--theme-text);
 }
 
+html[data-theme='dark'] .careStreakCareDot--feed {
+  --care-color: #d9a441;
+}
+
+html[data-theme='dark'] .careStreakCareDot--spray {
+  --care-color: #4fb3a9;
+}
+
+html[data-theme='dark'] .careStreakCareDot--other {
+  --care-color: #a78bfa;
+}
+
 html[data-theme='dark'] .careStreakProgress {
   background: rgba(255, 255, 255, 0.1);
 }

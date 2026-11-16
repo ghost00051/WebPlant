@@ -22,15 +22,39 @@ BEGIN
     END IF;
 END $$;
 
-ALTER TABLE notifications
-    ADD CONSTRAINT notifications_type_check
-    CHECK (type IN (
+DO $$
+DECLARE
+    violating integer;
+BEGIN
+    SELECT count(*) INTO violating
+    FROM notifications
+    WHERE type NOT IN (
         'watering_due',
         'watering_day_before',
         'morning_summary',
         'care_reminder',
         'care_tip'
-    ));
+    );
+
+    IF violating > 0 THEN
+        RAISE NOTICE 'notifications_type_check пропущен: % строк с другими типами, ограничение задаст 20261102_add_weekly_recap', violating;
+    ELSE
+        BEGIN
+            ALTER TABLE notifications
+                ADD CONSTRAINT notifications_type_check
+                CHECK (type IN (
+                    'watering_due',
+                    'watering_day_before',
+                    'morning_summary',
+                    'care_reminder',
+                    'care_tip'
+                ));
+        EXCEPTION
+            WHEN duplicate_object THEN
+                RAISE NOTICE 'notifications_type_check уже существует';
+        END;
+    END IF;
+END $$;
 
 ALTER TABLE notifications
     ADD COLUMN IF NOT EXISTS payload JSONB NOT NULL DEFAULT '{}'::jsonb;

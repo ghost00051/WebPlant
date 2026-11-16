@@ -1,8 +1,15 @@
 import { monthGenitive, toDate, toISODate, weekdayName } from './date.js'
+import { careGroupFor, careTitleFor, sortedCareGroups } from './careEvents.js'
 
 export const WEEK_DAYS_LIMIT = 7
 
 const WEEKDAY_SHORT = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+
+const CARE_GROUP_LABELS = {
+  feed: 'подкормка',
+  spray: 'опрыскивание',
+  other: 'другой уход'
+}
 
 const DAY_STATUS_LABELS = {
   'on-time': 'полив вовремя',
@@ -159,14 +166,29 @@ export function buildWeekDays (days, now = new Date()) {
     const date = toDate(day?.date)
     const iso = toISODate(date)
     const status = normalizeWeekDayStatus(day?.status)
+    const careCodes = Array.isArray(day?.care)
+      ? [...new Set(day.care
+        .map(code => (typeof code === 'string' ? code : code?.action_code))
+        .filter(Boolean))]
+      : []
+    const careGroups = sortedCareGroups(
+      new Set(careCodes.map(careGroupFor).filter(Boolean))
+    )
+    const care = careGroups.map(group => ({
+      group,
+      label: CARE_GROUP_LABELS[group] ?? 'уход',
+      title: careTitleFor(careCodes.find(code => careGroupFor(code) === group))
+    }))
+    const careText = care.map(item => item.label).join(', ')
 
     return {
       iso,
       label: WEEKDAY_SHORT[date.getDay()],
       status,
       statusLabel: DAY_STATUS_LABELS[status],
+      care,
       isToday: iso === todayIso,
-      title: `${capitalize(weekdayName(date))}, ${date.getDate()} ${monthGenitive(date)} — ${DAY_STATUS_LABELS[status]}`
+      title: `${capitalize(weekdayName(date))}, ${date.getDate()} ${monthGenitive(date)} — ${DAY_STATUS_LABELS[status]}${careText ? `, ${careText}` : ''}`
     }
   })
 }

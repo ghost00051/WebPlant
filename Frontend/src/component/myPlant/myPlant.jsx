@@ -1573,21 +1573,21 @@ function MyPlant() {
                 initialAction='fertilize'
                 onClose={() => setCareSheetPlant(null)}
                 onSaved={savedItem => {
-                    const savedPlantId = savedItem?.plant_id ??
-                        savedItem?.plantId ??
-                        careSheetPlant?.id
-                    if (savedPlantId === null || savedPlantId === undefined) {
+                    const items = (Array.isArray(savedItem) ? savedItem : [savedItem])
+                        .filter(item => item && typeof item === 'object')
+                    if (!items.length) {
                         void loadLatestCare()
                         return
                     }
-                    if (!savedItem || typeof savedItem !== 'object') {
-                        void loadLatestCare()
-                        return
-                    }
-                    setLatestCare(current => ({
-                        ...current,
-                        [savedPlantId]: savedItem
-                    }))
+                    setLatestCare(current => {
+                        const next = { ...current }
+                        for (const item of items) {
+                            const savedPlantId = item.plant_id ?? item.plantId
+                            if (savedPlantId === null || savedPlantId === undefined) continue
+                            next[savedPlantId] = item
+                        }
+                        return next
+                    })
                 }}
             />
         </main>

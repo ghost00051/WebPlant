@@ -83,11 +83,6 @@ function missedSortValue(entry) {
   return entry.dueDay || '9999-12-31'
 }
 
-function intervalDaysOf(plant) {
-  const value = Number(plant?.watering_interval_days)
-  return Number.isInteger(value) && value > 0 ? value : null
-}
-
 export function splitNeedWateringPlants(
   plants,
   { now = new Date(), timeZone = APP_TIME_ZONE } = {}
@@ -102,7 +97,6 @@ export function splitNeedWateringPlants(
     const missedSince = toInstant(plant.metadata?.missed_since)
     const plannedDay = zonedIsoDay(plant.next_watering_at, timeZone)
     const plannedInPast = Boolean(todayDay && plannedDay && plannedDay < todayDay)
-    const plannedToday = Boolean(todayDay && plannedDay && plannedDay === todayDay)
 
     if (!missedSince && !plannedInPast) {
       today.push(plant)
@@ -119,17 +113,10 @@ export function splitNeedWateringPlants(
       daysLate
     })
 
-    const intervalDays = intervalDaysOf(plant)
-    const nextOccurrenceArrived = Boolean(
-      missedSince && intervalDays && daysLate >= intervalDays
-    )
-
-    if (plannedToday || nextOccurrenceArrived) {
-      today.push({
-        ...plant,
-        previousMissedWatering: { dueDay: dueDay || null, daysLate }
-      })
-    }
+    today.push({
+      ...plant,
+      previousMissedWatering: { dueDay: dueDay || null, daysLate }
+    })
   }
 
   missed.sort((a, b) => {

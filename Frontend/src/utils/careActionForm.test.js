@@ -1,10 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  ALL_PLANTS_VALUE,
   OTHER_CARE_ACTIONS,
   PRODUCT_SUGGESTIONS,
   buildCareActionPayload,
   buildPerformedAt,
+  careActionTargetPlantIds,
   careActionTabs,
   careDateValue,
   formatCareDate,
@@ -25,6 +27,17 @@ function payloadOf(overrides = {}, options = { now: NOW }) {
     options
   )
 }
+
+test('careActionTargetPlantIds: «Все растения», одно растение и мусор', () => {
+  const plants = [{ id: 3 }, { id: 1 }, { id: '3' }, { id: null }, {}]
+
+  assert.equal(ALL_PLANTS_VALUE, 'all')
+  assert.deepEqual(careActionTargetPlantIds(ALL_PLANTS_VALUE, plants), [3, 1])
+  assert.deepEqual(careActionTargetPlantIds(ALL_PLANTS_VALUE, null), [])
+  assert.deepEqual(careActionTargetPlantIds('2', plants), [2])
+  assert.deepEqual(careActionTargetPlantIds('abc', plants), [])
+  assert.deepEqual(careActionTargetPlantIds('', plants), [])
+})
 
 test('careActionTabs: подкормка, опрыскивание и другой уход', () => {
   assert.deepEqual(

@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom'
 import ContentPage from '../ContentPage/ContentPage.jsx'
 import Breadcrumbs from '../ContentPage/Breadcrumbs.jsx'
+import ContentTable from '../ContentPage/ContentTable.jsx'
 import NotFound from '../ContentPage/NotFound.jsx'
 import WateringCalculator from './WateringCalculator.jsx'
 import PhotoDiagnosisCta from './PhotoDiagnosisCta.jsx'
 import { getArticleBySlug } from '../../data/careArticles.js'
+import { getPlantBySlug } from '../../data/plants.js'
 import {
     CARE_PATH,
     articlePath,
@@ -47,6 +49,9 @@ function CareDetailPage({ slug }) {
     const updated = formatUpdated(article.updated)
     const related = getRelatedArticles(article.slug, 3)
     const relatedPlants = getArticlePlants(article.slug, 3)
+    const linkedPlants = Array.isArray(article.plantLinks)
+        ? article.plantLinks.map(getPlantBySlug).filter(Boolean)
+        : []
     const sections = Array.isArray(article.sections) ? article.sections : []
     const faq = Array.isArray(article.faq)
         ? article.faq.filter(item => item && item.question && item.answer)
@@ -80,6 +85,7 @@ function CareDetailPage({ slug }) {
                             {section.list.map(item => <li key={item.slice(0, 32)}>{item}</li>)}
                         </ul>
                     )}
+                    {section.table && <ContentTable table={section.table} />}
                 </section>
             ))}
 
@@ -97,6 +103,22 @@ function CareDetailPage({ slug }) {
                                     <summary>{item.question}</summary>
                                     <p>{item.answer}</p>
                                 </details>
+                            </li>
+                        ))}
+                    </ul>
+                </section>
+            )}
+
+            {linkedPlants.length > 0 && (
+                <section className='contentSection' aria-labelledby='articleLinkedPlantsTitle'>
+                    <h2 id='articleLinkedPlantsTitle'>Полив конкретных растений</h2>
+                    <ul className='contentLinkList'>
+                        {linkedPlants.map(item => (
+                            <li key={item.slug}>
+                                <Link to={plantPath(item.slug)}>
+                                    {item.name}: полив {item.intervalLabel}
+                                </Link>
+                                {item.light ? ` — ${item.light.toLowerCase()}` : ''}
                             </li>
                         ))}
                     </ul>

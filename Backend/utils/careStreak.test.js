@@ -255,6 +255,24 @@ test('summarizeWeek: поливы, фото, действия ухода и дн
     ])
 })
 
+test('summarizeWeek: действия ухода раскладываются по локальным дням недели', () => {
+    const week = summarizeWeek([], {
+        now: new Date('2026-11-08T18:55:00Z'),
+        timeZone: MSK,
+        careLogs: [
+            { performed_at: '2026-11-07T15:05:06Z', action_code: 'fertilize' },
+            { performed_at: '2026-11-08T21:30:00Z', action_code: 'spray' }
+        ]
+    })
+
+    assert.equal(week.careActions, 1, 'уход за пределами недели не считается')
+    assert.deepEqual(
+        week.days.map(day => day.care),
+        [[], [], [], [], [], ['fertilize'], []],
+        'подкормка 7 ноября (сб) попадает в субботу, а не в пятницу'
+    )
+})
+
 test('summarizeWeek: приоритет статуса дня watered > late > skipped, массивы считаются', () => {
     const week = summarizeWeek([
         event('skipped', '2026-10-27T06:00:00Z', 0),

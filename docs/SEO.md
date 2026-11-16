@@ -29,7 +29,7 @@ node scripts/seo-check.mjs
 node scripts/seo-audit.mjs --json=seo-audit-live.json
 ```
 
-`seo-check.mjs` падает, если: дубли title/description, title > 90 или description > 200 символов, canonical не совпадает с URL, h1 не один, на странице нет нужного типа JSON-LD, `<img>` без `alt`, в sitemap есть не-200 URL или lastmod из будущего, robots.txt без `Clean-param`, `.htaccess` без `DirectorySlash Off`/`ErrorDocument`.
+`seo-check.mjs` падает, если: дубли title/description, title > 60 или description > 200 символов, canonical не совпадает с URL, h1 не один, на странице нет нужного типа JSON-LD, у статей нет `og:type=article`/`article:published_time`, `<img>` без `alt`, в sitemap есть не-200 URL или lastmod из будущего, robots.txt без `Clean-param`, `.htaccess` без `DirectorySlash Off`/`ErrorDocument`.
 
 ## 3. Хостинг: clean URLs, 404, кеш, brotli
 
@@ -58,7 +58,9 @@ curl.exe -s -o NUL -D - -A "Mozilla/5.0" https://checktheplants.ru/plants | Sele
 
 ### 3.3 Чистые URL и дубли по слэшу
 
-Канонический вид — **без слэша**: `/plants`, `/care`, `/plants/<slug>`, `/care/<slug>`, `/login` и т. д. `canonical` в HTML всегда без слэша. Сейчас `/plants/`, `/care/`, `/plants/<slug>/`, `/login/` отдают 200 (не 301): это не критично при корректном canonical, но 301-нормализация включается только вместе с настройкой хоста (иначе возможен цикл с прод-nginx). Задача — в бэклоге плана (T-10).
+Канонический вид — **без слэша**: `/plants`, `/care`, `/plants/<slug>`, `/care/<slug>`, `/login` и т. д. `canonical` в HTML всегда без слэша. После SEO-фиксов 2026-11-04 `Frontend/htaccess` и эталонный nginx-конфиг отдают **301** для `/plants/`, `/care/`, `/plants/<slug>/`, `/care/<slug>/`, `/login/` и `/garden/<token>/`; на проде 301 включается вместе с обновлением nginx (см. §3.2). До выкладки прод продолжает отдавать 200 — canonical на это время остаётся страховкой.
+
+`lastmod` в sitemap — дата последнего **содержательного** изменения страницы, а не дата сборки. Для главной она задаётся в `SECTION_META.home.updated` (`Frontend/src/data/siteMap.js`) и обновляется вручную при правке лендинга; `verify-build.mjs` сверяет её со sitemap. Для остальных страниц используется поле `updated` из `plants.js`/`careArticles.js`.
 
 ## 4. Яндекс.Вебмастер: пошагово
 

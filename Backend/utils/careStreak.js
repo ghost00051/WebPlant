@@ -261,7 +261,8 @@ export function summarizeWeek(events = [], {
     now = new Date(),
     timeZone = DEFAULT_TIME_ZONE,
     photos = 0,
-    careActions = 0
+    careActions = 0,
+    careLogs = []
 } = {}) {
     const current = toDate(now) ?? new Date()
     const window = weekWindow(current, timeZone)
@@ -272,7 +273,7 @@ export function summarizeWeek(events = [], {
     for (let offset = 0; offset < 7; offset += 1) {
         const parts = addDaysToParts(zonedDateParts(window.start, window.timeZone), offset)
         const key = dateKeyFromParts(parts)
-        days.set(key, { date: key, status: WEEK_DAY_STATUS.none })
+        days.set(key, { date: key, status: WEEK_DAY_STATUS.none, care: [] })
     }
 
     let wateredOnTime = 0
@@ -304,13 +305,29 @@ export function summarizeWeek(events = [], {
         }
     }
 
+    let countedCareActions = 0
+    const careEntries = Array.isArray(careLogs) ? careLogs : []
+    for (const log of careEntries) {
+        const at = toDate(log?.performed_at ?? log?.performedAt)
+        if (!at) continue
+        const atMs = at.getTime()
+        if (atMs < startMs || atMs > endMs) continue
+
+        const day = days.get(dateKeyFromParts(zonedDateParts(at, window.timeZone)))
+        if (!day) continue
+
+        countedCareActions += 1
+        const code = typeof log?.action_code === 'string' ? log.action_code.trim() : ''
+        if (code && !day.care.includes(code)) day.care.push(code)
+    }
+
     return {
         wateredOnTime,
         wateredLate,
         skipped,
         scheduled: wateredOnTime + wateredLate + skipped,
         photos: toCount(photos),
-        careActions: toCount(careActions),
+        careActions: careEntries.length ? countedCareActions : toCount(careActions),
         startDate: window.startDate,
         days: [...days.values()]
     }

@@ -67,12 +67,15 @@ function createController(overrides = {}) {
             }
         },
         PlantCareLog: {
-            async count(options) {
+            async findAll(options) {
                 calls.careOptions = options
-                if (typeof overrides.countCareActions === 'function') {
-                    return overrides.countCareActions(options)
+                if (typeof overrides.findAllCareLogs === 'function') {
+                    return overrides.findAllCareLogs(options)
                 }
-                return overrides.careActions ?? 1
+                return overrides.careLogs ?? [{
+                    performed_at: '2026-10-31T09:00:00.000Z',
+                    action_code: 'fertilize'
+                }]
             }
         },
         Notification: {
@@ -204,6 +207,7 @@ test('loadCareStreak: ответ строго по контракту', async ()
     assert.equal(result.week.startDate, WEEK_START)
     assert.equal(result.week.days.length, 7)
     assert.equal(result.week.days[0].date, WEEK_START)
+    assert.deepEqual(result.week.days[5].care, ['fertilize'], 'подкормка в субботу — в дне субботы')
 
     assert.deepEqual(result.latestRecap, {
         id: 7,

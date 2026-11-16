@@ -9,7 +9,9 @@ function MissedWateringCard ({
   daysLate,
   photoUrl,
   busy,
-  onWaterLater
+  skipping,
+  onWaterLater,
+  onSkip
 }) {
   const name = plant?.name || 'Растение'
   const question = dueLabel
@@ -44,11 +46,22 @@ function MissedWateringCard ({
           type='button'
           className='missedCardWaterLater'
           onClick={() => onWaterLater(plant.id, scheduledFor)}
-          disabled={busy}
+          disabled={busy || skipping}
           aria-busy={busy || undefined}
           aria-label={`Отметить, что «${name}» полит позже графика`}
         >
           {busy ? 'Отмечаем…' : 'Полил(а) позже'}
+        </button>
+        <button
+          type='button'
+          className='missedCardSkip'
+          onClick={() => onSkip?.(plant.id)}
+          disabled={busy || skipping}
+          aria-busy={skipping || undefined}
+          aria-label={`Отказаться от пропущенного полива растения «${name}»`}
+          title='Полив не нужен — перенести следующий по графику'
+        >
+          {skipping ? 'Пропускаем…' : 'Не нужен'}
         </button>
       </div>
     </article>
