@@ -44,13 +44,17 @@ test('split: растение с поливом на сегодня остаёт
   assert.equal(missed.length, 0)
 })
 
-test('split: просроченный next_watering_at попадает в «Пропущенные» с днями просрочки', () => {
+test('split: просроченный next_watering_at попадает и в «Полив», и в «Пропущенные»', () => {
   const now = new Date('2026-10-22T07:00:00.000Z') // 10:00 MSK
   const overdue = { id: 3, next_watering_at: '2026-10-20T06:00:00.000Z' } // 20 октября, 09:00 MSK
 
   const { today, missed } = splitNeedWateringPlants([overdue], { now, timeZone: MSK })
 
-  assert.equal(today.length, 0)
+  assert.deepEqual(today.map(item => item.id), [3])
+  assert.deepEqual(today[0].previousMissedWatering, {
+    dueDay: '2026-10-20',
+    daysLate: 2
+  })
   assert.equal(missed.length, 1)
   assert.equal(missed[0].plant.id, 3)
   assert.equal(missed[0].dueDay, '2026-10-20')
@@ -67,7 +71,7 @@ test('split: missed_since важнее будущего next_watering_at (пос
 
   const { today, missed } = splitNeedWateringPlants([skipped], { now, timeZone: MSK })
 
-  assert.equal(today.length, 0)
+  assert.deepEqual(today.map(item => item.id), [4])
   assert.equal(missed[0].dueDay, '2026-10-19')
   assert.equal(missed[0].daysLate, 3)
 })
@@ -115,7 +119,7 @@ test('split: после интервала от missed_since растение в
   assert.equal(missed[0].daysLate, 1)
 })
 
-test('split: очередной полив после пропуска ещё не наступил — только «Пропущенные»', () => {
+test('split: очередной полив после пропуска ещё не наступил — всё равно в «Полив» и в «Пропущенных»', () => {
   const now = new Date('2026-10-25T09:00:00.000Z') // 12:00 MSK
   const plant = {
     id: 10,
@@ -126,12 +130,13 @@ test('split: очередной полив после пропуска ещё н
 
   const { today, missed } = splitNeedWateringPlants([plant], { now, timeZone: MSK })
 
-  assert.equal(today.length, 0)
+  assert.deepEqual(today.map(item => item.id), [10])
+  assert.ok(today[0].previousMissedWatering)
   assert.equal(missed.length, 1)
   assert.equal(missed[0].plant.id, 10)
 })
 
-test('split: пропуск остаётся в «Пропущенных», если следующий полив ещё не сегодня', () => {
+test('split: пропуск остаётся в «Пропущенных» и показывается текущий полив в «Полив»', () => {
   const now = new Date('2026-10-25T09:00:00.000Z')
   const plant = {
     id: 10,
@@ -141,7 +146,7 @@ test('split: пропуск остаётся в «Пропущенных», ес
 
   const { today, missed } = splitNeedWateringPlants([plant], { now, timeZone: MSK })
 
-  assert.equal(today.length, 0)
+  assert.deepEqual(today.map(item => item.id), [10])
   assert.equal(missed.length, 1)
   assert.equal(missed[0].plant.id, 10)
 })
@@ -188,7 +193,7 @@ test('split: день считается по часовому поясу пол
 
   assert.deepEqual(msk.today.map(item => item.id), [6])
   assert.equal(msk.missed.length, 0)
-  assert.equal(utc.today.length, 0)
+  assert.deepEqual(utc.today.map(item => item.id), [6])
   assert.equal(utc.missed[0].daysLate, 1)
 })
 

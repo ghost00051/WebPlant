@@ -42,6 +42,7 @@ import {
 import { buildPlantDayTasks } from '../../utils/plantDayTasks.js'
 import {
   buildDayView,
+  buildMissedDayEvents,
   dayOfMonth,
   diffInDays,
   monthGenitive,
@@ -250,6 +251,7 @@ function HomePage ({
   const [removingId, setRemovingId] = useState(null)
   const [selectedDate, setSelectedDate] = useState(null)
   const [missedWateringId, setMissedWateringId] = useState(null)
+  const [skippingMissedId, setSkippingMissedId] = useState(null)
   const [schedule, setSchedule] = useState([])
   const [history, setHistory] = useState([])
   const [carePastTypes, setCarePastTypes] = useState(() => new Map())
@@ -981,6 +983,42 @@ function HomePage ({
     }
   }
 
+  const skipMissedPlant = async (plantId, intervalDays) => {
+    if (!plantId || skippingMissedId) return
+
+    setSkippingMissedId(plantId)
+    try {
+      const days = Number.isInteger(intervalDays) && intervalDays > 0 ? intervalDays : 1
+      const response = await fetchWithTimeout(`${API_URL}/plants/${plantId}/skip`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ days })
+      })
+
+      if (response.status === 401) {
+        navigate('/login', { replace: true })
+        return
+      }
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        if (response.status === 404 || response.status === 501) {
+          throw new Error('Пропуск полива пока недоступен: сервер ещё не обновлён.')
+        }
+        throw new Error(data.message || `Не удалось пропустить полив: HTTP ${response.status}`)
+      }
+
+      showWateringNotice('Полив пропущен — следующий по графику.')
+      await loadHomeData()
+    } catch (error) {
+      console.error('Ошибка пропуска полива:', error)
+      showWateringNotice(error.message || 'Не удалось пропустить полив. Попробуйте ещё раз.')
+    } finally {
+      setSkippingMissedId(null)
+    }
+  }
+
   const capitalize = value => value.charAt(0).toUpperCase() + value.slice(1)
   const timeZone = user?.timezone || DEFAULT_TIME_ZONE
   const zonedNow = useMemo(() => getZonedDateParts(now, timeZone), [now, timeZone])
@@ -1107,7 +1145,24 @@ function HomePage ({
         events: wateringEvents
       })
 
-      const events = [...view.events, ...careEvents, ...plannedCareEvents]
+      const overdueTodayEvents = iso === todayIso
+        ? buildMissedDayEvents(missedPlants, {
+            excludePlantIds: [
+              ...view.events.map(event => event?.plant?.id),
+              ...view.plants.map(plant => plant?.id)
+            ]
+          }).map(event => {
+            const fullPlant = allPlantsMap.get(event.plant.id)
+            return fullPlant ? { ...event, plant: { ...fullPlant, ...event.plant } } : event
+          })
+        : []
+
+      const events = [
+        ...overdueTodayEvents,
+        ...view.events,
+        ...careEvents,
+        ...plannedCareEvents
+      ]
       const kind =
         view.kind === 'empty' && events.length
           ? view.isPastDay
@@ -1136,7 +1191,7 @@ function HomePage ({
         )} ${monthGenitive(target)}`
       }
     },
-    [scheduleMap, historyMap, plannedCareByDate, now]
+    [scheduleMap, historyMap, plannedCareByDate, now, todayIso, missedPlants, allPlantsMap]
   )
 
   const selectedDay = useMemo(
@@ -1927,7 +1982,11 @@ function HomePage ({
                           daysLate={daysLate}
                           photoUrl={photoUrl}
                           busy={missedWateringId === item.id}
+                          skipping={skippingMissedId === item.id}
                           onWaterLater={waterMissedCard}
+                          onSkip={() =>
+                            skipMissedPlant(item.id, item.watering_interval_days)
+                          }
                         />
                       )
                     })}

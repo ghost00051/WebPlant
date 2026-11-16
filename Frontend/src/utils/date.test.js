@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  buildMissedDayEvents,
   diffInDays,
   toDate,
   toISODate
@@ -57,4 +58,39 @@ test('diffInDays: date-only строки считаются как раньше'
   assert.equal(diffInDays('2026-10-19', now), 0)
   assert.equal(diffInDays('2026-10-18', now), -1)
   assert.equal(diffInDays('2026-10-20', now), 1)
+})
+
+test('buildMissedDayEvents: пропущенные растения становятся overdue-событиями дня', () => {
+  const plant = {
+    id: 7,
+    name: 'Алоэ',
+    next_watering_at: '2026-11-14T06:00:00.000Z'
+  }
+
+  const events = buildMissedDayEvents([{ plant, dueDay: '2026-11-14', daysLate: 2 }])
+
+  assert.equal(events.length, 1)
+  assert.equal(events[0].kind, 'overdue')
+  assert.equal(events[0].plant.id, 7)
+  assert.equal(events[0].scheduled_for, '2026-11-14T06:00:00.000Z')
+  assert.equal(events[0].days_late, 2)
+
+  assert.deepEqual(
+    buildMissedDayEvents(
+      [{ plant, dueDay: '2026-11-14', daysLate: 2 }],
+      { excludePlantIds: [7] }
+    ),
+    []
+  )
+  assert.deepEqual(
+    buildMissedDayEvents([
+      { plant, dueDay: '2026-11-14', daysLate: 2 },
+      { plant, dueDay: '2026-11-14', daysLate: 2 }
+    ]).length,
+    1
+  )
+  assert.deepEqual(
+    buildMissedDayEvents([{ plant: null, dueDay: '2026-11-14', daysLate: 2 }]),
+    []
+  )
 })
